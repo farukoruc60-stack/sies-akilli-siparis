@@ -1,0 +1,485 @@
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
+import bcrypt from 'bcryptjs';
+import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+import { initDatabase, query } from './db/database.js';
+import { seedInitialUsers, generateToken, authenticateToken, requireAdmin } from './auth.js';
+import { processUploadedDocument } from './documentProcessor.js';
+import { getYandexStatus, uploadToYandexDisk } from './yandexClient.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+
+// File Upload Config
+const uploadDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `${uniqueSuffix}${ext}`);
+  }
+});
+const upload = multer({ storage });
+
+// Initialize Database & Seed
+await initDatabase();
+await seedInitialUsers();
+
+// -------------------------------------------------------------
+// AUTH ROUTES
+// -------------------------------------------------------------
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'E-posta ve şifre zorunludur!' });
+    }
+
+    const resDb = await query('SELECT * FROM users WHERE email = ? AND is_active = 1', [email.toLowerCase().trim()]);
+    const user = resDb.rows[0];
+
+    if (!user) {
+      return res.status(401).json({ error: 'Geçersiz e-posta veya şifre!' });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) {
+      return res.status(401).json({ error: 'Geçersiz e-posta veya şifre!' });
+    }
+
+    const token = generateToken(user);
+    
+    // Audit Log
+    await query(
+      'INSERT INTO audit_logs (user_id, action, entity_name, details) VALUES (?, ?, ?, ?)',
+      [user.id, 'USER_LOGIN', 'users', `${user.full_name} sisteme giriş yaptı.`]
+    );
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.full_name,
+        role: user.role
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/auth/me', authenticateToken, async (req, res) => {
+  res.json({ user: req.user });
+});
+
+app.get('/api/users', authenticateToken, async (req, res) => {
+  const usersRes = await query('SELECT id, email, full_name, role, is_active, created_at FROM users ORDER BY id ASC');
+  res.json(usersRes.rows);
+});
+
+app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { email, password, fullName, role } = req.body;
+    const hash = await bcrypt.hash(password, 10);
+    const result = await query(
+      'INSERT INTO users (email, password_hash, full_name, role) VALUES (?, ?, ?, ?)',
+      [email, hash, fullName, role || 'STANDARD']
+    );
+    res.json({ success: true, id: result.lastID });
+  } catch (err) {
+    res.status(400).json({ error: 'Kullanıcı eklenemedi veya e-posta zaten mevcut.' });
+  }
+});
+
+// -------------------------------------------------------------
+// ORDER MANAGEMENT ROUTES
+// -------------------------------------------------------------
+app.get('/api/orders', authenticateToken, async (req, res) => {
+  try {
+    const { search, status, page = 1, limit = 50 } = req.query;
+    let sql = `
+      SELECT o.*, c.name as customer_name, c.tax_number as customer_tax_number,
+             (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) as total_items,
+             (SELECT COUNT(*) FROM documents d WHERE d.order_id = o.id) as total_docs,
+             u.full_name as creator_name
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      LEFT JOIN users u ON o.created_by = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (status && status !== 'ALL') {
+      sql += ' AND o.status = ?';
+      params.push(status);
+    }
+
+    if (search) {
+      sql += ' AND (o.order_no LIKE ? OR c.name LIKE ? OR o.customer_order_no LIKE ?)';
+      const term = `%${search}%`;
+      params.push(term, term, term);
+    }
+
+    sql += ' ORDER BY o.updated_at DESC, o.id DESC';
+
+    const countRes = await query(`SELECT COUNT(*) as cnt FROM (${sql}) as sub`, params);
+    const totalCount = parseInt(countRes.rows[0]?.cnt || countRes.rows[0]?.['COUNT(*)'] || 0, 10);
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    sql += ` LIMIT ${parseInt(limit)} OFFSET ${offset}`;
+
+    const ordersRes = await query(sql, params);
+    res.json({
+      orders: ordersRes.rows,
+      totalCount,
+      page: parseInt(page),
+      totalPages: Math.ceil(totalCount / parseInt(limit))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/orders/:id', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const orderRes = await query(`
+      SELECT o.*, c.name as customer_name, c.tax_office, c.tax_number, c.address, c.phone, c.email as customer_email,
+             u1.full_name as creator_name, u2.full_name as updater_name
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      LEFT JOIN users u1 ON o.created_by = u1.id
+      LEFT JOIN users u2 ON o.updated_by = u2.id
+      WHERE o.id = ?
+    `, [orderId]);
+
+    if (orderRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sipariş bulunamadı!' });
+    }
+
+    const itemsRes = await query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC', [orderId]);
+    const docsRes = await query('SELECT * FROM documents WHERE order_id = ? ORDER BY id DESC', [orderId]);
+    const historyRes = await query(`
+      SELECT h.*, u.full_name as user_name
+      FROM order_status_history h
+      LEFT JOIN users u ON h.changed_by = u.id
+      WHERE h.order_id = ?
+      ORDER BY h.created_at DESC
+    `, [orderId]);
+
+    res.json({
+      order: orderRes.rows[0],
+      items: itemsRes.rows,
+      documents: docsRes.rows,
+      history: historyRes.rows
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CREATE ORDER FROM VERIFICATION SCREEN
+app.post('/api/orders', authenticateToken, async (req, res) => {
+  try {
+    const { customerInfo, orderItems, documentId } = req.body;
+
+    // 1. Customer Check or Create
+    let customerId;
+    let custRes;
+    if (customerInfo.taxNumber) {
+      custRes = await query('SELECT id FROM customers WHERE tax_number = ?', [customerInfo.taxNumber]);
+    }
+
+    if (!custRes || custRes.rows.length === 0) {
+      custRes = await query('SELECT id FROM customers WHERE LOWER(name) = ?', [customerInfo.name.toLowerCase().trim()]);
+    }
+
+    if (custRes && custRes.rows.length > 0) {
+      customerId = custRes.rows[0].id;
+    } else {
+      const newCust = await query(
+        'INSERT INTO customers (name, tax_office, tax_number, address, phone, email) VALUES (?, ?, ?, ?, ?, ?)',
+        [customerInfo.name, customerInfo.taxOffice || '', customerInfo.taxNumber || '', customerInfo.address || '', customerInfo.phone || '', customerInfo.email || '']
+      );
+      customerId = newCust.lastID || newCust.rows?.[0]?.id;
+    }
+
+    // 2. Order Create
+    const orderNo = customerInfo.orderNo || `SO-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+    const orderDate = customerInfo.orderDate || new Date().toISOString().split('T')[0];
+
+    const newOrderRes = await query(
+      `INSERT INTO orders (order_no, customer_id, customer_order_no, order_date, requested_delivery_date, status, created_by, updated_by, version)
+       VALUES (?, ?, ?, ?, ?, 'APPROVED', ?, ?, 1)`,
+      [orderNo, customerId, customerInfo.orderNo || orderNo, orderDate, customerInfo.deliveryDate || null, req.user.id, req.user.id]
+    );
+
+    const orderId = newOrderRes.lastID || newOrderRes.rows?.[0]?.id;
+
+    // 3. Order Items Insert
+    if (orderItems && orderItems.length > 0) {
+      for (const item of orderItems) {
+        await query(
+          `INSERT INTO order_items (
+            order_id, line_no, customer_product_code, internal_product_code, product_name, product_description,
+            width_mm, height_mm, length_mm, thickness_mm, material, surface_coating, color,
+            quantity, unit, unit_price, currency, line_total, status, confidence_score
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            orderId, item.lineNo, item.customerProductCode || '', item.internalProductCode || '', item.productName || 'Ürün', item.productDescription || '',
+            item.widthMm || null, item.heightMm || null, item.lengthMm || null, item.thicknessMm || null, item.material || '', item.surfaceCoating || '', item.color || '',
+            item.quantity || 1, item.unit || 'Adet', item.unitPrice || 0, item.currency || 'TRY', item.lineTotal || 0, 'APPROVED', item.confidenceScore || 1.0
+          ]
+        );
+      }
+    }
+
+    // 4. Link Document if uploaded
+    if (documentId) {
+      await query('UPDATE documents SET order_id = ? WHERE id = ?', [orderId, documentId]);
+    }
+
+    // 5. History Log
+    await query(
+      'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
+      [orderId, 'NEW', 'APPROVED', req.user.id, 'Sipariş kontrol ekranından onaylandı ve havuza eklendi.']
+    );
+
+    // 6. Audit Log
+    await query(
+      'INSERT INTO audit_logs (user_id, action, entity_name, entity_id, details) VALUES (?, ?, ?, ?, ?)',
+      [req.user.id, 'CREATE_ORDER', 'orders', orderId, `Sipariş ${orderNo} oluşturuldu.`]
+    );
+
+    res.json({ success: true, orderId, orderNo });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// UPDATE ORDER WITH OPTIMISTIC LOCKING VERSION CHECK
+app.put('/api/orders/:id', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const { version, customerOrderNo, requestedDeliveryDate, items } = req.body;
+
+    if (version === undefined || version === null) {
+      return res.status(400).json({ error: 'Versiyon bilgisi (version) zorunludur!' });
+    }
+
+    // Optimistic locking query: WHERE id = ? AND version = ?
+    const updateRes = await query(
+      `UPDATE orders 
+       SET customer_order_no = ?, requested_delivery_date = ?, version = version + 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ? AND version = ?`,
+      [customerOrderNo, requestedDeliveryDate, req.user.id, orderId, version]
+    );
+
+    if (updateRes.rowCount === 0) {
+      return res.status(409).json({
+        error: 'ÇAKIŞMA TESPİT EDİLDİ (409 Conflict): Bu sipariş siz düzenlerken başka bir kullanıcı tarafından güncellendi. Lütfen sayfayı yenileyip tekrar deneyin.'
+      });
+    }
+
+    // Replace items if provided
+    if (items && Array.isArray(items)) {
+      await query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
+      for (const item of items) {
+        await query(
+          `INSERT INTO order_items (
+            order_id, line_no, customer_product_code, internal_product_code, product_name, product_description,
+            width_mm, height_mm, length_mm, thickness_mm, material, surface_coating, color,
+            quantity, unit, unit_price, currency, line_total, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            orderId, item.line_no || item.lineNo, item.customer_product_code || '', item.internal_product_code || '', item.product_name || 'Ürün', item.product_description || '',
+            item.width_mm || null, item.height_mm || null, item.length_mm || null, item.thickness_mm || null, item.material || '', item.surface_coating || '', item.color || '',
+            item.quantity || 1, item.unit || 'Adet', item.unit_price || 0, item.currency || 'TRY', item.line_total || 0, item.status || 'APPROVED'
+          ]
+        );
+      }
+    }
+
+    // Audit log
+    await query(
+      'INSERT INTO audit_logs (user_id, action, entity_name, entity_id, details) VALUES (?, ?, ?, ?, ?)',
+      [req.user.id, 'UPDATE_ORDER', 'orders', orderId, `Sipariş v${version} -> v${version + 1} olarak güncellendi.`]
+    );
+
+    res.json({ success: true, newVersion: version + 1 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// STATUS UPDATE ROUTE
+app.post('/api/orders/:id/status', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const { newStatus, notes } = req.body;
+
+    const currentOrderRes = await query('SELECT status FROM orders WHERE id = ?', [orderId]);
+    if (currentOrderRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sipariş bulunamadı!' });
+    }
+    const prevStatus = currentOrderRes.rows[0].status;
+
+    await query(
+      'UPDATE orders SET status = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [newStatus, req.user.id, orderId]
+    );
+
+    await query(
+      'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
+      [orderId, prevStatus, newStatus, req.user.id, notes || `Durum ${prevStatus} -> ${newStatus} olarak değiştirildi.`]
+    );
+
+    res.json({ success: true, newStatus });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// DOCUMENT UPLOAD & EXTRACTION ROUTES
+// -------------------------------------------------------------
+app.post('/api/documents/upload', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Lütfen bir dosya seçin!' });
+    }
+
+    const filePath = req.file.path;
+    const originalName = req.file.originalname;
+    const mimeType = req.file.mimetype;
+    const fileSize = req.file.size;
+    const ext = path.extname(originalName).toLowerCase();
+
+    // Run Document Processor
+    const processed = await processUploadedDocument(filePath, originalName, mimeType);
+
+    // Save document record to DB
+    const docRes = await query(
+      `INSERT INTO documents (
+        original_name, file_type, mime_type, file_size, sha256_hash, original_path, pdf_path, uploaded_by, archive_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+      [originalName, ext, mimeType, fileSize, processed.sha256, filePath, processed.pdfPath, req.user.id]
+    );
+
+    const docId = docRes.lastID || docRes.rows?.[0]?.id;
+
+    // Trigger Yandex Disk background upload attempt
+    uploadToYandexDisk(filePath, 'OrijinalBelgeler', `${docId}_${originalName}`).then(async (yRes) => {
+      if (yRes.success) {
+        await query('UPDATE documents SET archive_status = ?, yandex_path = ? WHERE id = ?', ['ARCHIVED', yRes.yandexPath, docId]);
+      }
+    });
+
+    res.json({
+      documentId: docId,
+      sha256: processed.sha256,
+      originalName,
+      pdfUrl: `/api/documents/${docId}/pdf`,
+      customerInfo: processed.customerInfo,
+      orderItems: processed.orderItems
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/documents/:id/pdf', authenticateToken, async (req, res) => {
+  try {
+    const docRes = await query('SELECT pdf_path, original_path FROM documents WHERE id = ?', [req.params.id]);
+    if (docRes.rows.length === 0) return res.status(404).send('Belge bulunamadı');
+
+    const targetPath = docRes.rows[0].pdf_path || docRes.rows[0].original_path;
+    if (fs.existsSync(targetPath)) {
+      res.contentType('application/pdf');
+      res.sendFile(targetPath);
+    } else {
+      res.status(404).send('Fiziksel PDF dosyası bulunamadı');
+    }
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+app.get('/api/documents/:id/download', authenticateToken, async (req, res) => {
+  try {
+    const docRes = await query('SELECT original_path, original_name FROM documents WHERE id = ?', [req.params.id]);
+    if (docRes.rows.length === 0) return res.status(404).send('Belge bulunamadı');
+
+    const file = docRes.rows[0];
+    if (fs.existsSync(file.original_path)) {
+      res.download(file.original_path, file.original_name);
+    } else {
+      res.status(404).send('Orijinal dosya sunucuda bulunamadı');
+    }
+  } catch (err) {
+    res.status(500).send(err.message);
+  }
+});
+
+// -------------------------------------------------------------
+// DASHBOARD & YANDEX ROUTES
+// -------------------------------------------------------------
+app.get('/api/dashboard', authenticateToken, async (req, res) => {
+  try {
+    const totalOrdersRes = await query('SELECT COUNT(*) as count FROM orders');
+    const todayOrdersRes = await query("SELECT COUNT(*) as count FROM orders WHERE DATE(created_at) = CURRENT_DATE");
+    const reviewPendingRes = await query("SELECT COUNT(*) as count FROM orders WHERE status = 'REVIEW_PENDING'");
+    const inProductionRes = await query("SELECT COUNT(*) as count FROM orders WHERE status = 'IN_PRODUCTION'");
+    const coatingPendingRes = await query("SELECT COUNT(*) as count FROM orders WHERE status = 'COATING_PENDING'");
+    const shippingPendingRes = await query("SELECT COUNT(*) as count FROM orders WHERE status = 'SHIPPING_PENDING'");
+    const completedRes = await query("SELECT COUNT(*) as count FROM orders WHERE status = 'COMPLETED'");
+    const pendingArchiveRes = await query("SELECT COUNT(*) as count FROM documents WHERE archive_status = 'PENDING'");
+
+    const extractCount = (r) => parseInt(r.rows[0]?.count || r.rows[0]?.['COUNT(*)'] || 0, 10);
+
+    res.json({
+      totalOrders: extractCount(totalOrdersRes),
+      todayOrders: extractCount(todayOrdersRes),
+      reviewPending: extractCount(reviewPendingRes),
+      inProduction: extractCount(inProductionRes),
+      coatingPending: extractCount(coatingPendingRes),
+      shippingPending: extractCount(shippingPendingRes),
+      completed: extractCount(completedRes),
+      pendingArchive: extractCount(pendingArchiveRes)
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/yandex/status', authenticateToken, async (req, res) => {
+  const status = await getYandexStatus();
+  res.json(status);
+});
+
+// Start Server
+app.listen(PORT, () => {
+  console.log(`=======================================================`);
+  console.log(` SİES AKILLI SİPARİŞ TAKİP SUNUCUSU AKTİF: PORT ${PORT}`);
+  console.log(` API Endpoint: http://localhost:${PORT}/api/orders`);
+  console.log(`=======================================================`);
+});
