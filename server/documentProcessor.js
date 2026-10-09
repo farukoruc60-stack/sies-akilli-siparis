@@ -39,55 +39,47 @@ export async function processUploadedDocument(filePath, originalName, mimeType) 
 
   try {
     if (ext === '.pdf') {
-      // PDF Processing
       const dataBuffer = fs.readFileSync(filePath);
       const pdfData = await pdfParse(dataBuffer);
       const text = pdfData.text || '';
 
-      if (text.trim().length > 50) {
-        // Text-based PDF
+      if (text.trim().length > 30) {
         fs.copyFileSync(filePath, pdfPath);
-        const parsed = parseTextContent(text);
+        const parsed = parseTextContent(text, originalName);
         customerInfo = parsed.customerInfo;
         orderItems = parsed.orderItems;
       } else {
-        // Scanned PDF -> OCR
         console.log('Taranmış PDF algılandı, OCR uygulanıyor...');
         fs.copyFileSync(filePath, pdfPath);
         const ocrResult = await runTesseractOCR(filePath);
-        const parsed = parseTextContent(ocrResult);
+        const parsed = parseTextContent(ocrResult, originalName);
         customerInfo = parsed.customerInfo;
         orderItems = parsed.orderItems;
       }
     } else if (ext === '.xlsx' || ext === '.xls') {
-      // Excel Processing
       const workbook = xlsx.readFile(filePath);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
 
-      const parsed = parseExcelRows(jsonData);
+      const parsed = parseExcelRows(jsonData, originalName);
       customerInfo = parsed.customerInfo;
       orderItems = parsed.orderItems;
 
-      // Convert Excel structure to PDF
       await generatePdfFromExcel(jsonData, pdfPath, originalName);
     } else if (ext === '.docx' || ext === '.doc') {
-      // Word Processing
       const result = await mammoth.extractRawText({ path: filePath });
       const text = result.value || '';
 
-      const parsed = parseTextContent(text);
+      const parsed = parseTextContent(text, originalName);
       customerInfo = parsed.customerInfo;
       orderItems = parsed.orderItems;
 
-      // Convert Word text to PDF
       await generatePdfFromText(text, pdfPath, originalName);
     } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-      // Image Processing (OCR)
       console.log('Görüntü dosyası algılandı, OCR ve PDF oluşturuluyor...');
       const ocrResult = await runTesseractOCR(filePath);
-      const parsed = parseTextContent(ocrResult);
+      const parsed = parseTextContent(ocrResult, originalName);
       customerInfo = parsed.customerInfo;
       orderItems = parsed.orderItems;
 
@@ -97,15 +89,18 @@ export async function processUploadedDocument(filePath, originalName, mimeType) 
     }
   } catch (err) {
     console.error('Dosya işleme hatası:', err);
-    // Return graceful partial result with fallback PDF
     if (!fs.existsSync(pdfPath)) {
-      await generatePdfFromText(`SİES Belge Dönüştürme Hata Raporu: ${err.message}`, pdfPath, originalName);
+      await generatePdfFromText(`SİES Belge Dönüştürme Raporu: ${err.message}`, pdfPath, originalName);
     }
   }
 
-  // Ensure minimum default customer fallback if unparsed
+  // Fallback Customer Name from filename if unparsed
   if (!customerInfo.name) {
-    customerInfo.name = extractCustomerNameFromFilename(originalName) || 'Bilinmeyen Müşteri / Kontrol Bekliyor';
+    customerInfo.name = extractCustomerNameFromFilename(originalName) || 'MÜŞTERİ BİLGİSİ (KONTROL BEKLİYOR)';
+  }
+
+  if (!customerInfo.orderNo) {
+    customerInfo.orderNo = `SO-2026-${Math.floor(10000 + Math.random() * 90000)}`;
   }
 
   return {
@@ -128,12 +123,24 @@ async function runTesseractOCR(filePath) {
     await worker.terminate();
     return ret.data.text || '';
   } catch (err) {
-    console.warn('Tesseract OCR çalıştırılamadı, basitleştirilmiş okuyucu kullanılıyor:', err.message);
+    console.warn('Tesseract OCR çalıştırılamadı:', err.message);
     return '';
   }
 }
 
-function parseTextContent(text) {
+function normalizeText(str) {
+  if (!str) return '';
+  return str
+    .replace(/İ/g, 'I').replace(/i/g, 'i')
+    .replace(/ü/g, 'u').replace(/Ü/g, 'U')
+    .replace(/ı/g, 'i')
+    .replace(/Ö/g, 'O').replace(/ö/g, 'o')
+    .replace(/Ş/g, 'S').replace(/ş/g, 's')
+    .replace(/Ç/g, 'C').replace(/ç/g, 'c')
+    .replace(/Ğ/g, 'G').replace(/ğ/g, 'g');
+}
+
+function parseTextContent(text, originalName = '') {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   
   let customerInfo = {
@@ -143,180 +150,194 @@ function parseTextContent(text) {
     address: '',
     phone: '',
     email: '',
-    orderNo: `SO-${Date.now().toString().slice(-6)}`,
+    orderNo: '',
     orderDate: new Date().toISOString().split('T')[0],
     deliveryDate: ''
   };
 
   let orderItems = [];
   let lineNo = 1;
-  let isCustomerBlock = false;
 
+  // 1. HEADER & METADATA EXTRACTION
   for (let idx = 0; idx < lines.length; idx++) {
-    const line = lines[idx];
+    const rawLine = lines[idx];
+    const normLine = normalizeText(rawLine);
 
-    // Teklif / Sipariş No & Tarihi Tespiti
-    if (line.includes('TEKLİF NO') || line.includes('SİPARİŞ NO') || line.includes('TEKLIF NO')) {
-      const match = line.match(/(\d{4}\/\d{2}\/\d{4}|[A-Z0-9\-\/]{4,20})/);
-      if (match) customerInfo.orderNo = match[0];
-    }
-    if (line.includes('TEKLİF TARİHİ') || line.includes('SİPARİŞ TARİHİ')) {
-      const match = line.match(/\d{2}\.\d{2}\.\d{4}/);
-      if (match) customerInfo.orderDate = match[0];
+    // Müşteri Adı / Unvan Tespiti
+    if (!customerInfo.name) {
+      const custMatch = normLine.match(/Musteri\s*Adi\s*([A-Z0-9\s\.\,\&\-]+?)(?:Sip|Tes|Tarih|Kaplama|VKN|Vergi|Formu|\d{2}\.\d{2}\.\d{4}|$)/i);
+      if (custMatch && custMatch[1].trim().length > 2) {
+        customerInfo.name = custMatch[1].trim();
+      } else {
+        const firmMatch = normLine.match(/(?:MUSTERI|FIRMA|UNVAN|MUSTERI\s+TICARI\s+UNVANI)\s*[\:\-]\s*([A-Z0-9\s\.\,\&\-]+)/i);
+        if (firmMatch && firmMatch[1].trim().length > 2 && !firmMatch[1].includes('SIES') && !firmMatch[1].includes('FORMU')) {
+          customerInfo.name = firmMatch[1].trim();
+        }
+      }
     }
 
-    // Müşteri Bilgileri Bloğu Tespiti
-    if (line.includes('MÜŞTERİ BİLGİLERİ') || line.includes('MUSTERI BILGILERI')) {
-      isCustomerBlock = true;
+    // Sipariş Tarihi
+    if (normLine.includes('Sip. Tarihi') || normLine.includes('Siparis Tarihi') || normLine.includes('Teklif Tarihi')) {
+      const dateMatch = rawLine.match(/(\d{2}[\.\/\-]\d{2}[\.\/\-]\d{4})/);
+      if (dateMatch) customerInfo.orderDate = dateMatch[1];
+    }
+
+    // Teslim Tarihi
+    if (normLine.includes('Tes. Tarihi') || normLine.includes('Teslim Tarihi')) {
+      const dateMatch = rawLine.match(/(\d{2}[\.\/\-]\d{2}[\.\/\-]\d{4})/);
+      if (dateMatch) customerInfo.deliveryDate = dateMatch[1];
+    }
+
+    // Sipariş / Teklif No
+    if (normLine.includes('Teklif No') || normLine.includes('Siparis No') || normLine.includes('Dok. No') || normLine.includes('Teklif/Siparis')) {
+      const noMatch = rawLine.match(/([A-Z0-9\-\/]{4,25})/);
+      if (noMatch && !customerInfo.orderNo && !noMatch[0].includes('TARİH')) {
+        customerInfo.orderNo = noMatch[0];
+      }
+    }
+
+    // Vergi Numarası
+    if (normLine.includes('Vergi No') || normLine.includes('VKN')) {
+      const vknMatch = rawLine.match(/\d{10,11}/);
+      if (vknMatch) customerInfo.taxNumber = vknMatch[0];
+    }
+  }
+
+  // Fallback Müşteri Unvanı Tespiti (San. Tic. A.Ş. vb)
+  if (!customerInfo.name) {
+    for (const rawLine of lines) {
+      const normLine = normalizeText(rawLine);
+      if (normLine.includes('SIES ELEKTRIK') || normLine.includes('URETIM FORMU') || normLine.includes('TEKLIF / SIPARIS')) continue;
+      if (normLine.includes('SAN.') || normLine.includes('TIC.') || normLine.includes('A.S.') || normLine.includes('LTD') || normLine.includes('YACHT')) {
+        const clean = rawLine.replace(/MÜŞTERİ:|FİRMA:|ÜNVAN:|MÜŞTERİ ADI/i, '').trim();
+        if (clean.length > 3) {
+          customerInfo.name = clean;
+          break;
+        }
+      }
+    }
+  }
+
+  // 2. LINE ITEM EXTRACTION ALGORITHM (Single & Multi-line Support)
+  let currentCode = '';
+  let descriptionBuffer = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i].trim();
+    if (!rawLine) continue;
+
+    const normLine = normalizeText(rawLine);
+
+    // Skip Header/Footer Boilerplate
+    if (
+      normLine.includes('URETIM FORMU') ||
+      normLine.includes('TEKLIF / SIPARIS FORMU') ||
+      normLine.includes('Sayfa No:') ||
+      normLine.includes('Rev. No:') ||
+      normLine.includes('Y. Tarihi:') ||
+      normLine.includes('Dok. No:') ||
+      normLine.includes('SIPARIS KODU') ||
+      normLine.includes('Musteri Adi') ||
+      normLine.includes('Kaplama Cinsi') ||
+      normLine.includes('Hazirlayan') ||
+      normLine.includes('Onaylayan') ||
+      normLine.includes('SIES Elektrik') ||
+      normLine.startsWith('©')
+    ) {
       continue;
     }
 
-    if (isCustomerBlock && !customerInfo.name) {
-      if (line.includes('ÜNVAN') || line.includes('UNVAN') || line.includes('MARKA GRUP')) {
-        let cleanName = line.replace(/ÜNVAN:|UNVAN:/i, '').trim();
-        if (cleanName.length > 3) customerInfo.name = cleanName;
-      }
-    }
+    // Single-Line Match Option (Code + Name + Qty + Unit + Price)
+    const singleMatch = rawLine.match(/^(\d{1,3}[\s\.\t]+)?([A-Z0-9\-\/\*\.\_]+)\s+(.+?)\s+(\d+(?:[\.\,]\d+)?)\s*(M|MT|ADET|AD|BOY|KG|METRE|SET|PAKET)\b/i);
+    if (singleMatch && singleMatch[3].trim().length > 2) {
+      const pCode = singleMatch[2].trim();
+      const pName = singleMatch[3].trim();
+      const qty = parseFloat(singleMatch[4].replace(',', '.')) || 1;
+      const unitRaw = singleMatch[5].trim().toUpperCase();
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
 
-    // Genel Müşteri Unvan Tespiti (Header başlıklarını atla)
-    if (!customerInfo.name && !line.includes('TEKLİF / SİPARİŞ FORMU') && !line.includes('SİES ELEKTRİK')) {
-      if (line.includes('MARKA GRUP') || line.includes('SAN.') || line.includes('TİC.') || line.includes('A.Ş.') || line.includes('LTD')) {
-        customerInfo.name = line.replace(/MÜŞTERİ:|FİRMA:|ÜNVAN:/i, '').trim();
-      }
-    }
-
-    if (line.includes('Vergi No') || line.includes('VKN')) {
-      const match = line.match(/\d{10,11}/);
-      if (match) customerInfo.taxNumber = match[0];
-    }
-
-    // Tablo Satırı Tespiti (SİES & Teknik Formatlar)
-    // Örn: "1 100*40*0.8 AĞIR HİZMET TİPİ DELİKSİZ KABLO KANALI L=2400MM 316.8 M ₺80.64 ₺25,546.75"
-    // Örn: "4 L 10 90 DERECE DÖNÜŞ ELEMANI 2.0 AD ₺57.00 ₺114.00"
-    const rowMatch = line.match(/^\s*(\d{1,3})\s+([A-Z0-9\s\*\-\/\.]+?)\s+([A-Z0-9\s\*\\/\.\-\(\)\=\:\,]+?)\s+(\d+(?:[\.\,]\d+)?)\s+(AD|M|Boy|Kg|Metre|Adet)\s+₺?\s*(\d+(?:[\.\,]\d+)?)\s+₺?\s*(\d+(?:[\.\,]\d+)?|\d+[\.\,]\d+[\.\,]\d+)/i);
-
-    if (rowMatch) {
-      const lNo = parseInt(rowMatch[1], 10);
-      const pCode = rowMatch[2].trim();
-      const pName = rowMatch[3].trim();
-      const qty = parseFloat(rowMatch[4].replace(',', '.')) || 1;
-      const unit = rowMatch[5].trim();
-      const price = parseFloat(rowMatch[6].replace(',', '.')) || 0;
-      const total = parseFloat(rowMatch[7].replace(/\./g, '').replace(',', '.')) || (qty * price);
-
-      // Ölçü Ayıklama (100*40*0.8 veya 200*40*0.9)
-      let width = 100;
-      let height = 40;
-      let thick = 0.8;
-
-      const dimMatch = pCode.match(/(\d{2,4})[\*xX](\d{2,4})[\*xX](\d{1,4}(?:\.\d+)?)/);
-      if (dimMatch) {
-        width = parseFloat(dimMatch[1]);
-        height = parseFloat(dimMatch[2]);
-        thick = parseFloat(dimMatch[3]);
-      } else {
-        const descDim = pName.match(/L\=(\d{2,4})MM\s+E\:(\d{1,4}(?:\.\d+)?)MM/i);
-        if (descDim) {
-          width = parseFloat(descDim[1]);
-          thick = parseFloat(descDim[2]);
-        }
+      const rest = rawLine.substring(singleMatch[0].length).trim();
+      const priceMatch = rest.match(/₺?\s*(\d+(?:[\.\,]\d+)?)\s+₺?\s*(\d+(?:[\.\,]\d+)?|\d+[\.\,]\d+[\.\,]\d+)/);
+      let unitPrice = 0;
+      let lineTotal = 0;
+      if (priceMatch) {
+        unitPrice = parseFloat(priceMatch[1].replace(',', '.')) || 0;
+        lineTotal = parseFloat(priceMatch[2].replace(/\./g, '').replace(',', '.')) || (qty * unitPrice);
       }
 
       orderItems.push({
-        lineNo: lNo || lineNo++,
+        lineNo: lineNo++,
         customerProductCode: pCode,
         internalProductCode: `SIES-${pCode.replace(/\s+/g, '-')}`,
         productName: pName,
         productDescription: `${pName} (${pCode})`,
-        widthMm: width,
-        heightMm: height,
-        thicknessMm: thick,
-        material: 'TS 822 Pre-Galvanizli Sac',
-        surfaceCoating: 'Standart Galvaniz',
         quantity: qty,
-        unit: unit === 'M' ? 'Metre' : (unit === 'AD' ? 'Adet' : unit),
-        unitPrice: price,
+        unit: unit,
+        unitPrice: unitPrice,
         currency: 'TRY',
-        lineTotal: total,
+        lineTotal: lineTotal,
         confidenceScore: 0.99,
         status: 'OK'
       });
-    } else {
-      // Genel Teknik Satır Tespiti
-      const techMatch = line.match(/([A-Z0-9\s\-–]+?)\s+(\d{2,4})[xX*](\d{2,4})(?:[xX*](\d{1,4}))?\s*(?:mm)?\s+(\d+(?:\.\d+)?)\s*(mm)?\s+(\d+(?:\.\d+)?)\s*(Adet|Metre|Boy|Kg|AD)?/i);
-      if (techMatch && !line.includes('TEKLİF')) {
-        const pName = techMatch[1].trim() || 'Kablo Taşıyıcı Sistem';
-        const width = parseFloat(techMatch[2]) || 100;
-        const height = parseFloat(techMatch[3]) || 50;
-        const thick = parseFloat(techMatch[5]) || 1.5;
-        const qty = parseFloat(techMatch[7]) || 1;
-        const unit = techMatch[8] || 'Adet';
-
-        orderItems.push({
-          lineNo: lineNo++,
-          customerProductCode: `CST-${Math.floor(1000 + Math.random() * 9000)}`,
-          internalProductCode: `SIES-${width}X${height}-${thick}`,
-          productName: pName,
-          productDescription: `${width}x${height} mm H:${height} t:${thick} mm Kablo Taşıma Kanalı`,
-          widthMm: width,
-          heightMm: height,
-          thicknessMm: thick,
-          material: 'Pre-Galvaniz Sac',
-          surfaceCoating: 'Standart Galvaniz',
-          quantity: qty,
-          unit: unit,
-          unitPrice: 150.00,
-          currency: 'TRY',
-          lineTotal: qty * 150.00,
-          confidenceScore: 0.95,
-          status: 'OK'
-        });
-      }
+      currentCode = '';
+      descriptionBuffer = [];
+      continue;
     }
-  }
 
-  // SİES Örnek Şablon Fallback (Eğer görsel/taranmış dosyaysa tam 21 kalemi yükle)
-  if (!customerInfo.name) {
-    customerInfo.name = 'MARKA GRUP ELK. MÜH. PROJE TAAH. SAN.';
-    customerInfo.taxNumber = '6120548921';
-    customerInfo.taxOffice = 'Şişli V.D.';
-    customerInfo.orderNo = '2026/07/0020';
-    customerInfo.orderDate = '17.07.2026';
-    customerInfo.address = 'PERPA - ŞİŞLİ / İSTANBUL';
-    customerInfo.phone = '0505 008 25 62';
-    customerInfo.email = 'info@markaelektrik.com.tr';
-  }
+    // Multi-Line Match Option (Quantity + Unit line completes block)
+    const qtyUnitMatch = rawLine.match(/^(\d+(?:[\.\,]\d+)?)\s*(M|MT|ADET|AD|BOY|KG|METRE|SET|PAKET)\b/i);
+    if (qtyUnitMatch && (currentCode || descriptionBuffer.length > 0)) {
+      const qty = parseFloat(qtyUnitMatch[1].replace(',', '.')) || 1;
+      const unitRaw = qtyUnitMatch[2].trim().toUpperCase();
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
 
-  if (orderItems.length === 0) {
-    orderItems = [
-      { lineNo: 1, customerProductCode: '100*40*0.8', internalProductCode: 'SIES-100*40*0.8', productName: 'AĞIR HİZMET TİPİ DELİKSİZ KABLO KANALI L=2400MM', widthMm: 100, heightMm: 40, thicknessMm: 0.8, quantity: 316.8, unit: 'Metre', unitPrice: 80.64, currency: 'TRY', lineTotal: 25546.75, confidenceScore: 0.99 },
-      { lineNo: 2, customerProductCode: '200*40*0.9', internalProductCode: 'SIES-200*40*0.9', productName: 'AĞIR HİZMET TİPİ DELİKSİZ KABLO KANALI L=2400MM', widthMm: 200, heightMm: 40, thicknessMm: 0.9, quantity: 64.8, unit: 'Metre', unitPrice: 136.08, currency: 'TRY', lineTotal: 8817.98, confidenceScore: 0.99 },
-      { lineNo: 3, customerProductCode: '300*40*1.2', internalProductCode: 'SIES-300*40*1.2', productName: 'AĞIR HİZMET TİPİ DELİKSİZ KABLO KANALI L=2400MM', widthMm: 300, heightMm: 40, thicknessMm: 1.2, quantity: 64.8, unit: 'Metre', unitPrice: 241.92, currency: 'TRY', lineTotal: 15676.42, confidenceScore: 0.99 },
-      { lineNo: 4, customerProductCode: 'L 10', internalProductCode: 'SIES-L-10', productName: '90 DERECE DÖNÜŞ ELEMANI', widthMm: 100, heightMm: 40, thicknessMm: 1.2, quantity: 2.0, unit: 'Adet', unitPrice: 57.00, currency: 'TRY', lineTotal: 114.00, confidenceScore: 0.99 },
-      { lineNo: 5, customerProductCode: 'L 20', internalProductCode: 'SIES-L-20', productName: '90 DERECE DÖNÜŞ ELEMANI', widthMm: 200, heightMm: 40, thicknessMm: 1.2, quantity: 1.0, unit: 'Adet', unitPrice: 120.00, currency: 'TRY', lineTotal: 120.00, confidenceScore: 0.99 },
-      { lineNo: 6, customerProductCode: 'L 30', internalProductCode: 'SIES-L-30', productName: '90 DERECE DÖNÜŞ ELEMANI', widthMm: 300, heightMm: 40, thicknessMm: 1.2, quantity: 1.0, unit: 'Adet', unitPrice: 230.00, currency: 'TRY', lineTotal: 230.00, confidenceScore: 0.99 },
-      { lineNo: 7, customerProductCode: 'YT 10', internalProductCode: 'SIES-YT-10', productName: 'YARIM T BAĞLANTI ELEMANI', widthMm: 100, heightMm: 40, thicknessMm: 1.2, quantity: 25.0, unit: 'Adet', unitPrice: 62.70, currency: 'TRY', lineTotal: 1567.50, confidenceScore: 0.99 },
-      { lineNo: 8, customerProductCode: 'YT 20', internalProductCode: 'SIES-YT-20', productName: 'YARIM T BAĞLANTI ELEMANI', widthMm: 200, heightMm: 40, thicknessMm: 1.2, quantity: 1.0, unit: 'Adet', unitPrice: 132.00, currency: 'TRY', lineTotal: 132.00, confidenceScore: 0.99 },
-      { lineNo: 9, customerProductCode: 'YT 30', internalProductCode: 'SIES-YT-30', productName: 'YARIM T BAĞLANTI ELEMANI', widthMm: 300, heightMm: 40, thicknessMm: 1.2, quantity: 1.0, unit: 'Adet', unitPrice: 253.00, currency: 'TRY', lineTotal: 253.00, confidenceScore: 0.99 },
-      { lineNo: 10, customerProductCode: 'SAU 10', internalProductCode: 'SIES-SAU-10', productName: 'ÇİFT TİJLİ TAŞIYICI ELEMANI L=160MM E:1.5MM', widthMm: 160, heightMm: 50, thicknessMm: 1.5, quantity: 190.0, unit: 'Adet', unitPrice: 15.60, currency: 'TRY', lineTotal: 2964.00, confidenceScore: 0.99 },
-      { lineNo: 11, customerProductCode: 'SAU 20', internalProductCode: 'SIES-SAU-20', productName: 'ÇİFT TİJLİ TAŞIYICI ELEMANI L=260MM E:1.5MM', widthMm: 260, heightMm: 50, thicknessMm: 1.5, quantity: 74.0, unit: 'Adet', unitPrice: 25.30, currency: 'TRY', lineTotal: 1872.20, confidenceScore: 0.99 },
-      { lineNo: 12, customerProductCode: 'SAU 30', internalProductCode: 'SIES-SAU-30', productName: 'ÇİFT TİJLİ TAŞIYICI ELEMANI L=360MM E:1.5MM', widthMm: 360, heightMm: 50, thicknessMm: 1.5, quantity: 18.0, unit: 'Adet', unitPrice: 35.10, currency: 'TRY', lineTotal: 631.80, confidenceScore: 0.99 },
-      { lineNo: 13, customerProductCode: 'SAU 40', internalProductCode: 'SIES-SAU-40', productName: 'ÇİFT TİJLİ TAŞIYICI ELEMANI L=460MM E:1.5MM', widthMm: 460, heightMm: 50, thicknessMm: 1.5, quantity: 18.0, unit: 'Adet', unitPrice: 44.75, currency: 'TRY', lineTotal: 805.50, confidenceScore: 0.99 },
-      { lineNo: 14, customerProductCode: 'SAU 50', internalProductCode: 'SIES-SAU-50', productName: 'ÇİFT TİJLİ TAŞIYICI ELEMANI L=560MM E:1.5MM', widthMm: 560, heightMm: 50, thicknessMm: 1.5, quantity: 20.0, unit: 'Adet', unitPrice: 54.45, currency: 'TRY', lineTotal: 1089.00, confidenceScore: 0.99 },
-      { lineNo: 15, customerProductCode: 'SAU 60', internalProductCode: 'SIES-SAU-60', productName: 'ÇİFT TİJLİ TAŞIYICI ELEMANI L=660MM E:1.5MM', widthMm: 660, heightMm: 50, thicknessMm: 1.5, quantity: 10.0, unit: 'Adet', unitPrice: 71.30, currency: 'TRY', lineTotal: 713.00, confidenceScore: 0.99 },
-      { lineNo: 16, customerProductCode: 'SC-1', internalProductCode: 'SIES-SC-1', productName: 'BİRLEŞTİRME PARÇASI ( 370 ADET YETERLİ )', widthMm: 50, heightMm: 25, thicknessMm: 1.5, quantity: 600.0, unit: 'Adet', unitPrice: 7.50, currency: 'TRY', lineTotal: 4500.00, confidenceScore: 0.99 },
-      { lineNo: 17, customerProductCode: 'BB 8*15', internalProductCode: 'SIES-BB-8*15', productName: 'M8 BOMBE BAŞLI CİVATA', widthMm: 8, heightMm: 15, thicknessMm: 8.0, quantity: 2500.0, unit: 'Adet', unitPrice: 1.00, currency: 'TRY', lineTotal: 2500.00, confidenceScore: 0.99 },
-      { lineNo: 18, customerProductCode: 'M8F', internalProductCode: 'SIES-M8F', productName: 'M8 FLANŞLI SOMUN ( 330*6 TİJ KONTRA, 4500 AD. )', widthMm: 8, heightMm: 8, thicknessMm: 8.0, quantity: 3900.0, unit: 'Adet', unitPrice: 1.00, currency: 'TRY', lineTotal: 3900.00, confidenceScore: 0.99 },
-      { lineNo: 19, customerProductCode: 'M8*2000', internalProductCode: 'SIES-M8*2000', productName: 'M8 ASKI TİJİ L=2000MM', widthMm: 8, heightMm: 2000, thicknessMm: 8.0, quantity: 100.0, unit: 'Adet', unitPrice: 46.00, currency: 'TRY', lineTotal: 4600.00, confidenceScore: 0.99 },
-      { lineNo: 20, customerProductCode: '300*40*1.5', internalProductCode: 'SIES-300*40*1.5', productName: 'STANDART TİP KABLO MERDİVENİ L=2400MM', widthMm: 300, heightMm: 40, thicknessMm: 1.5, quantity: 7.2, unit: 'Metre', unitPrice: 180.00, currency: 'TRY', lineTotal: 1296.00, confidenceScore: 0.99 },
-      { lineNo: 21, customerProductCode: '200*40*1.2', internalProductCode: 'SIES-200*40*1.2', productName: 'STANDART TİP KABLO MERDİVENİ L=2400MM', widthMm: 200, heightMm: 40, thicknessMm: 1.2, quantity: 4.8, unit: 'Metre', unitPrice: 137.00, currency: 'TRY', lineTotal: 657.60, confidenceScore: 0.99 }
-    ];
+      let pCode = currentCode;
+      let pName = descriptionBuffer.join(' ').trim();
+
+      if (!pCode && descriptionBuffer.length > 0) {
+        pCode = descriptionBuffer[0];
+        pName = descriptionBuffer.slice(1).join(' ');
+      }
+      if (!pName) pName = pCode;
+
+      orderItems.push({
+        lineNo: lineNo++,
+        customerProductCode: pCode,
+        internalProductCode: `SIES-${pCode.replace(/\s+/g, '-')}`,
+        productName: pName,
+        productDescription: `${pName} (${pCode})`,
+        quantity: qty,
+        unit: unit,
+        unitPrice: 0,
+        currency: 'TRY',
+        lineTotal: 0,
+        confidenceScore: 0.99,
+        status: 'OK'
+      });
+
+      currentCode = '';
+      descriptionBuffer = [];
+      continue;
+    }
+
+    // Code line start
+    const codeMatch = rawLine.match(/^([A-Z0-9]{1,10}[\-\/\*\.\_][A-Z0-9\-\/\*\.\_]{1,15})$/i);
+    if (codeMatch && !currentCode) {
+      currentCode = codeMatch[1].trim();
+      descriptionBuffer = [];
+      continue;
+    }
+
+    // Description line accumulator
+    if (currentCode || descriptionBuffer.length > 0) {
+      descriptionBuffer.push(rawLine);
+    }
   }
 
   return { customerInfo, orderItems };
 }
 
-function parseExcelRows(rows) {
+function parseExcelRows(rows, originalName = '') {
   let customerInfo = {
     name: '',
     taxOffice: '',
@@ -338,9 +359,8 @@ function parseExcelRows(rows) {
 
     const rowStr = row.join(' ');
 
-    // Müşteri Bilgisi Tespiti
-    if (rowStr.includes('Müşteri') || rowStr.includes('Firma') || rowStr.includes('MUSTERI')) {
-      customerInfo.name = row[1] || row[2] || customerInfo.name;
+    if (!customerInfo.name && (rowStr.includes('Müşteri') || rowStr.includes('Firma') || rowStr.includes('MUSTERI'))) {
+      customerInfo.name = String(row[1] || row[2] || '').trim();
     }
     if (rowStr.includes('Vergi') || rowStr.includes('VKN')) {
       const match = rowStr.match(/\d{10,11}/);
@@ -348,61 +368,39 @@ function parseExcelRows(rows) {
     }
     if (rowStr.includes('Sipariş') || rowStr.includes('Ref')) {
       const match = rowStr.match(/[A-Z0-9\-\/]{4,20}/i);
-      if (match && !customerInfo.orderNo.startsWith('SIP')) customerInfo.orderNo = match[0];
+      if (match) customerInfo.orderNo = match[0];
     }
 
-    // Ürün Satırı Tespiti (Ürün Kodu, Ürün Adı, Miktar, Birim Fiyat, Birim)
-    if (row.length >= 3 && row[0] && row[1] && typeof row[2] === 'number') {
+    // Item row check
+    if (row.length >= 3 && row[0] && row[1]) {
       const pCode = String(row[0]).trim();
       const pName = String(row[1]).trim();
-      const qty = parseFloat(row[2]) || 1;
-      const price = parseFloat(row[3]) || 0;
-      const unit = String(row[4] || 'Adet').trim();
+      const qtyVal = parseFloat(row[2]);
 
-      // Ölçü Ayıklama (Örn: 100x50x1.5mm veya 300x60x2.0mm)
-      let width = 100;
-      let height = 50;
-      let thick = 1.5;
+      if (pCode && pName && !isNaN(qtyVal) && qtyVal > 0) {
+        const price = parseFloat(row[3]) || 0;
+        const unit = String(row[4] || 'Adet').trim();
 
-      const dimMatch = pName.match(/(\d{2,4})[xX*](\d{2,4})(?:[xX*](\d{1,4}(?:\.\d+)?))?/);
-      if (dimMatch) {
-        width = parseFloat(dimMatch[1]) || width;
-        height = parseFloat(dimMatch[2]) || height;
-        if (dimMatch[3]) thick = parseFloat(dimMatch[3]);
+        orderItems.push({
+          lineNo: lineNo++,
+          customerProductCode: pCode,
+          internalProductCode: `SIES-${pCode}`,
+          productName: pName,
+          productDescription: `${pName} (${pCode})`,
+          quantity: qtyVal,
+          unit: unit,
+          unitPrice: price,
+          currency: 'TRY',
+          lineTotal: qtyVal * price,
+          confidenceScore: 0.98,
+          status: 'OK'
+        });
       }
-
-      orderItems.push({
-        lineNo: lineNo++,
-        customerProductCode: pCode,
-        internalProductCode: `SIES-${pCode}`,
-        productName: pName,
-        productDescription: `${width}x${height} mm t:${thick} mm Kablo Taşıyıcı`,
-        widthMm: width,
-        heightMm: height,
-        lengthMm: 3000,
-        thicknessMm: thick,
-        material: 'Pre-Galvaniz Sac',
-        surfaceCoating: 'Standart Galvaniz',
-        quantity: qty,
-        unit: unit,
-        unitPrice: price,
-        currency: 'TRY',
-        lineTotal: qty * price,
-        confidenceScore: 0.98,
-        status: 'OK'
-      });
     }
   }
 
   if (!customerInfo.name) {
-    customerInfo.name = 'TEKFEN İNŞAAT A.Ş.';
-    customerInfo.taxNumber = '9988776655';
-    customerInfo.taxOffice = 'Maslak V.D.';
-  }
-
-  if (orderItems.length === 0) {
-    const fallback = parseTextContent('');
-    orderItems = fallback.orderItems;
+    customerInfo.name = extractCustomerNameFromFilename(originalName) || 'MÜŞTERİ BİLGİSİ (KONTROL BEKLİYOR)';
   }
 
   return { customerInfo, orderItems };
@@ -417,12 +415,12 @@ function sanitizeForPdf(str) {
     .replace(/Ü/g, 'U').replace(/ü/g, 'u')
     .replace(/Ö/g, 'O').replace(/ö/g, 'o')
     .replace(/Ç/g, 'C').replace(/ç/g, 'c')
-    .replace(/[^\x00-\x7F]/g, ''); // strip non-ASCII
+    .replace(/[^\x00-\x7F]/g, '');
 }
 
 async function generatePdfFromText(text, outputPath, title) {
   const pdfDoc = await PDFDocument.create();
-  const page = pdfDoc.addPage([595.28, 841.89]); // A4
+  const page = pdfDoc.addPage([595.28, 841.89]);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
   const cleanTitle = sanitizeForPdf(title);
