@@ -224,7 +224,9 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     }
 
     // 2. Order Create
-    const orderNo = customerInfo.orderNo || `SO-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+    const orderNo = customerInfo.orderNo 
+      ? `${customerInfo.orderNo}-${Math.floor(100 + Math.random() * 900)}` 
+      : `SO-2026-${Math.floor(10000 + Math.random() * 90000)}`;
     const orderDate = customerInfo.orderDate || new Date().toISOString().split('T')[0];
 
     const newOrderRes = await query(

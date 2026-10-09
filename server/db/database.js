@@ -202,9 +202,17 @@ async function runSqliteMigrations() {
 export async function query(sql, params = []) {
   if (pgPool) {
     let paramIndex = 1;
-    const pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
+    let pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
+    
+    // Auto-append RETURNING id for PG INSERT if not already present
+    const trimmed = pgSql.trim().toUpperCase();
+    if (trimmed.startsWith('INSERT INTO') && !trimmed.includes('RETURNING')) {
+      pgSql += ' RETURNING id';
+    }
+
     const res = await pgPool.query(pgSql, params);
-    return { rows: res.rows, rowCount: res.rowCount };
+    const lastID = res.rows?.[0]?.id;
+    return { rows: res.rows, rowCount: res.rowCount, lastID };
   } else {
     return new Promise((resolve, reject) => {
       const isSelect = sql.trim().toUpperCase().startsWith('SELECT');
