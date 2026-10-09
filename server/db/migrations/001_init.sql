@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS order_items (
     surface_coating VARCHAR(100),
     color VARCHAR(50),
     quantity NUMERIC(12, 2) NOT NULL,
+    shipped_quantity NUMERIC(12, 2) DEFAULT 0,
     unit VARCHAR(50) DEFAULT 'Adet',
     unit_price NUMERIC(12, 2),
     currency VARCHAR(10) DEFAULT 'TRY',
@@ -62,6 +63,19 @@ CREATE TABLE IF NOT EXISTS order_items (
     confidence_score NUMERIC(5, 2),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dispatches (
+    id SERIAL PRIMARY KEY,
+    order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+    order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE,
+    quantity_shipped NUMERIC(12, 2) NOT NULL,
+    driver_name VARCHAR(255),
+    vehicle_plate VARCHAR(50),
+    waybill_number VARCHAR(100),
+    notes TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS documents (

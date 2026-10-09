@@ -9,7 +9,7 @@ import { DashboardView } from './pages/DashboardView';
 import { ArchiveView } from './pages/ArchiveView';
 import { ReportsView } from './pages/ReportsView';
 import { UsersView } from './pages/UsersView';
-import { Order, OrderItem, OrderDocument, OrderStatusHistory, ExtractedCustomerInfo } from './types';
+import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, ExtractedCustomerInfo } from './types';
 
 export default function App() {
   const { isAuthenticated, token } = useAuth();
@@ -20,6 +20,7 @@ export default function App() {
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [orderDocuments, setOrderDocuments] = useState<OrderDocument[]>([]);
   const [orderHistory, setOrderHistory] = useState<OrderStatusHistory[]>([]);
+  const [orderDispatches, setOrderDispatches] = useState<DispatchRecord[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -77,6 +78,7 @@ export default function App() {
       setOrderItems(data.items || []);
       setOrderDocuments(data.documents || []);
       setOrderHistory(data.history || []);
+      setOrderDispatches(data.dispatches || []);
     } catch (err) {
       console.error('Sipariş detayı alınamadı:', err);
     }
@@ -256,6 +258,7 @@ export default function App() {
             items={orderItems}
             documents={orderDocuments}
             history={orderHistory}
+            dispatches={orderDispatches}
             onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
             onUpdateOrder={handleUpdateOrder}
             onStatusChange={handleStatusChange}

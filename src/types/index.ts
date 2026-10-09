@@ -31,10 +31,15 @@ export type OrderStatus =
 export interface OrderItem {
   id?: number;
   lineNo: number;
+  line_no?: number;
   customerProductCode?: string;
+  customer_product_code?: string;
   internalProductCode?: string;
+  internal_product_code?: string;
   productName: string;
+  product_name?: string;
   productDescription?: string;
+  product_description?: string;
   widthMm?: number;
   heightMm?: number;
   lengthMm?: number;
@@ -43,13 +48,32 @@ export interface OrderItem {
   surfaceCoating?: string;
   color?: string;
   quantity: number;
+  shippedQuantity?: number;
+  shipped_quantity?: number;
   unit: string;
   unitPrice: number;
+  unit_price?: number;
   currency: string;
   lineTotal: number;
+  line_total?: number;
   status?: string;
   sourcePage?: number;
   confidenceScore?: number;
+}
+
+export interface DispatchRecord {
+  id: number;
+  order_id: number;
+  order_item_id: number;
+  quantity_shipped: number;
+  driver_name: string;
+  vehicle_plate: string;
+  waybill_number: string;
+  notes?: string;
+  creator_name?: string;
+  created_at: string;
+  customer_product_code?: string;
+  product_name?: string;
 }
 
 export interface OrderDocument {

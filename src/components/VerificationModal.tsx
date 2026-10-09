@@ -201,8 +201,8 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                   <tbody>
                     {orderItems.map((item, idx) => {
                       const qty = parseFloat(String(item.quantity)) || 0;
-                      const uPrice = parseFloat(String(item.unitPrice ?? item.unit_price)) || 0;
-                      const lTotal = parseFloat(String(item.lineTotal ?? item.line_total)) || (qty * uPrice);
+                      const uPrice = parseFloat(String(item.unitPrice)) || 0;
+                      const lTotal = parseFloat(String(item.lineTotal)) || (qty * uPrice);
 
                       return (
                         <tr key={idx} style={{ background: (item.confidenceScore || 1) < 0.9 ? 'rgba(245, 158, 11, 0.1)' : undefined }}>
@@ -210,7 +210,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                           <td>
                             <input
                               type="text"
-                              value={item.customerProductCode || item.customer_product_code || ''}
+                              value={item.customerProductCode || ''}
                               onChange={(e) => handleItemChange(idx, 'customerProductCode', e.target.value)}
                               style={{ width: '90px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
                             />
@@ -218,7 +218,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                           <td>
                             <input
                               type="text"
-                              value={item.productName || item.product_name || ''}
+                              value={item.productName || ''}
                               onChange={(e) => handleItemChange(idx, 'productName', e.target.value)}
                               style={{ width: '220px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
                             />

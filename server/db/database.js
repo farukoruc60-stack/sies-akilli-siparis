@@ -23,6 +23,25 @@ export async function initDatabase() {
     
     const client = await pgPool.connect();
     console.log('PostgreSQL veritabanı bağlantısı başarılı!');
+
+    // Ensure shipped_quantity column and dispatches table exist in PostgreSQL
+    await client.query(`
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS shipped_quantity NUMERIC(12, 2) DEFAULT 0;
+      CREATE TABLE IF NOT EXISTS dispatches (
+          id SERIAL PRIMARY KEY,
+          order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+          order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE,
+          quantity_shipped NUMERIC(12, 2) NOT NULL,
+          driver_name VARCHAR(255),
+          vehicle_plate VARCHAR(50),
+          waybill_number VARCHAR(100),
+          notes TEXT,
+          created_by INTEGER REFERENCES users(id),
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('✓ PostgreSQL sevkiyat & parçalı sevk tabloları güncellendi.');
+
     client.release();
     return 'PG';
   } else {

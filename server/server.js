@@ -176,6 +176,7 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Sipariş bulunamadı!' });
     }
 
+    const itemsRes = await query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC, id ASC', [orderId]);
     const itemsRaw = itemsRes.rows;
     const items = itemsRaw.map(it => ({
       ...it,
@@ -187,6 +188,7 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       widthMm: it.width_mm,
       heightMm: it.height_mm,
       thicknessMm: it.thickness_mm,
+      shippedQuantity: parseFloat(it.shipped_quantity) || 0,
       unitPrice: parseFloat(it.unit_price) || 0,
       lineTotal: parseFloat(it.line_total) || 0,
       confidenceScore: parseFloat(it.confidence_score) || 1.0,
@@ -202,11 +204,21 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       ORDER BY h.created_at DESC
     `, [orderId]);
 
+    const dispatchesRes = await query(`
+      SELECT d.*, oi.customer_product_code, oi.product_name, u.full_name as creator_name
+      FROM dispatches d
+      LEFT JOIN order_items oi ON d.order_item_id = oi.id
+      LEFT JOIN users u ON d.created_by = u.id
+      WHERE d.order_id = ?
+      ORDER BY d.created_at DESC
+    `, [orderId]);
+
     res.json({
       order: orderRes.rows[0],
       items: items,
       documents: docsRes.rows,
-      history: historyRes.rows
+      history: historyRes.rows,
+      dispatches: dispatchesRes.rows
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -349,6 +361,94 @@ app.post('/api/orders/:id/items/status', authenticateToken, async (req, res) => 
     );
 
     res.json({ success: true, updatedCount: itemIds.length, overallStatus });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ADVANCED DISPATCH & PARTIAL SHIPPING ROUTE WITH DRIVER, PLATE, WAYBILL & QUANTITIES
+app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const { driverName, vehiclePlate, waybillNumber, notes, dispatches } = req.body;
+
+    if (!dispatches || !Array.isArray(dispatches) || dispatches.length === 0) {
+      return res.status(400).json({ error: 'Lütfen sevk edilecek en az bir kalem ve miktar belirtin!' });
+    }
+
+    if (!driverName || !vehiclePlate || !waybillNumber) {
+      return res.status(400).json({ error: 'Şoför Adı, Araç Plakası ve İrsaliye Numarası girilmesi zorunludur!' });
+    }
+
+    for (const itemDispatch of dispatches) {
+      const { itemId, dispatchQuantity } = itemDispatch;
+      const dispatchQty = parseFloat(dispatchQuantity);
+      if (isNaN(dispatchQty) || dispatchQty <= 0) continue;
+
+      const itemRes = await query('SELECT * FROM order_items WHERE id = ? AND order_id = ?', [itemId, orderId]);
+      if (itemRes.rows.length === 0) continue;
+
+      const item = itemRes.rows[0];
+      const currentShipped = parseFloat(item.shipped_quantity) || 0;
+      const totalQty = parseFloat(item.quantity) || 0;
+      const newShipped = currentShipped + dispatchQty;
+
+      // Determine new item status
+      let newStatus = item.status;
+      if (newShipped >= totalQty) {
+        newStatus = 'COMPLETED';
+      } else if (newShipped > 0) {
+        newStatus = 'PARTIALLY_SHIPPED';
+      }
+
+      // 1. Update order item shipped_quantity & status
+      await query(
+        'UPDATE order_items SET shipped_quantity = ?, status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND order_id = ?',
+        [newShipped, newStatus, itemId, orderId]
+      );
+
+      // 2. Record dispatch entry
+      await query(
+        `INSERT INTO dispatches (
+          order_id, order_item_id, quantity_shipped, driver_name, vehicle_plate, waybill_number, notes, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [orderId, itemId, dispatchQty, driverName.trim(), vehiclePlate.trim().toUpperCase(), waybillNumber.trim(), notes || '', req.user.id]
+      );
+
+      // 3. Record item status history
+      const historyNote = `Sevkiyat Yapıldı: ${dispatchQty} ${item.unit || 'Adet'} sevk edildi (Top. Sevk: ${newShipped}/${totalQty}). Şoför: ${driverName}, Plaka: ${vehiclePlate}, İrsaliye: ${waybillNumber}`;
+      await query(
+        'INSERT INTO order_item_status_history (order_item_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
+        [itemId, item.status, newStatus, req.user.id, historyNote]
+      );
+    }
+
+    // 4. Auto-update overall order status
+    const allItemsRes = await query('SELECT quantity, shipped_quantity, status FROM order_items WHERE order_id = ?', [orderId]);
+    const itemsList = allItemsRes.rows;
+    let overallStatus = 'APPROVED';
+
+    const allCompleted = itemsList.every(i => (parseFloat(i.shipped_quantity) || 0) >= (parseFloat(i.quantity) || 0));
+    const anyShipped = itemsList.some(i => (parseFloat(i.shipped_quantity) || 0) > 0);
+
+    if (allCompleted) {
+      overallStatus = 'COMPLETED';
+    } else if (anyShipped) {
+      overallStatus = 'SHIPPING_PENDING';
+    }
+
+    await query(
+      'UPDATE orders SET status = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [overallStatus, req.user.id, orderId]
+    );
+
+    // 5. Audit & Order status history log
+    await query(
+      'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
+      [orderId, overallStatus, overallStatus, req.user.id, `İrsaliye No #${waybillNumber} ile parçalı sevkiyat yapıldı. (Şoför: ${driverName}, Plaka: ${vehiclePlate})`]
+    );
+
+    res.json({ success: true, updatedCount: dispatches.length, overallStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
