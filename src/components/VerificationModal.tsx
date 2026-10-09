@@ -188,92 +188,83 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                 <table className="custom-table" style={{ fontSize: '0.8rem' }}>
                   <thead>
                     <tr>
-                      <th>#</th>
+                      <th style={{ width: '30px' }}>#</th>
                       <th>Ürün Kodu</th>
                       <th>Ürün Açıklaması</th>
-                      <th>Ölçü (G x Y x t mm)</th>
                       <th>Miktar</th>
+                      <th>Birim</th>
                       <th>Birim Fiyat</th>
-                      <th>Toplam</th>
+                      <th>Toplam Tutar</th>
                       <th>İşlem</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {orderItems.map((item, idx) => (
-                      <tr key={idx} style={{ background: (item.confidenceScore || 1) < 0.9 ? 'rgba(245, 158, 11, 0.1)' : undefined }}>
-                        <td>{idx + 1}</td>
-                        <td>
-                          <input
-                            type="text"
-                            value={item.customerProductCode || ''}
-                            onChange={(e) => handleItemChange(idx, 'customerProductCode', e.target.value)}
-                            style={{ width: '70px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={item.productName}
-                            onChange={(e) => handleItemChange(idx, 'productName', e.target.value)}
-                            style={{ width: '140px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
-                          />
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                    {orderItems.map((item, idx) => {
+                      const qty = parseFloat(String(item.quantity)) || 0;
+                      const uPrice = parseFloat(String(item.unitPrice ?? item.unit_price)) || 0;
+                      const lTotal = parseFloat(String(item.lineTotal ?? item.line_total)) || (qty * uPrice);
+
+                      return (
+                        <tr key={idx} style={{ background: (item.confidenceScore || 1) < 0.9 ? 'rgba(245, 158, 11, 0.1)' : undefined }}>
+                          <td>{idx + 1}</td>
+                          <td>
                             <input
-                              type="number"
-                              value={item.widthMm || 100}
-                              onChange={(e) => handleItemChange(idx, 'widthMm', parseFloat(e.target.value))}
-                              style={{ width: '40px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem' }}
+                              type="text"
+                              value={item.customerProductCode || item.customer_product_code || ''}
+                              onChange={(e) => handleItemChange(idx, 'customerProductCode', e.target.value)}
+                              style={{ width: '90px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
                             />
-                            x
+                          </td>
+                          <td>
                             <input
-                              type="number"
-                              value={item.heightMm || 50}
-                              onChange={(e) => handleItemChange(idx, 'heightMm', parseFloat(e.target.value))}
-                              style={{ width: '40px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem' }}
+                              type="text"
+                              value={item.productName || item.product_name || ''}
+                              onChange={(e) => handleItemChange(idx, 'productName', e.target.value)}
+                              style={{ width: '220px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
                             />
-                            x
+                          </td>
+                          <td>
                             <input
                               type="number"
                               step="0.1"
-                              value={item.thicknessMm || 1.5}
-                              onChange={(e) => handleItemChange(idx, 'thicknessMm', parseFloat(e.target.value))}
-                              style={{ width: '40px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem' }}
+                              value={qty}
+                              onChange={(e) => handleItemChange(idx, 'quantity', parseFloat(e.target.value))}
+                              style={{ width: '70px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
                             />
-                          </div>
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={item.quantity}
-                            onChange={(e) => handleItemChange(idx, 'quantity', parseFloat(e.target.value))}
-                            style={{ width: '50px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem' }}
-                          />
-                        </td>
-                        <td>
-                          <input
-                            type="number"
-                            value={item.unitPrice}
-                            onChange={(e) => handleItemChange(idx, 'unitPrice', parseFloat(e.target.value))}
-                            style={{ width: '60px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem' }}
-                          />
-                        </td>
-                        <td style={{ color: 'var(--primary)', fontWeight: 600 }}>
-                          {(item.lineTotal || (item.quantity * item.unitPrice)).toLocaleString('tr-TR')}
-                        </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '0.2rem' }}>
-                            <button onClick={() => handleCopyRow(idx)} title="Satırı Kopyala" style={{ background: 'none', border: 'none', color: '#60A5FA', cursor: 'pointer' }}>
-                              <Copy size={14} />
-                            </button>
-                            <button onClick={() => handleDeleteRow(idx)} title="Satırı Sil" style={{ background: 'none', border: 'none', color: '#F87171', cursor: 'pointer' }}>
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={item.unit || 'Adet'}
+                              onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
+                              style={{ width: '50px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                            />
+                          </td>
+                          <td>
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={uPrice}
+                              onChange={(e) => handleItemChange(idx, 'unitPrice', parseFloat(e.target.value))}
+                              style={{ width: '75px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                            />
+                          </td>
+                          <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.3rem' }}>
+                              <button onClick={() => handleCopyRow(idx)} title="Satırı Kopyala" style={{ background: 'none', border: 'none', color: '#60A5FA', cursor: 'pointer' }}>
+                                <Copy size={14} />
+                              </button>
+                              <button onClick={() => handleDeleteRow(idx)} title="Satırı Sil" style={{ background: 'none', border: 'none', color: '#F87171', cursor: 'pointer' }}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

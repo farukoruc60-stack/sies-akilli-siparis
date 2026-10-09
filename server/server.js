@@ -176,7 +176,23 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Sipariş bulunamadı!' });
     }
 
-    const itemsRes = await query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC', [orderId]);
+    const itemsRaw = itemsRes.rows;
+    const items = itemsRaw.map(it => ({
+      ...it,
+      lineNo: it.line_no,
+      customerProductCode: it.customer_product_code,
+      internalProductCode: it.internal_product_code,
+      productName: it.product_name,
+      productDescription: it.product_description,
+      widthMm: it.width_mm,
+      heightMm: it.height_mm,
+      thicknessMm: it.thickness_mm,
+      unitPrice: parseFloat(it.unit_price) || 0,
+      lineTotal: parseFloat(it.line_total) || 0,
+      confidenceScore: parseFloat(it.confidence_score) || 1.0,
+      status: it.status || 'PENDING'
+    }));
+
     const docsRes = await query('SELECT * FROM documents WHERE order_id = ? ORDER BY id DESC', [orderId]);
     const historyRes = await query(`
       SELECT h.*, u.full_name as user_name
@@ -188,7 +204,7 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
 
     res.json({
       order: orderRes.rows[0],
-      items: itemsRes.rows,
+      items: items,
       documents: docsRes.rows,
       history: historyRes.rows
     });
@@ -240,6 +256,14 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     // 3. Order Items Insert
     if (orderItems && orderItems.length > 0) {
       for (const item of orderItems) {
+        const pCode = item.customerProductCode || item.customer_product_code || '';
+        const pIntCode = item.internalProductCode || item.internal_product_code || '';
+        const pName = item.productName || item.product_name || 'Ürün';
+        const pDesc = item.productDescription || item.product_description || '';
+        const qty = parseFloat(item.quantity) || 1;
+        const unitPrice = parseFloat(item.unitPrice ?? item.unit_price) || 0;
+        const lineTotal = parseFloat(item.lineTotal ?? item.line_total) || (qty * unitPrice);
+
         await query(
           `INSERT INTO order_items (
             order_id, line_no, customer_product_code, internal_product_code, product_name, product_description,
@@ -247,9 +271,10 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
             quantity, unit, unit_price, currency, line_total, status, confidence_score
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            orderId, item.lineNo, item.customerProductCode || '', item.internalProductCode || '', item.productName || 'Ürün', item.productDescription || '',
-            item.widthMm || null, item.heightMm || null, item.lengthMm || null, item.thicknessMm || null, item.material || '', item.surfaceCoating || '', item.color || '',
-            item.quantity || 1, item.unit || 'Adet', item.unitPrice || 0, item.currency || 'TRY', item.lineTotal || 0, 'APPROVED', item.confidenceScore || 1.0
+            orderId, item.lineNo || item.line_no || 1, pCode, pIntCode, pName, pDesc,
+            item.widthMm || item.width_mm || null, item.heightMm || item.height_mm || null, item.lengthMm || item.length_mm || null, item.thicknessMm || item.thickness_mm || null,
+            item.material || '', item.surfaceCoating || item.surface_coating || '', item.color || '',
+            qty, item.unit || 'Adet', unitPrice, item.currency || 'TRY', lineTotal, 'APPROVED', item.confidenceScore || 1.0
           ]
         );
       }
@@ -273,6 +298,57 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     );
 
     res.json({ success: true, orderId, orderNo });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PARTIAL SHIPPING & ITEM STATUS UPDATE ROUTE
+app.post('/api/orders/:id/items/status', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const { itemIds, newStatus, notes } = req.body;
+
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'Lütfen işlem yapılacak kalemleri seçin!' });
+    }
+
+    for (const itemId of itemIds) {
+      const prevItemRes = await query('SELECT status FROM order_items WHERE id = ?', [itemId]);
+      const prevStatus = prevItemRes.rows[0]?.status || 'PENDING';
+
+      await query(
+        'UPDATE order_items SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND order_id = ?',
+        [newStatus, itemId, orderId]
+      );
+
+      await query(
+        'INSERT INTO order_item_status_history (order_item_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
+        [itemId, prevStatus, newStatus, req.user.id, notes || `Kalem durumu ${newStatus} yapıldı.`]
+      );
+    }
+
+    // Auto calculate overall order status based on line item statuses
+    const allItemsRes = await query('SELECT status FROM order_items WHERE order_id = ?', [orderId]);
+    const statuses = allItemsRes.rows.map(r => r.status);
+    
+    let overallStatus = 'APPROVED';
+    if (statuses.every(s => s === 'COMPLETED' || s === 'SHIPPED')) {
+      overallStatus = 'COMPLETED';
+    } else if (statuses.some(s => s === 'SHIPPING' || s === 'SHIPPED')) {
+      overallStatus = 'SHIPPING_PENDING';
+    } else if (statuses.some(s => s === 'COATING')) {
+      overallStatus = 'COATING_PENDING';
+    } else if (statuses.some(s => s === 'IN_PRODUCTION')) {
+      overallStatus = 'IN_PRODUCTION';
+    }
+
+    await query(
+      'UPDATE orders SET status = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [overallStatus, req.user.id, orderId]
+    );
+
+    res.json({ success: true, updatedCount: itemIds.length, overallStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
