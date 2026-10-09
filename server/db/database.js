@@ -194,6 +194,21 @@ async function runSqliteMigrations() {
       FOREIGN KEY(order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
       FOREIGN KEY(changed_by) REFERENCES users(id)
     )`,
+    `CREATE TABLE IF NOT EXISTS dispatches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      order_item_id INTEGER NOT NULL,
+      quantity_shipped REAL NOT NULL,
+      driver_name TEXT,
+      vehicle_plate TEXT,
+      waybill_number TEXT,
+      notes TEXT,
+      created_by INTEGER,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
+      FOREIGN KEY(order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+      FOREIGN KEY(created_by) REFERENCES users(id)
+    )`,
     `CREATE TABLE IF NOT EXISTS audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER,
@@ -215,6 +230,15 @@ async function runSqliteMigrations() {
     await new Promise((res, rej) => {
       sqliteDb.run(sql, (err) => (err ? rej(err) : res(true)));
     });
+  }
+
+  // Ensure shipped_quantity column exists on order_items table in SQLite
+  try {
+    await new Promise((res) => {
+      sqliteDb.run("ALTER TABLE order_items ADD COLUMN shipped_quantity REAL DEFAULT 0", () => res(true));
+    });
+  } catch (e) {
+    // Column already exists
   }
 }
 

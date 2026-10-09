@@ -74,6 +74,10 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
+      if (!res.ok || !data.order) {
+        console.error('Sipariş detayı yüklenemedi:', data.error || 'Geçersiz veri');
+        return;
+      }
       setSelectedOrder(data.order);
       setOrderItems(data.items || []);
       setOrderDocuments(data.documents || []);
