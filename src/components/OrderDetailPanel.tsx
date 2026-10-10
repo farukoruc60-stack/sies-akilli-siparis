@@ -339,7 +339,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
       }[];
     }>();
 
-    dispatches.forEach(d => {
+    (dispatches || []).forEach(d => {
       const key = d.waybill_number || `IRS-${d.id}`;
       if (!map.has(key)) {
         map.set(key, {
@@ -540,9 +540,9 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
 
               <div style={{ background: 'var(--bg-card)', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
                 <h4 style={{ color: 'var(--primary)', marginBottom: '0.75rem', fontSize: '0.9rem' }}>İş Emri & Parçalı Sevk Özeti</h4>
-                <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}><strong>Toplam Kalem Sayısı:</strong> {items.length} Kalem</p>
+                <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}><strong>Toplam Kalem Sayısı:</strong> {(items || []).length} Kalem</p>
                 <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-                  <strong>Sevk Edilen Kalemler:</strong> {items.filter(i => (i.shippedQuantity || 0) >= i.quantity).length} / {items.length} Kalem Tamamlandı
+                  <strong>Sevk Edilen Kalemler:</strong> {(items || []).filter(i => (i.shippedQuantity || 0) >= i.quantity).length} / {(items || []).length} Kalem Tamamlandı
                 </p>
                 <p style={{ fontSize: '0.85rem' }}><strong>Toplam İrsaliye Sayısı:</strong> {waybillGroups.length} Adet Sevkiyat İrsaliyesi</p>
               </div>
