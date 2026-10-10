@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from './context/AuthContext';
+import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { OrderListPanel } from './components/OrderListPanel';
 import { OrderDetailPanel } from './components/OrderDetailPanel';
+import { BottomDock } from './components/BottomDock';
 import { VerificationModal } from './components/VerificationModal';
 import { LoginModal } from './components/LoginModal';
 import { DashboardView } from './pages/DashboardView';
@@ -235,59 +237,78 @@ export default function App() {
         style={{ display: 'none' }}
       />
 
-      {/* Panel 1: Left Icon Navigation */}
-      <Sidebar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onUploadClick={handleUploadClick}
+      {/* 1:1 Antigravity Top Header Menu Bar */}
+      <TopBar 
+        title="Akıllı Sipariş Takip Platformu"
+        onRefresh={() => fetchOrders()}
+        onNewOrder={handleUploadClick}
       />
 
-      {/* Main Workspace Content based on active tab */}
-      {activeTab === 'dashboard' && <DashboardView />}
-      {activeTab === 'customers' && <CustomersView />}
-      {activeTab === 'products' && <ProductsView />}
-      {activeTab === 'production' && <ProductionView />}
-      {activeTab === 'coating' && <CoatingView />}
-      {activeTab === 'shipping' && <ShippingView />}
-      {activeTab === 'archive' && <ArchiveView />}
-      {activeTab === 'reports' && <ReportsView />}
-      {activeTab === 'users' && <UsersView />}
-      {activeTab === 'settings' && <SettingsView />}
+      {/* Main Workspace Body */}
+      <div className="workspace-body">
+        {/* Antigravity Style Left Sidebar */}
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onUploadClick={handleUploadClick}
+        />
 
-      {activeTab === 'orders' && (
-        <>
-          {/* Panel 2: Inbox Order List */}
-          <OrderListPanel
-            orders={orders}
-            selectedOrderId={selectedOrder?.id || null}
-            onSelectOrder={(order) => {
-              setSelectedOrder(order);
-              fetchOrderDetail(order.id);
-            }}
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            statusFilter={statusFilter}
-            setStatusFilter={setStatusFilter}
-            onUploadClick={handleUploadClick}
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            totalCount={totalCount}
-          />
+        {/* Content Tabs */}
+        {activeTab === 'orders' ? (
+          <>
+            {/* Panel 2: Inbox Order List */}
+            <OrderListPanel
+              orders={orders}
+              selectedOrderId={selectedOrder?.id || null}
+              onSelectOrder={(order) => {
+                setSelectedOrder(order);
+                fetchOrderDetail(order.id);
+              }}
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              statusFilter={statusFilter}
+              setStatusFilter={setStatusFilter}
+              onUploadClick={handleUploadClick}
+              page={page}
+              totalPages={totalPages}
+              onPageChange={setPage}
+              totalCount={totalCount}
+            />
 
-          {/* Panel 3: Order Detail Workspace */}
-          <OrderDetailPanel
-            order={selectedOrder}
-            items={orderItems}
-            documents={orderDocuments}
-            history={orderHistory}
-            dispatches={orderDispatches}
-            onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
-            onUpdateOrder={handleUpdateOrder}
-            onStatusChange={handleStatusChange}
-          />
-        </>
-      )}
+            {/* Panel 3: Order Detail Workspace */}
+            <OrderDetailPanel
+              order={selectedOrder}
+              items={orderItems}
+              documents={orderDocuments}
+              history={orderHistory}
+              dispatches={orderDispatches}
+              onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
+              onUpdateOrder={handleUpdateOrder}
+              onStatusChange={handleStatusChange}
+            />
+          </>
+        ) : (
+          <div className="detail-panel" style={{ padding: '16px' }}>
+            {activeTab === 'dashboard' && <DashboardView />}
+            {activeTab === 'customers' && <CustomersView />}
+            {activeTab === 'products' && <ProductsView />}
+            {activeTab === 'production' && <ProductionView />}
+            {activeTab === 'coating' && <CoatingView />}
+            {activeTab === 'shipping' && <ShippingView />}
+            {activeTab === 'archive' && <ArchiveView />}
+            {activeTab === 'reports' && <ReportsView />}
+            {activeTab === 'users' && <UsersView />}
+            {activeTab === 'settings' && <SettingsView />}
+          </div>
+        )}
+      </div>
+
+      {/* 1:1 Antigravity Floating Command Input Dock */}
+      <BottomDock 
+        onSearchOrExecute={(q) => setSearchQuery(q)}
+        onNewOrder={handleUploadClick}
+        activeTaskCount={1}
+      />
 
       {/* Verification Modal for Newly Uploaded Documents */}
       {verificationModalOpen && verificationData && (

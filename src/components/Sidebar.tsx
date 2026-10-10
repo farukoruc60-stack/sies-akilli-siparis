@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
-  LayoutDashboard, 
+  Plus, 
+  Clock, 
+  Calendar, 
+  Settings, 
+  ChevronDown, 
   Layers, 
-  UploadCloud, 
-  Users, 
+  Users as UsersIcon, 
   Package, 
   Factory, 
   Paintbrush, 
@@ -11,11 +14,10 @@ import {
   FileText, 
   BarChart3, 
   UserCheck, 
-  Settings, 
-  ChevronRight, 
-  ChevronLeft,
   LogOut,
-  ShieldAlert
+  Folder,
+  SlidersHorizontal,
+  Circle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -26,167 +28,231 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onUploadClick }) => {
-  const [expanded, setExpanded] = useState(false);
   const { user, logout } = useAuth();
 
-  const menuItems = [
-    { id: 'dashboard', label: 'Gösterge Paneli', icon: LayoutDashboard },
+  const mainNav = [
     { id: 'orders', label: 'Sipariş Havuzu', icon: Layers },
-    { id: 'upload', label: 'Yeni Sipariş Yükle', icon: UploadCloud, highlight: true },
-    { id: 'customers', label: 'Müşteriler', icon: Users },
-    { id: 'products', label: 'Ürün ve Sipariş Kalemleri', icon: Package },
-    { id: 'production', label: 'Üretim Takibi', icon: Factory },
-    { id: 'coating', label: 'Kaplama / Boya Takibi', icon: Paintbrush },
-    { id: 'shipping', label: 'Sevkiyat Takibi', icon: Truck },
-    { id: 'archive', label: 'Belge Arşivi', icon: FileText },
-    { id: 'reports', label: 'Raporlar', icon: BarChart3 },
-    { id: 'users', label: 'Kullanıcılar', icon: UserCheck },
-    { id: 'settings', label: 'Sistem Ayarları', icon: Settings }
+    { id: 'dashboard', label: 'Gösterge Paneli', icon: BarChart3 },
+    { id: 'archive', label: 'Zamanlanmış İşler & Arşiv', icon: Calendar }
   ];
 
-  const handleItemClick = (id: string) => {
-    if (id === 'upload') {
-      onUploadClick();
-    } else {
-      setActiveTab(id);
-    }
-  };
+  const projectsList = [
+    { id: 'orders', label: 'Akıllı Sipariş Takip Platformu', active: activeTab === 'orders' || activeTab === 'dashboard', dotColor: '#3B82F6' },
+    { id: 'customers', label: 'Müşteriler & Cari Yönetimi', active: activeTab === 'customers', subtitle: '1mo', dotColor: '#10B981' },
+    { id: 'products', label: 'Ürün ve Sipariş Kalemleri', active: activeTab === 'products', subtitle: '1mo', dotColor: '#6366F1' },
+    { id: 'production', label: 'Üretim Takibi & İş Emri', active: activeTab === 'production', subtitle: '2mo', dotColor: '#F59E0B' },
+    { id: 'coating', label: 'Kaplama / Boya Takibi', active: activeTab === 'coating', subtitle: '2mo', dotColor: '#3B82F6' },
+    { id: 'shipping', label: 'Sevkiyat & Parçalı İrsaliye', active: activeTab === 'shipping', subtitle: '1mo', dotColor: '#10B981' },
+    { id: 'reports', label: 'Raporlar ve Analitik', active: activeTab === 'reports', subtitle: '3mo', dotColor: '#64748B' },
+    { id: 'users', label: 'Kullanıcı Yönetimi', active: activeTab === 'users', subtitle: '3mo', dotColor: '#64748B' }
+  ];
 
   return (
-    <aside className={`sidebar-panel ${expanded ? 'expanded' : ''}`}>
-      {/* Brand Header */}
+    <aside style={{
+      width: '250px',
+      minWidth: '250px',
+      backgroundColor: '#F4F5F7',
+      borderRight: '1px solid #E2E8F0',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      userSelect: 'none',
+      fontSize: '12px',
+      color: '#4A5568',
+      zIndex: 30
+    }}>
+      {/* Top New Button */}
+      <div style={{ padding: '12px 14px 8px 14px' }}>
+        <button
+          onClick={onUploadClick}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '7px 12px',
+            backgroundColor: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            borderRadius: '16px',
+            fontSize: '12px',
+            fontWeight: 500,
+            color: '#2D3748',
+            cursor: 'pointer',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.04)',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Plus size={14} style={{ color: '#4A5568' }} />
+          <span>New Conversation</span>
+        </button>
+      </div>
+
+      {/* Primary Links */}
+      <div style={{ padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+        <div 
+          onClick={() => setActiveTab('orders')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '5px 8px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            color: activeTab === 'orders' ? '#1A202C' : '#4A5568',
+            backgroundColor: activeTab === 'orders' ? '#E2E8F0' : 'transparent',
+            fontWeight: activeTab === 'orders' ? 500 : 400
+          }}
+        >
+          <Clock size={13} style={{ color: '#718096' }} />
+          <span>Conversation History</span>
+        </div>
+
+        <div 
+          onClick={() => setActiveTab('reports')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '5px 8px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            color: activeTab === 'reports' ? '#1A202C' : '#4A5568',
+            backgroundColor: activeTab === 'reports' ? '#E2E8F0' : 'transparent',
+            fontWeight: activeTab === 'reports' ? 500 : 400
+          }}
+        >
+          <Calendar size={13} style={{ color: '#718096' }} />
+          <span>Scheduled Tasks</span>
+        </div>
+      </div>
+
+      {/* Projects Section Header */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '0.75rem',
-        padding: '0.75rem 1rem',
-        width: '100%',
-        marginBottom: '1rem',
-        borderBottom: '1px solid var(--border-color)'
+        justifyContent: 'space-between',
+        padding: '12px 12px 4px 12px',
+        fontSize: '11px',
+        color: '#A0AEC0',
+        fontWeight: 500
       }}>
-        <div style={{
-          width: '40px',
-          height: '40px',
-          borderRadius: '10px',
-          background: 'linear-gradient(135deg, #00E5FF 0%, #0066FF 100%)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontWeight: 800,
-          color: '#000',
-          fontSize: '1.2rem',
-          boxShadow: '0 0 15px rgba(0,229,255,0.4)',
-          flexShrink: 0
-        }}>
-          S
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span>Projects</span>
+          <ChevronDown size={11} style={{ cursor: 'pointer' }} />
         </div>
-        {expanded && (
-          <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
-            <div style={{ fontWeight: 700, fontSize: '1.05rem', color: '#fff' }}>SİES ELEKTRİK</div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--primary)', letterSpacing: '0.05em' }}>AKILLI SİPARİŞ TAKİP</div>
-          </div>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <SlidersHorizontal size={11} style={{ cursor: 'pointer' }} />
+          <Plus size={11} style={{ cursor: 'pointer' }} />
+        </div>
       </div>
 
-      {/* Nav Menu */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', width: '100%', padding: '0 0.5rem', flex: 1 }}>
-        {menuItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => handleItemClick(item.id)}
-              title={item.label}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.85rem',
-                padding: '0.7rem 0.85rem',
-                borderRadius: '8px',
-                border: item.highlight ? '1px solid var(--primary)' : '1px solid transparent',
-                background: item.highlight 
-                  ? 'linear-gradient(90deg, rgba(0,229,255,0.2) 0%, rgba(0,136,255,0.1) 100%)' 
-                  : (isActive ? 'rgba(255, 255, 255, 0.1)' : 'transparent'),
-                color: isActive || item.highlight ? 'var(--primary)' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                width: '100%',
-                textAlign: 'left'
-              }}
-            >
-              <Icon size={20} style={{ flexShrink: 0 }} />
-              {expanded && (
-                <span style={{ fontSize: '0.85rem', fontWeight: isActive ? 600 : 400, whiteSpace: 'nowrap' }}>
-                  {item.label}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* User Info & Toggle */}
+      {/* Conversations / Modüller Header */}
       <div style={{
-        width: '100%',
-        padding: '0.75rem 0.5rem',
-        borderTop: '1px solid var(--border-color)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 12px 4px 12px',
+        fontSize: '11px',
+        color: '#A0AEC0',
+        fontWeight: 500
+      }}>
+        <span>Conversations</span>
+        <Plus size={11} style={{ cursor: 'pointer' }} />
+      </div>
+
+      {/* Projects / Modules Nav List */}
+      <div style={{
+        flex: 1,
+        overflowY: 'auto',
+        padding: '2px 8px',
         display: 'flex',
         flexDirection: 'column',
-        gap: '0.5rem'
+        gap: '2px'
       }}>
-        {expanded && user && (
-          <div style={{
-            background: 'rgba(255, 255, 255, 0.04)',
-            padding: '0.5rem',
-            borderRadius: '6px',
-            fontSize: '0.75rem'
-          }}>
-            <div style={{ fontWeight: 600, color: '#fff' }}>{user.name}</div>
-            <div style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-              <ShieldAlert size={12} color="var(--primary)" /> {user.role === 'ADMIN' ? 'Yönetici' : 'Standart Kullanıcı'}
-            </div>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '0.25rem' }}>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            title={expanded ? 'Menüyü Daralt' : 'Menüyü Genişlet'}
+        {projectsList.map((item) => (
+          <div
+            key={item.id}
+            onClick={() => setActiveTab(item.id)}
             style={{
-              flex: 1,
-              padding: '0.5rem',
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: 'none',
-              borderRadius: '6px',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'space-between',
+              padding: '6px 8px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              backgroundColor: item.active ? '#E2E8F0' : 'transparent',
+              color: item.active ? '#1A202C' : '#4A5568',
+              fontWeight: item.active ? 600 : 400,
+              fontSize: '11.5px',
+              transition: 'background-color 0.15s ease'
             }}
           >
-            {expanded ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
-          </button>
-          
+            <span style={{
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '170px'
+            }}>
+              {item.label}
+            </span>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {item.subtitle && (
+                <span style={{ fontSize: '10px', color: '#A0AEC0' }}>{item.subtitle}</span>
+              )}
+              {item.dotColor && (
+                <span style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: item.dotColor,
+                  flexShrink: 0
+                }} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bottom Settings & User Footer */}
+      <div style={{
+        padding: '10px 12px',
+        borderTop: '1px solid #E2E8F0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        fontSize: '11.5px'
+      }}>
+        <div 
+          onClick={() => setActiveTab('settings')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            cursor: 'pointer',
+            color: '#4A5568'
+          }}
+        >
+          <Settings size={13} style={{ color: '#718096' }} />
+          <span>Settings</span>
+        </div>
+
+        {user && (
           <button
             onClick={logout}
             title="Oturumu Kapat"
             style={{
-              padding: '0.5rem',
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              borderRadius: '6px',
-              color: '#F87171',
+              background: 'transparent',
+              border: 'none',
+              color: '#A0AEC0',
               cursor: 'pointer',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
+              alignItems: 'center'
             }}
           >
-            <LogOut size={18} />
+            <LogOut size={13} />
           </button>
-        </div>
+        )}
       </div>
     </aside>
   );
