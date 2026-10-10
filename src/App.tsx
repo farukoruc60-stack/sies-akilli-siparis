@@ -4,7 +4,6 @@ import { TopBar } from './components/TopBar';
 import { Sidebar } from './components/Sidebar';
 import { OrderListPanel } from './components/OrderListPanel';
 import { OrderDetailPanel } from './components/OrderDetailPanel';
-import { BottomDock } from './components/BottomDock';
 import { VerificationModal } from './components/VerificationModal';
 import { LoginModal } from './components/LoginModal';
 import { DashboardView } from './pages/DashboardView';
@@ -237,7 +236,7 @@ export default function App() {
         style={{ display: 'none' }}
       />
 
-      {/* 1:1 Antigravity Top Header Menu Bar */}
+      {/* SİES Corporate Top Header */}
       <TopBar 
         title="Akıllı Sipariş Takip Platformu"
         onRefresh={() => fetchOrders()}
@@ -246,7 +245,7 @@ export default function App() {
 
       {/* Main Workspace Body */}
       <div className="workspace-body">
-        {/* Antigravity Style Left Sidebar */}
+        {/* Antigravity Style Clean Left Sidebar */}
         <Sidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -302,13 +301,6 @@ export default function App() {
           </div>
         )}
       </div>
-
-      {/* 1:1 Antigravity Floating Command Input Dock */}
-      <BottomDock 
-        onSearchOrExecute={(q) => setSearchQuery(q)}
-        onNewOrder={handleUploadClick}
-        activeTaskCount={1}
-      />
 
       {/* Verification Modal for Newly Uploaded Documents */}
       {verificationModalOpen && verificationData && (
