@@ -208,6 +208,9 @@ table.custom-table tr:hover td {
 .mobile-show-inline {
   display: none !important;
 }
+.mobile-show-block {
+  display: none !important;
+}
 .mobile-company-title {
   display: none !important;
 }
@@ -223,11 +226,28 @@ table.custom-table tr:hover td {
   .mobile-show-inline {
     display: flex !important;
   }
+  .mobile-show-block {
+    display: block !important;
+  }
   .mobile-company-title {
     display: inline-block !important;
   }
   .desktop-company-title {
     display: none !important;
+  }
+
+  .order-header-row {
+    flex-direction: column !important;
+    gap: 0.6rem !important;
+  }
+
+  .order-header-actions {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .order-header-actions .btn-whatsapp {
+    flex: 1 !important;
   }
 
   .app-layout {

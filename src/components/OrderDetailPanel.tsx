@@ -509,13 +509,39 @@ ${itemsSummary}${moreText}
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return 'Belirtilmedi';
-    if (typeof dateStr === 'string' && dateStr.includes('.')) return dateStr;
+    
+    let cleanStr = String(dateStr).trim();
+    if (cleanStr.includes('T')) {
+      cleanStr = cleanStr.split('T')[0];
+    }
+    
+    const isoMatch = cleanStr.match(/^(\d{4})[\.\/\-](\d{1,2})[\.\/\-](\d{1,2})$/);
+    if (isoMatch) {
+      const year = isoMatch[1];
+      const month = isoMatch[2].padStart(2, '0');
+      const day = isoMatch[3].padStart(2, '0');
+      return `${day}.${month}.${year}`;
+    }
+
+    const trMatch = cleanStr.match(/^(\d{1,2})[\.\/\-](\d{1,2})[\.\/\-](\d{4})$/);
+    if (trMatch) {
+      const day = trMatch[1].padStart(2, '0');
+      const month = trMatch[2].padStart(2, '0');
+      const year = trMatch[3];
+      return `${day}.${month}.${year}`;
+    }
+
     try {
       const d = new Date(dateStr);
-      return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('tr-TR');
-    } catch (e) {
-      return dateStr;
-    }
+      if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0');
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const year = d.getFullYear();
+        return `${day}.${month}.${year}`;
+      }
+    } catch (e) {}
+
+    return String(dateStr);
   };
 
 
@@ -546,33 +572,53 @@ ${itemsSummary}${moreText}
 
   return (
     <div className="detail-panel">
+      {/* Mobile Sticky Back Bar */}
+      {onBackToList && (
+        <div className="mobile-show-block" style={{ padding: '8px 12px', background: '#3B82F6', borderBottom: '1px solid #2563EB' }}>
+          <button 
+            onClick={onBackToList} 
+            style={{ 
+              width: '100%', 
+              background: '#FFFFFF', 
+              color: '#1E40AF', 
+              border: 'none', 
+              borderRadius: '8px', 
+              padding: '8px 12px', 
+              fontWeight: 700, 
+              fontSize: '13px', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              gap: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            <ArrowLeft size={18} /> Sipariş Listesine Dön
+          </button>
+        </div>
+      )}
+
       {/* Header Info Banner */}
-      <div style={{ padding: '1.25rem 1.5rem', background: '#FFFFFF', borderBottom: '1px solid var(--border-color)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>{order.customer_name}</h1>
-              <span className="badge badge-approved" style={{ fontSize: '0.8rem' }}>
-                <ShieldCheck size={14} /> SİP NO: {order.order_no}
+      <div className="order-detail-header" style={{ padding: '1rem 1.25rem', background: '#FFFFFF', borderBottom: '1px solid var(--border-color)' }}>
+        <div className="order-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+          <div style={{ flex: 1, minWidth: '260px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{order.customer_name}</h1>
+              <span className="badge badge-approved" style={{ fontSize: '0.75rem' }}>
+                <ShieldCheck size={13} /> SİP NO: {order.order_no}
               </span>
-              <span style={{ fontSize: '0.75rem', background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#0369A1', fontWeight: 600 }}>
-                Versiyon v{order.version} (Optimistic Locking Aktif)
+              <span style={{ fontSize: '0.7rem', background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.15rem 0.4rem', borderRadius: '4px', color: '#0369A1', fontWeight: 600 }}>
+                Versiyon v{order.version} (Optimistic Locking)
               </span>
             </div>
             {order.customer_tax_number && (
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Building2 size={14} /> Vergi No: {order.customer_tax_number} | Müşteri Sipariş Ref: <strong>{order.customer_order_no || '-'}</strong>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <Building2 size={13} /> Vergi No: {order.customer_tax_number} | Müşteri Sipariş Ref: <strong>{order.customer_order_no || '-'}</strong>
               </div>
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            {onBackToList && (
-              <button onClick={onBackToList} className="btn btn-secondary" title="Sipariş Havuzuna Dön">
-                <ArrowLeft size={16} /> <span>Sipariş Listesi</span>
-              </button>
-            )}
-
+          <div className="order-header-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <button onClick={handleOpenWhatsAppModal} className="btn btn-whatsapp" title="Siparişi WhatsApp İle Gönder / Paylaş">
               <MessageSquare size={16} /> <span>WhatsApp'tan Gönder</span>
             </button>
@@ -580,9 +626,10 @@ ${itemsSummary}${moreText}
             <button onClick={onRefresh} className="btn btn-secondary" title="Siparişi Yenile">
               <RefreshCw size={16} />
             </button>
+
             {isEditing ? (
               <button onClick={handleSaveEdit} disabled={saving} className="btn btn-primary">
-                <Save size={16} /> {saving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+                <Save size={16} /> {saving ? 'Kaydediliyor...' : 'Kaydet'}
               </button>
             ) : (
               <button onClick={handleStartEdit} className="btn btn-secondary">
