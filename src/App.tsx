@@ -174,8 +174,24 @@ export default function App() {
     }
   };
 
+  // Sidebar Collapse State
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem('sies_sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebarCollapse = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('sies_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
   // Update Order with Optimistic Locking
-  const handleUpdateOrder = async (updatedItems: OrderItem[]) => {
+  const handleUpdateOrder = async (
+    updatedItems: OrderItem[],
+    updatedFields?: { customerOrderNo?: string; requestedDeliveryDate?: string }
+  ) => {
     if (!selectedOrder) return;
 
     const res = await fetch(`/api/orders/${selectedOrder.id}`, {
@@ -186,8 +202,8 @@ export default function App() {
       },
       body: JSON.stringify({
         version: selectedOrder.version,
-        customerOrderNo: selectedOrder.customer_order_no,
-        requestedDeliveryDate: selectedOrder.requested_delivery_date,
+        customerOrderNo: updatedFields?.customerOrderNo !== undefined ? updatedFields.customerOrderNo : selectedOrder.customer_order_no,
+        requestedDeliveryDate: updatedFields?.requestedDeliveryDate !== undefined ? updatedFields.requestedDeliveryDate : selectedOrder.requested_delivery_date,
         items: updatedItems
       })
     });
@@ -250,6 +266,8 @@ export default function App() {
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onUploadClick={handleUploadClick}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapse}
         />
 
         {/* Content Tabs */}

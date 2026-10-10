@@ -36,7 +36,10 @@ interface OrderDetailPanelProps {
   history: OrderStatusHistory[];
   dispatches?: DispatchRecord[];
   onRefresh: () => void;
-  onUpdateOrder: (updatedItems: OrderItem[]) => Promise<void>;
+  onUpdateOrder: (
+    updatedItems: OrderItem[],
+    updatedFields?: { customerOrderNo?: string; requestedDeliveryDate?: string }
+  ) => Promise<void>;
   onStatusChange: (newStatus: string, notes: string) => Promise<void>;
 }
 
@@ -53,6 +56,8 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'summary' | 'items' | 'documents' | 'production' | 'shipping' | 'history'>('summary');
   const [editingItems, setEditingItems] = useState<OrderItem[]>([]);
   const [isEditing, setIsEditing] = useState(false);
+  const [editCustomerOrderNo, setEditCustomerOrderNo] = useState('');
+  const [editRequestedDeliveryDate, setEditRequestedDeliveryDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [statusNote, setStatusNote] = useState('');
   const [conflictError, setConflictError] = useState<string | null>(null);
@@ -227,15 +232,21 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
 
   const handleStartEdit = () => {
     setEditingItems(JSON.parse(JSON.stringify(items)));
+    setEditCustomerOrderNo(order.customer_order_no || '');
+    setEditRequestedDeliveryDate(order.requested_delivery_date || '');
     setIsEditing(true);
     setConflictError(null);
+    setActiveTab('items');
   };
 
   const handleSaveEdit = async () => {
     setSaving(true);
     setConflictError(null);
     try {
-      await onUpdateOrder(editingItems);
+      await onUpdateOrder(editingItems, {
+        customerOrderNo: editCustomerOrderNo,
+        requestedDeliveryDate: editRequestedDeliveryDate
+      });
       setIsEditing(false);
     } catch (err: any) {
       setConflictError(err.message || 'Güncelleme hatası oluştu!');
@@ -516,31 +527,74 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
           </div>
         </div>
 
+        {isEditing && (
+          <div style={{ background: '#EFF6FF', border: '1px solid #93C5FD', color: '#1E40AF', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.88rem', fontWeight: 600 }}>
+              <Edit3 size={18} color="#2563EB" />
+              <span>✏️ SİPARİŞ DÜZENLEME MODU AKTİF — Müşteri Sipariş Ref, Teslim Tarihi ve aşağıdaki Kalem Detaylarını değiştirebilirsiniz.</span>
+            </div>
+            <button onClick={() => setIsEditing(false)} className="btn btn-secondary" style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}>
+              İptal Et
+            </button>
+          </div>
+        )}
+
         {conflictError && (
           <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '0.75rem 1rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <AlertTriangle size={18} /> {conflictError}
           </div>
         )}
 
-        {/* Quick Meta Stats Bar */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>SİPARİŞ TARİHİ</span>
-            <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.order_date)}</strong>
+        {/* Quick Meta Stats / Edit Controls Bar */}
+        {isEditing ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem', background: '#F8FAFC', padding: '0.85rem', borderRadius: '8px', border: '1px solid #CBD5E1' }}>
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Müşteri Sipariş Ref / No:</label>
+              <input
+                type="text"
+                value={editCustomerOrderNo}
+                onChange={(e) => setEditCustomerOrderNo(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid #94A3B8', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', background: '#FFFFFF' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>İstenen Teslim Tarihi:</label>
+              <input
+                type="date"
+                value={editRequestedDeliveryDate}
+                onChange={(e) => setEditRequestedDeliveryDate(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid #94A3B8', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', background: '#FFFFFF' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Sipariş Tutarı:</label>
+              <div style={{ padding: '0.4rem 0.6rem', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 700, color: 'var(--primary)' }}>
+                {(isEditing ? editingItems : items).length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)
+              </div>
+            </div>
           </div>
-          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TESLİM TARİHİ</span>
-            <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.requested_delivery_date)}</strong>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>SİPARİŞ TARİHİ</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.order_date)}</strong>
+            </div>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TESLİM TARİHİ</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.requested_delivery_date)}</strong>
+            </div>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TOPLAM KALEM / TUTAR</span>
+              <strong style={{ color: 'var(--primary)' }}>{(items || []).length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)</strong>
+            </div>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>OLUŞTURAN</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{order.creator_name || 'Sistem'}</strong>
+            </div>
           </div>
-          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TOPLAM KALEM / TUTAR</span>
-            <strong style={{ color: 'var(--primary)' }}>{(items || []).length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)</strong>
-          </div>
-          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-            <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>OLUŞTURAN</span>
-            <strong style={{ color: 'var(--text-primary)' }}>{order.creator_name || 'Sistem'}</strong>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Tabs Bar */}
