@@ -88,10 +88,25 @@ export const ArchiveView: React.FC = () => {
         ) : (
           <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', color: '#B45309', padding: '1rem', borderRadius: '8px', fontSize: '0.85rem' }}>
             <AlertTriangle size={18} style={{ verticalAlign: 'middle', marginRight: '0.5rem' }} />
-            Yandex Disk OAuth2 Token henüz `.env` dosyasında tanımlanmadı. Yerel belge arşivleme sorunsuz çalışmaya devam etmektedir. Token eklendiğinde arka plan senkronizasyonu otomatik başlayacaktır.
+            Yandex Disk OAuth2 Token henüz `.env` dosyasındaki <code>YANDEX_DISK_TOKEN=</code> kısmına eklenmedi. Yerel arşivleme aktif çalışmaktadır.
           </div>
         )}
       </div>
+
+      {/* Step by Step Yandex Disk Setup Guide Card */}
+      {!status?.connected && (
+        <div style={{ background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: '12px', padding: '1.25rem', marginBottom: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0369A1', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <ShieldCheck size={18} color="#0284C7" /> Yandex Disk Bulut Entegrasyonu 1 Dakikada Nasıl Aktif Edilir?
+          </h4>
+          <ol style={{ fontSize: '0.85rem', color: '#1E293B', paddingLeft: '1.25rem', lineHeight: 1.7, margin: 0 }}>
+            <li><strong>https://oauth.yandex.com</strong> adresine gidip Yandex hesabınızla giriş yapın.</li>
+            <li><strong>cloud_api:disk.read</strong> ve <strong>cloud_api:disk.write</strong> okuma/yazma izinlerini işaretleyip Yetki Jetonu (OAuth Token) oluşturun.</li>
+            <li>Sunucu dizinindeki <code>.env</code> dosyanızda <code>YANDEX_DISK_TOKEN=y0_AgAAAA...</code> satırına jetonu yapıştırıp dosyayı kaydedin.</li>
+            <li>Sisteme yüklenen tüm sipariş belgeleri anında otomatik olarak Yandex Disk bulut hesabınızın <code>/AkilliSiparisTakip</code> klasörüne yedeklenir.</li>
+          </ol>
+        </div>
+      )}
 
       {/* Recommended Folder Tree Structure */}
       <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
