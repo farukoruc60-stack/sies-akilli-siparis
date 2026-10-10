@@ -70,24 +70,15 @@ export const LoginModal: React.FC = () => {
       }}>
         {/* Logo Brand */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
-          <div style={{
-            width: '48px',
-            height: '48px',
-            borderRadius: '14px',
-            background: 'linear-gradient(135deg, #4361EE 0%, #3B82F6 100%)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 800,
-            fontSize: '1.5rem',
-            color: '#FFFFFF',
-            boxShadow: '0 4px 12px rgba(67, 97, 238, 0.3)',
-            marginBottom: '0.75rem'
-          }}>
-            ▲
-          </div>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1A202C' }}>SİES ELEKTRİK</h2>
-          <p style={{ fontSize: '0.8rem', color: '#4361EE', letterSpacing: '0.04em', fontWeight: 600, marginTop: '2px' }}>
+          <img 
+            src="/sies-logo.jpg" 
+            alt="SİES Logo" 
+            style={{ height: '54px', objectFit: 'contain', marginBottom: '0.75rem', borderRadius: '6px' }} 
+          />
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1A202C' }}>
+            SİES ELEKTRİK MÜMESSİLLİK SAN. VE TİC. LTD. ŞTİ.
+          </h2>
+          <p style={{ fontSize: '0.8rem', color: '#4361EE', letterSpacing: '0.04em', fontWeight: 600, marginTop: '4px' }}>
             AKILLI SİPARİŞ TAKİP PLATFORMU
           </p>
         </div>

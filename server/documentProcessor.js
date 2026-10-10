@@ -6,9 +6,26 @@ import xlsxModule from 'xlsx';
 const xlsx = xlsxModule.default || xlsxModule;
 import mammoth from 'mammoth';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 const require = createRequire(import.meta.url);
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 import createTesseractWorker from 'tesseract.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const logoPath = path.join(__dirname, 'assets/sies-logo.jpg');
+
+async function loadLogoImage(pdfDoc) {
+  if (fs.existsSync(logoPath)) {
+    try {
+      const logoBytes = fs.readFileSync(logoPath);
+      return await pdfDoc.embedJpg(logoBytes);
+    } catch (e) {
+      console.warn('Logo embed hatasi:', e.message);
+    }
+  }
+  return null;
+}
 
 export function calculateSHA256(filePath) {
   const fileBuffer = fs.readFileSync(filePath);
@@ -685,24 +702,40 @@ async function generatePdfFromText(text, outputPath, title) {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([595.28, 841.89]);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
+  const logoImg = await loadLogoImage(pdfDoc);
+
+  if (logoImg) {
+    page.drawImage(logoImg, {
+      x: 40,
+      y: 775,
+      width: 75,
+      height: 38
+    });
+  }
+
+  const titleX = logoImg ? 125 : 40;
   const cleanTitle = sanitizeForPdf(title);
-  page.drawText(`SIES DIJITAL SIPARIS BELGESI: ${cleanTitle}`, {
-    x: 40,
-    y: 800,
-    size: 14,
-    color: rgb(0.08, 0.45, 0.75)
+
+  page.drawText(sanitizeForPdf('SIES ELEKTRIK MUMESSILLIK SAN. VE TIC. LTD. STI.'), {
+    x: titleX,
+    y: 802,
+    size: 10,
+    font: boldFont,
+    color: rgb(0.08, 0.25, 0.5)
   });
 
-  page.drawText(`Olusturulma Tarihi: ${new Date().toISOString()}`, {
-    x: 40,
-    y: 775,
-    size: 9,
+  page.drawText(`BELGE: ${cleanTitle}`, {
+    x: titleX,
+    y: 785,
+    size: 8.5,
+    font: font,
     color: rgb(0.4, 0.4, 0.4)
   });
 
   const lines = text.split('\n').slice(0, 35);
-  let y = 730;
+  let y = 740;
   for (const line of lines) {
     const cleanLine = sanitizeForPdf(line);
     page.drawText(cleanLine.slice(0, 80), {
@@ -731,28 +764,40 @@ async function generatePdfFromExcel(jsonData, outputPath, title) {
   const tableWidth = pageWidth - margin * 2;
   
   let page = pdfDoc.addPage([pageWidth, pageHeight]);
+  const logoImg = await loadLogoImage(pdfDoc);
 
   // Header Banner
   page.drawRectangle({
     x: margin,
-    y: pageHeight - 48,
+    y: pageHeight - 52,
     width: tableWidth,
-    height: 32,
-    color: rgb(0.08, 0.45, 0.75)
+    height: 38,
+    color: rgb(0.08, 0.25, 0.5)
   });
 
-  page.drawText(sanitizeForPdf('SIES DIJITAL BELGE SISTEMI - EXCEL CANLI BELGE GORUNTULEME'), {
-    x: margin + 12,
-    y: pageHeight - 34,
-    size: 10,
+  if (logoImg) {
+    page.drawImage(logoImg, {
+      x: margin + 6,
+      y: pageHeight - 48,
+      width: 65,
+      height: 30
+    });
+  }
+
+  const titleX = logoImg ? margin + 78 : margin + 12;
+
+  page.drawText(sanitizeForPdf('SIES ELEKTRIK MUMESSILLIK SAN. VE TIC. LTD. STI. - CANLI SIPARIS GORUNTULEME'), {
+    x: titleX,
+    y: pageHeight - 32,
+    size: 9.5,
     font: boldFont,
     color: rgb(1, 1, 1)
   });
 
   const cleanTitle = sanitizeForPdf(title);
   page.drawText(cleanTitle.slice(0, 80), {
-    x: margin + 12,
-    y: pageHeight - 44,
+    x: titleX,
+    y: pageHeight - 45,
     size: 7.5,
     font: font,
     color: rgb(0.9, 0.95, 1)
@@ -902,48 +947,63 @@ export async function generateProductionFormPdf(order, items, outputPath, formNo
   const margin = 35;
   const contentWidth = pageWidth - margin * 2;
 
-  // 1. Header Banner
+  const logoImg = await loadLogoImage(pdfDoc);
+
+  // 1. Header Card with Embedded Logo & Official Full Company Name
   page.drawRectangle({
     x: margin,
-    y: pageHeight - 75,
+    y: pageHeight - 85,
     width: contentWidth,
-    height: 45,
+    height: 55,
+    color: rgb(0.98, 0.99, 1.0),
+    borderColor: rgb(0.08, 0.25, 0.5),
+    borderWidth: 1.5
+  });
+
+  if (logoImg) {
+    page.drawImage(logoImg, {
+      x: margin + 8,
+      y: pageHeight - 80,
+      width: 92,
+      height: 45
+    });
+  }
+
+  const titleX = logoImg ? margin + 110 : margin + 12;
+
+  page.drawText(sanitizeForPdf('SIES ELEKTRIK MUMESSILLIK SAN. VE TIC. LTD. STI.'), {
+    x: titleX,
+    y: pageHeight - 46,
+    size: 9.5,
+    font: boldFont,
     color: rgb(0.08, 0.25, 0.5)
   });
 
-  page.drawText(sanitizeForPdf('SIES ELEKTRIK & METAL A.S.'), {
-    x: margin + 12,
-    y: pageHeight - 48,
-    size: 14,
-    font: boldFont,
-    color: rgb(1, 1, 1)
-  });
-
   page.drawText(sanitizeForPdf('RESMI URETIM IS EMRI FORMU'), {
-    x: margin + 12,
-    y: pageHeight - 65,
-    size: 10,
-    font: font,
-    color: rgb(0.8, 0.9, 1)
+    x: titleX,
+    y: pageHeight - 68,
+    size: 11,
+    font: boldFont,
+    color: rgb(0.85, 0.45, 0.0)
   });
 
   const formDate = new Date().toLocaleDateString('tr-TR');
   const formCode = `FORM-URETIM-${order.order_no || 'SO'}`;
 
   page.drawText(sanitizeForPdf(`Tarih: ${formDate}`), {
-    x: pageWidth - margin - 140,
-    y: pageHeight - 48,
-    size: 9,
+    x: pageWidth - margin - 135,
+    y: pageHeight - 46,
+    size: 8.5,
     font: boldFont,
-    color: rgb(1, 1, 1)
+    color: rgb(0.15, 0.15, 0.15)
   });
 
   page.drawText(sanitizeForPdf(`Form No: ${formCode}`), {
-    x: pageWidth - margin - 140,
-    y: pageHeight - 65,
+    x: pageWidth - margin - 135,
+    y: pageHeight - 68,
     size: 8,
     font: font,
-    color: rgb(0.8, 0.9, 1)
+    color: rgb(0.4, 0.4, 0.4)
   });
 
   // 2. Order & Customer Info Card

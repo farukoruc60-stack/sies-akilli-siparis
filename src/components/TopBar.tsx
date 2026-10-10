@@ -31,32 +31,20 @@ export const TopBar: React.FC<TopBarProps> = ({
     }}>
       {/* Left Brand & Title */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          <div style={{
-            width: '24px',
-            height: '24px',
-            borderRadius: '6px',
-            background: 'linear-gradient(135deg, #4361EE 0%, #3B82F6 100%)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 800,
-            color: '#FFFFFF',
-            fontSize: '12px',
-            boxShadow: '0 1px 3px rgba(67,97,238,0.3)'
-          }}>
-            S
-          </div>
-          <span style={{ fontWeight: 700, color: '#1A202C', fontSize: '13px' }}>SİES ELEKTRİK</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <img 
+            src="/sies-logo.jpg" 
+            alt="SİES Logo" 
+            style={{ height: '26px', objectFit: 'contain', borderRadius: '4px' }} 
+          />
+          <span style={{ fontWeight: 700, color: '#1A202C', fontSize: '12.5px', whiteSpace: 'nowrap' }}>
+            SİES ELEKTRİK MÜMESSİLLİK SAN. VE TİC. LTD. ŞTİ.
+          </span>
         </div>
 
         <span style={{ color: '#CBD5E0' }}>|</span>
 
-        <span style={{ fontWeight: 500, color: '#4A5568', fontSize: '12.5px' }}>{title}</span>
+        <span style={{ fontWeight: 500, color: '#4A5568', fontSize: '12px' }}>{title}</span>
       </div>
 
       {/* Right User & System Status */}

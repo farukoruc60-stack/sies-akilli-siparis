@@ -70,6 +70,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onUpl
       color: '#4A5568',
       zIndex: 30
     }}>
+      {/* Brand Logo Header */}
+      <div style={{ padding: '12px 14px 8px 14px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: '10px', background: '#FFFFFF' }}>
+        <img src="/sies-logo.jpg" alt="SİES Logo" style={{ height: '34px', objectFit: 'contain', borderRadius: '4px' }} />
+        <div>
+          <div style={{ fontWeight: 800, color: '#1A202C', fontSize: '13px', lineHeight: 1.1 }}>SİES ELEKTRİK</div>
+          <div style={{ fontSize: '9.5px', color: '#718096', fontWeight: 600 }}>MÜMESSİLLİK LTD. ŞTİ.</div>
+        </div>
+      </div>
+
       {/* Top Primary Action Button: + Yeni Sipariş Yükle */}
       <div style={{ padding: '12px 14px 8px 14px' }}>
         <button
