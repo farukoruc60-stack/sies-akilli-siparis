@@ -9,7 +9,6 @@
     "server": "node server/server.js",
     "client": "vite",
     "build": "vite build",
-    "postinstall": "vite build",
     "lint": "eslint ."
   },
   "dependencies": {
