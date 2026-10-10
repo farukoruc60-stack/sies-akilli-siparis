@@ -381,7 +381,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
     }
   };
 
-  const totalOrderAmount = items.reduce((acc, it) => {
+  const totalOrderAmount = (items || []).reduce((acc, it) => {
     const qty = parseFloat(String(it.quantity)) || 0;
     const price = parseFloat(String(it.unitPrice ?? it.unit_price)) || 0;
     const total = parseFloat(String(it.lineTotal ?? it.line_total)) || (qty * price);
@@ -444,7 +444,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
           </div>
           <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TOPLAM KALEM / TUTAR</span>
-            <strong style={{ color: 'var(--primary)' }}>{items.length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)</strong>
+            <strong style={{ color: 'var(--primary)' }}>{(items || []).length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)</strong>
           </div>
           <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>OLUŞTURAN</span>
@@ -457,8 +457,8 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: '#FFFFFF', padding: '0 1rem' }}>
         {[
           { id: 'summary', label: '1. Sipariş Özeti', icon: FileText },
-          { id: 'items', label: `2. Sipariş Kalemleri (${items.length})`, icon: Layers },
-          { id: 'documents', label: `3. Orijinal Belgeler (${documents.length})`, icon: ExternalLink },
+          { id: 'items', label: `2. Sipariş Kalemleri (${(items || []).length})`, icon: Layers },
+          { id: 'documents', label: `3. Orijinal Belgeler (${(documents || []).length})`, icon: ExternalLink },
           { id: 'production', label: '4. Üretim & Kaplama', icon: Factory },
           { id: 'shipping', label: `5. Sevkiyat (${waybillGroups.length} İrsaliye)`, icon: Truck },
           { id: 'history', label: '6. İşlem Geçmişi', icon: History }
