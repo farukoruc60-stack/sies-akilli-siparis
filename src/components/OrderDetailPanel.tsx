@@ -83,6 +83,48 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
 
   const { token } = useAuth();
 
+  // Group dispatches by Waybill Number
+  const waybillGroups = React.useMemo(() => {
+    const map = new Map<string, {
+      waybill_number: string;
+      driver_name: string;
+      vehicle_plate: string;
+      notes?: string;
+      created_at: string;
+      creator_name?: string;
+      items: {
+        item_id: number;
+        code: string;
+        name: string;
+        quantity_shipped: number;
+      }[];
+    }>();
+
+    (dispatches || []).forEach(d => {
+      const key = d.waybill_number || `IRS-${d.id}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          waybill_number: d.waybill_number,
+          driver_name: d.driver_name,
+          vehicle_plate: d.vehicle_plate,
+          notes: d.notes,
+          created_at: d.created_at,
+          creator_name: d.creator_name,
+          items: []
+        });
+      }
+
+      map.get(key)!.items.push({
+        item_id: d.order_item_id,
+        code: d.customer_product_code || '-',
+        name: d.product_name || 'Ürün Kalemi',
+        quantity_shipped: d.quantity_shipped
+      });
+    });
+
+    return Array.from(map.values());
+  }, [dispatches]);
+
   if (!order) {
     return (
       <div className="detail-panel" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
@@ -322,47 +364,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
     }
   };
 
-  // Group dispatches by Waybill Number
-  const waybillGroups = React.useMemo(() => {
-    const map = new Map<string, {
-      waybill_number: string;
-      driver_name: string;
-      vehicle_plate: string;
-      notes?: string;
-      created_at: string;
-      creator_name?: string;
-      items: {
-        item_id: number;
-        code: string;
-        name: string;
-        quantity_shipped: number;
-      }[];
-    }>();
 
-    (dispatches || []).forEach(d => {
-      const key = d.waybill_number || `IRS-${d.id}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          waybill_number: d.waybill_number,
-          driver_name: d.driver_name,
-          vehicle_plate: d.vehicle_plate,
-          notes: d.notes,
-          created_at: d.created_at,
-          creator_name: d.creator_name,
-          items: []
-        });
-      }
-
-      map.get(key)!.items.push({
-        item_id: d.order_item_id,
-        code: d.customer_product_code || '-',
-        name: d.product_name || 'Ürün Kalemi',
-        quantity_shipped: d.quantity_shipped
-      });
-    });
-
-    return Array.from(map.values());
-  }, [dispatches]);
 
   const getItemStatusBadge = (st?: string) => {
     switch (st) {
