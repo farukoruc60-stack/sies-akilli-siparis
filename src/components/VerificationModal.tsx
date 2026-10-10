@@ -91,6 +91,20 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
 
   const totalAmount = orderItems.reduce((acc, it) => acc + (it.lineTotal || 0), 0);
 
+  const formatDateToISO = (dStr?: string) => {
+    if (!dStr) return '';
+    const trimmed = dStr.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+    const match = trimmed.match(/^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{4})$/);
+    if (match) {
+      const day = match[1].padStart(2, '0');
+      const month = match[2].padStart(2, '0');
+      const year = match[3];
+      return `${year}-${month}-${day}`;
+    }
+    return trimmed;
+  };
+
   return (
     <div className="modal-overlay">
       <div className="modal-content">
@@ -165,7 +179,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                   <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>Sipariş Tarihi</label>
                   <input
                     type="date"
-                    value={customerInfo.orderDate || ''}
+                    value={formatDateToISO(customerInfo.orderDate)}
                     onChange={(e) => handleCustomerChange('orderDate', e.target.value)}
                     style={{ width: '100%', padding: '0.4rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A' }}
                   />

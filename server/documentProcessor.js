@@ -255,9 +255,14 @@ function parseTextContent(rawText, originalName = '') {
 
     // Order Date detection
     if (!customerInfo.orderDate || customerInfo.orderDate === new Date().toISOString().split('T')[0]) {
-      const dateMatch = line.match(/(?:Sipariş Tarihi|Sip\. Tarihi|Tarih)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
+      const dateMatch = line.match(/(?:Sip\.?\s*Tarihi|Siparis\s*Tarihi|Tarih)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
       if (dateMatch) {
-        customerInfo.orderDate = dateMatch[1];
+        const parts = dateMatch[1].split(/[\.\/\-]/);
+        if (parts.length === 3) {
+          customerInfo.orderDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        } else {
+          customerInfo.orderDate = dateMatch[1];
+        }
       }
     }
 
@@ -317,24 +322,29 @@ function parseTextContent(rawText, originalName = '') {
     }
 
     // Pattern 0: Universal Table Row Match (SıraNo? Code Desc Qty Unit Price? Total?)
-    const universalRowMatch = rawLine.match(/^(\d{1,3}\s+)?(SG[\s\-][0-9A-Z\-]+|Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|KALEM[\-\s]\d+|[A-Z0-9\-\.]{2,25})\s+(.*?)\s+(\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)\s*(\d+(?:[\.\,]\d+)?)?\s*(\d+(?:[\.\,]\d+)?)?/i);
+    const universalRowMatch = rawLine.match(/^(\d{1,3}\s+)?([0-9]{5,12}|[A-Z0-9]{2,10}\-[A-Z0-9\-]{2,15}|SG[\s\-][0-9A-Z\-]+|Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|KALEM[\-\s]\d+|[A-Z0-9\-\.]{2,25})\s+(.*?)\s+(\d{1,3}(?:\.\d{3})*(?:\,\d+)?|\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)(?:\s+(.*?))?$/i);
 
     if (universalRowMatch) {
       const code = universalRowMatch[2].trim();
       const desc = universalRowMatch[3]?.trim() || code;
-      const qty = parseFloat(universalRowMatch[4].replace(',', '.')) || 1;
+      const qtyStr = universalRowMatch[4].replace(/\./g, '').replace(',', '.');
+      const qty = parseFloat(qtyStr) || 1;
       const unitRaw = universalRowMatch[5].toUpperCase();
       const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
       
       let unitPrice = 0;
-      if (universalRowMatch[6]) {
-        unitPrice = parseFloat(universalRowMatch[6].replace(',', '.')) || 0;
-      }
-      
-      let lineTotal = qty * unitPrice;
-      if (universalRowMatch[7]) {
-        const parsedTotal = parseFloat(universalRowMatch[7].replace(',', '.'));
-        if (!isNaN(parsedTotal) && parsedTotal > 0) lineTotal = parsedTotal;
+      let lineTotal = 0;
+
+      const rest = universalRowMatch[6] ? universalRowMatch[6].trim() : '';
+      if (rest) {
+        const numbers = rest.match(/(\d{1,3}(?:\.\d{3})*(?:\,\d+)?|\d+(?:[\.\,]\d+)?)/g);
+        if (numbers && numbers.length >= 2) {
+          unitPrice = parseFloat(numbers[0].replace(/\./g, '').replace(',', '.')) || 0;
+          lineTotal = parseFloat(numbers[1].replace(/\./g, '').replace(',', '.')) || 0;
+        } else if (numbers && numbers.length === 1) {
+          unitPrice = parseFloat(numbers[0].replace(/\./g, '').replace(',', '.')) || 0;
+          lineTotal = qty * unitPrice;
+        }
       }
 
       orderItems.push({
@@ -347,7 +357,7 @@ function parseTextContent(rawText, originalName = '') {
         unit: unit,
         unitPrice: unitPrice,
         currency: 'TRY',
-        lineTotal: lineTotal,
+        lineTotal: lineTotal || (qty * unitPrice),
         confidenceScore: 0.99,
         status: 'OK'
       });
