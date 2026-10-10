@@ -268,14 +268,17 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     const { customerInfo, orderItems, documentId } = req.body;
 
     // 1. Customer Check or Create
+    const cName = (customerInfo.companyName || customerInfo.name || 'Bilinmeyen Müşteri').trim();
+    const cTax = (customerInfo.taxNo || customerInfo.taxNumber || customerInfo.tax_number || '').trim();
+
     let customerId;
     let custRes;
-    if (customerInfo.taxNumber) {
-      custRes = await query('SELECT id FROM customers WHERE tax_number = ?', [customerInfo.taxNumber]);
+    if (cTax) {
+      custRes = await query('SELECT id FROM customers WHERE tax_number = ?', [cTax]);
     }
 
     if (!custRes || custRes.rows.length === 0) {
-      custRes = await query('SELECT id FROM customers WHERE LOWER(name) = ?', [customerInfo.name.toLowerCase().trim()]);
+      custRes = await query('SELECT id FROM customers WHERE LOWER(name) = ?', [cName.toLowerCase()]);
     }
 
     if (custRes && custRes.rows.length > 0) {
@@ -283,7 +286,7 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     } else {
       const newCust = await query(
         'INSERT INTO customers (name, tax_office, tax_number, address, phone, email) VALUES (?, ?, ?, ?, ?, ?)',
-        [customerInfo.name, customerInfo.taxOffice || '', customerInfo.taxNumber || '', customerInfo.address || '', customerInfo.phone || '', customerInfo.email || '']
+        [cName, customerInfo.taxOffice || customerInfo.tax_office || '', cTax, customerInfo.address || '', customerInfo.phone || '', customerInfo.email || '']
       );
       customerId = newCust.lastID || newCust.rows?.[0]?.id;
     }
