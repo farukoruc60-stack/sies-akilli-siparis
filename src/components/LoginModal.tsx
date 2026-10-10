@@ -49,15 +49,15 @@ export const LoginModal: React.FC = () => {
   };
 
   return (
-    <div className="modal-overlay" style={{ background: 'rgba(9, 13, 22, 0.92)' }}>
+    <div className="modal-overlay" style={{ background: 'rgba(15, 23, 42, 0.65)' }}>
       <div style={{
         width: '100%',
         maxWidth: '460px',
-        background: '#0E1524',
+        background: '#FFFFFF',
         border: '1px solid var(--border-color)',
         borderRadius: '14px',
         padding: '2rem',
-        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.7)'
+        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)'
       }}>
         {/* Logo Brand */}
         <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
@@ -65,29 +65,29 @@ export const LoginModal: React.FC = () => {
             width: '56px',
             height: '56px',
             borderRadius: '14px',
-            background: 'linear-gradient(135deg, #00E5FF 0%, #0066FF 100%)',
+            background: 'linear-gradient(135deg, #0284C7 0%, #2563EB 100%)',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontWeight: 800,
             fontSize: '1.8rem',
-            color: '#000',
-            boxShadow: '0 0 20px rgba(0,229,255,0.4)',
+            color: '#FFFFFF',
+            boxShadow: '0 4px 14px rgba(2,132,199,0.3)',
             marginBottom: '0.75rem'
           }}>
             S
           </div>
-          <h2 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#fff' }}>SİES ELEKTRİK</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--primary)', letterSpacing: '0.05em' }}>
+          <h2 style={{ fontSize: '1.3rem', fontWeight: 700, color: 'var(--text-primary)' }}>SİES ELEKTRİK</h2>
+          <p style={{ fontSize: '0.8rem', color: 'var(--primary)', letterSpacing: '0.05em', fontWeight: 600 }}>
             AKILLI SİPARİŞ TAKİP PLATFORMU
           </p>
         </div>
 
         {error && (
           <div style={{
-            background: 'rgba(239, 68, 68, 0.15)',
-            border: '1px solid #EF4444',
-            color: '#F87171',
+            background: '#FEE2E2',
+            border: '1px solid #FCA5A5',
+            color: '#DC2626',
             padding: '0.65rem 0.85rem',
             borderRadius: '6px',
             fontSize: '0.8rem',
@@ -112,10 +112,10 @@ export const LoginModal: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '0.65rem 0.65rem 0.65rem 2.2rem',
-                  background: 'rgba(0,0,0,0.4)',
-                  border: '1px solid var(--border-color)',
+                  background: '#F8FAFC',
+                  border: '1px solid #CBD5E1',
                   borderRadius: '6px',
-                  color: '#fff',
+                  color: 'var(--text-primary)',
                   fontSize: '0.85rem',
                   outline: 'none'
                 }}
@@ -137,10 +137,10 @@ export const LoginModal: React.FC = () => {
                 style={{
                   width: '100%',
                   padding: '0.65rem 0.65rem 0.65rem 2.2rem',
-                  background: 'rgba(0,0,0,0.4)',
-                  border: '1px solid var(--border-color)',
+                  background: '#F8FAFC',
+                  border: '1px solid #CBD5E1',
                   borderRadius: '6px',
-                  color: '#fff',
+                  color: 'var(--text-primary)',
                   fontSize: '0.85rem',
                   outline: 'none'
                 }}
@@ -167,10 +167,10 @@ export const LoginModal: React.FC = () => {
                 style={{
                   padding: '0.35rem 0.5rem',
                   fontSize: '0.7rem',
-                  background: email === u.email ? 'var(--primary-glow)' : 'rgba(255,255,255,0.04)',
-                  border: email === u.email ? '1px solid var(--primary)' : '1px solid transparent',
+                  background: email === u.email ? '#E0F2FE' : '#F8FAFC',
+                  border: email === u.email ? '1px solid #0284C7' : '1px solid #E2E8F0',
                   borderRadius: '4px',
-                  color: email === u.email ? 'var(--primary)' : 'var(--text-secondary)',
+                  color: email === u.email ? '#0369A1' : 'var(--text-secondary)',
                   cursor: 'pointer',
                   textAlign: 'left',
                   overflow: 'hidden',

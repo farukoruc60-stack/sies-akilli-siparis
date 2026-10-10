@@ -137,7 +137,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                     type="text"
                     value={customerInfo.name}
                     onChange={(e) => handleCustomerChange('name', e.target.value)}
-                    style={{ width: '100%', padding: '0.4rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', borderRadius: '4px', color: '#fff' }}
+                    style={{ width: '100%', padding: '0.4rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A', fontWeight: 600 }}
                   />
                 </div>
 
@@ -147,7 +147,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                     type="text"
                     value={customerInfo.orderNo || ''}
                     onChange={(e) => handleCustomerChange('orderNo', e.target.value)}
-                    style={{ width: '100%', padding: '0.4rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', borderRadius: '4px', color: '#fff' }}
+                    style={{ width: '100%', padding: '0.4rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A' }}
                   />
                 </div>
 
@@ -157,7 +157,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                     type="text"
                     value={customerInfo.taxNumber || ''}
                     onChange={(e) => handleCustomerChange('taxNumber', e.target.value)}
-                    style={{ width: '100%', padding: '0.4rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', borderRadius: '4px', color: '#fff' }}
+                    style={{ width: '100%', padding: '0.4rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A' }}
                   />
                 </div>
 
@@ -167,7 +167,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                     type="date"
                     value={customerInfo.orderDate || ''}
                     onChange={(e) => handleCustomerChange('orderDate', e.target.value)}
-                    style={{ width: '100%', padding: '0.4rem', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', borderRadius: '4px', color: '#fff' }}
+                    style={{ width: '100%', padding: '0.4rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A' }}
                   />
                 </div>
               </div>
@@ -205,14 +205,14 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                       const lTotal = parseFloat(String(item.lineTotal)) || (qty * uPrice);
 
                       return (
-                        <tr key={idx} style={{ background: (item.confidenceScore || 1) < 0.9 ? 'rgba(245, 158, 11, 0.1)' : undefined }}>
+                        <tr key={idx} style={{ background: (item.confidenceScore || 1) < 0.9 ? '#FEF3C7' : undefined }}>
                           <td>{idx + 1}</td>
                           <td>
                             <input
                               type="text"
                               value={item.customerProductCode || ''}
                               onChange={(e) => handleItemChange(idx, 'customerProductCode', e.target.value)}
-                              style={{ width: '90px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '90px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
                             />
                           </td>
                           <td>
@@ -220,7 +220,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               type="text"
                               value={item.productName || ''}
                               onChange={(e) => handleItemChange(idx, 'productName', e.target.value)}
-                              style={{ width: '220px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '220px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
                             />
                           </td>
                           <td>
@@ -229,7 +229,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               step="0.1"
                               value={qty}
                               onChange={(e) => handleItemChange(idx, 'quantity', parseFloat(e.target.value))}
-                              style={{ width: '70px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '70px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
                             />
                           </td>
                           <td>
@@ -237,7 +237,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               type="text"
                               value={item.unit || 'Adet'}
                               onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
-                              style={{ width: '50px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '50px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
                             />
                           </td>
                           <td>
@@ -246,7 +246,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               step="0.01"
                               value={uPrice}
                               onChange={(e) => handleItemChange(idx, 'unitPrice', parseFloat(e.target.value))}
-                              style={{ width: '75px', background: 'rgba(0,0,0,0.4)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '75px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
                             />
                           </td>
                           <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>

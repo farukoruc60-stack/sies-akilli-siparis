@@ -338,15 +338,15 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   return (
     <div className="detail-panel">
       {/* Header Info Banner */}
-      <div style={{ padding: '1.25rem 1.5rem', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-color)' }}>
+      <div style={{ padding: '1.25rem 1.5rem', background: '#FFFFFF', borderBottom: '1px solid var(--border-color)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#fff' }}>{order.customer_name}</h1>
+              <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>{order.customer_name}</h1>
               <span className="badge badge-approved" style={{ fontSize: '0.8rem' }}>
                 <ShieldCheck size={14} /> SİP NO: {order.order_no}
               </span>
-              <span style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.06)', padding: '0.2rem 0.5rem', borderRadius: '4px', color: 'var(--primary)' }}>
+              <span style={{ fontSize: '0.75rem', background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.2rem 0.5rem', borderRadius: '4px', color: '#0369A1', fontWeight: 600 }}>
                 Versiyon v{order.version} (Optimistic Locking Aktif)
               </span>
             </div>
@@ -363,7 +363,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
             </button>
             {isEditing ? (
               <button onClick={handleSaveEdit} disabled={saving} className="btn btn-primary">
-                <Save size={16} /> {saving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+                <Save size={16} /> {saving ? 'Kaydedilizce...' : 'Değişiklikleri Kaydet'}
               </button>
             ) : (
               <button onClick={handleStartEdit} className="btn btn-secondary">
@@ -374,34 +374,34 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
         </div>
 
         {conflictError && (
-          <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #EF4444', color: '#F87171', padding: '0.75rem 1rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '0.75rem 1rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <AlertTriangle size={18} /> {conflictError}
           </div>
         )}
 
         {/* Quick Meta Stats Bar */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-          <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>SİPARİŞ TARİHİ</span>
-            <strong style={{ color: '#fff' }}>{order.order_date ? new Date(order.order_date).toLocaleDateString('tr-TR') : '-'}</strong>
+            <strong style={{ color: 'var(--text-primary)' }}>{order.order_date ? new Date(order.order_date).toLocaleDateString('tr-TR') : '-'}</strong>
           </div>
-          <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TESLİM TARİHİ</span>
-            <strong style={{ color: '#fff' }}>{order.requested_delivery_date ? new Date(order.requested_delivery_date).toLocaleDateString('tr-TR') : 'Belirtilmedi'}</strong>
+            <strong style={{ color: 'var(--text-primary)' }}>{order.requested_delivery_date ? new Date(order.requested_delivery_date).toLocaleDateString('tr-TR') : 'Belirtilmedi'}</strong>
           </div>
-          <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TOPLAM KALEM / TUTAR</span>
             <strong style={{ color: 'var(--primary)' }}>{items.length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)</strong>
           </div>
-          <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+          <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>OLUŞTURAN</span>
-            <strong style={{ color: '#fff' }}>{order.creator_name || 'Sistem'}</strong>
+            <strong style={{ color: 'var(--text-primary)' }}>{order.creator_name || 'Sistem'}</strong>
           </div>
         </div>
       </div>
 
       {/* Tabs Bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.2)', padding: '0 1rem' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: '#FFFFFF', padding: '0 1rem' }}>
         {[
           { id: 'summary', label: '1. Sipariş Özeti', icon: FileText },
           { id: 'items', label: `2. Sipariş Kalemleri (${items.length})`, icon: Layers },

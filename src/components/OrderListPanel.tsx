@@ -55,10 +55,10 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   return (
     <div className="list-panel">
       {/* List Header & Action */}
-      <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)' }}>
+      <div style={{ padding: '1rem', borderBottom: '1px solid var(--border-color)', background: '#FFFFFF' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
           <div>
-            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>Sipariş Havuzu</h2>
+            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>Sipariş Havuzu</h2>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Toplam {totalCount} sipariş kaydı</span>
           </div>
           <button onClick={onUploadClick} className="btn btn-primary" style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}>
@@ -77,10 +77,10 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
             style={{
               width: '100%',
               padding: '0.5rem 0.5rem 0.5rem 2.2rem',
-              background: 'rgba(0, 0, 0, 0.4)',
-              border: '1px solid var(--border-color)',
+              background: '#F8FAFC',
+              border: '1px solid #CBD5E1',
               borderRadius: '6px',
-              color: '#fff',
+              color: 'var(--text-primary)',
               fontSize: '0.85rem',
               outline: 'none'
             }}
@@ -105,9 +105,9 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                 padding: '0.25rem 0.6rem',
                 fontSize: '0.72rem',
                 borderRadius: '4px',
-                border: '1px solid transparent',
-                background: statusFilter === f.id ? 'var(--primary-glow)' : 'rgba(255,255,255,0.05)',
-                color: statusFilter === f.id ? 'var(--primary)' : 'var(--text-secondary)',
+                border: statusFilter === f.id ? '1px solid #0284C7' : '1px solid #E2E8F0',
+                background: statusFilter === f.id ? '#E0F2FE' : '#F8FAFC',
+                color: statusFilter === f.id ? '#0369A1' : 'var(--text-secondary)',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
                 fontWeight: statusFilter === f.id ? 600 : 400
@@ -120,7 +120,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
       </div>
 
       {/* Inbox Order Item Cards */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem', background: '#F8FAFC' }}>
         {orders.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
             <Filter size={32} style={{ marginBottom: '0.5rem', opacity: 0.5 }} />
@@ -137,8 +137,9 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                   padding: '0.85rem',
                   borderRadius: '8px',
                   marginBottom: '0.5rem',
-                  background: isSelected ? 'rgba(0, 229, 255, 0.08)' : 'var(--bg-card)',
-                  border: isSelected ? '1px solid var(--primary)' : '1px solid var(--border-color)',
+                  background: isSelected ? '#E0F2FE' : '#FFFFFF',
+                  border: isSelected ? '2px solid #0284C7' : '1px solid #E2E8F0',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
                   position: 'relative'
@@ -146,7 +147,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
               >
                 {/* Header row */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.35rem' }}>
-                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '200px' }}>
                     {order.customer_name}
                   </span>
                   {getStatusBadge(order.status)}
@@ -163,7 +164,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                   <span>Tarih: {order.order_date ? new Date(order.order_date).toLocaleDateString('tr-TR') : '-'}</span>
                   
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ background: 'rgba(255,255,255,0.08)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>
+                    <span style={{ background: '#F1F5F9', color: '#475569', padding: '0.15rem 0.4rem', borderRadius: '4px', fontWeight: 600 }}>
                       {order.total_items || 0} Kalem
                     </span>
                     {(order.total_docs || 0) > 0 && (
@@ -184,6 +185,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
         <div style={{
           padding: '0.5rem 1rem',
           borderTop: '1px solid var(--border-color)',
+          background: '#FFFFFF',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -195,14 +197,14 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
             <button
               disabled={page <= 1}
               onClick={() => onPageChange(page - 1)}
-              style={{ padding: '0.25rem 0.5rem', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}
+              style={{ padding: '0.25rem 0.5rem', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: '4px', color: '#0F172A', cursor: 'pointer' }}
             >
               <ChevronLeft size={14} />
             </button>
             <button
               disabled={page >= totalPages}
               onClick={() => onPageChange(page + 1)}
-              style={{ padding: '0.25rem 0.5rem', background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}
+              style={{ padding: '0.25rem 0.5rem', background: '#F1F5F9', border: '1px solid #E2E8F0', borderRadius: '4px', color: '#0F172A', cursor: 'pointer' }}
             >
               <ChevronRight size={14} />
             </button>
