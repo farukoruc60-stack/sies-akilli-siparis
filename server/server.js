@@ -1009,14 +1009,24 @@ app.get('/api/audit-logs', authenticateToken, requireAdmin, async (req, res) => 
   }
 });
 
-// Serve Frontend Production Build if dist directory exists
-const distDir = path.join(__dirname, '../dist');
-if (fs.existsSync(distDir)) {
-  app.use(express.static(distDir));
+// Serve Frontend Production Build (Support process.cwd() and __dirname)
+const distPath = fs.existsSync(path.join(process.cwd(), 'dist'))
+  ? path.join(process.cwd(), 'dist')
+  : path.join(__dirname, '../dist');
+
+console.log(`=======================================================`);
+console.log(`[Frontend Static] Derleme klasörü: ${distPath}`);
+console.log(`[Frontend Static] Klasör mevcut mu: ${fs.existsSync(distPath)}`);
+console.log(`=======================================================`);
+
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/')) return next();
-    res.sendFile(path.join(distDir, 'index.html'));
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(distPath, 'index.html'));
   });
+} else {
+  console.error(`[Frontend Static HATA] Derlenmiş dist klasörü bulunamadı: ${distPath}`);
 }
 
 // Start Server
