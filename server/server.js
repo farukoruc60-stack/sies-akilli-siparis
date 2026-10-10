@@ -1009,24 +1009,55 @@ app.get('/api/audit-logs', authenticateToken, requireAdmin, async (req, res) => 
   }
 });
 
-// Serve Frontend Production Build (Support process.cwd() and __dirname)
-const distPath = fs.existsSync(path.join(process.cwd(), 'dist'))
-  ? path.join(process.cwd(), 'dist')
-  : path.join(__dirname, '../dist');
+// Serve Frontend Production Build (Robust search across CWD, __dirname, and root)
+const candidatePaths = [
+  path.join(process.cwd(), 'dist'),
+  path.join(__dirname, '../dist'),
+  path.join(__dirname, 'dist'),
+  path.resolve('dist'),
+  '/opt/render/project/src/dist'
+];
+
+const distPath = candidatePaths.find(p => fs.existsSync(p) && fs.existsSync(path.join(p, 'index.html')));
 
 console.log(`=======================================================`);
-console.log(`[Frontend Static] Derleme klasörü: ${distPath}`);
-console.log(`[Frontend Static] Klasör mevcut mu: ${fs.existsSync(distPath)}`);
+console.log(`[Frontend Static] Aranan yollar:`, candidatePaths);
+console.log(`[Frontend Static] Bulunan dist yollari: ${distPath || 'BULUNAMADI'}`);
 console.log(`=======================================================`);
 
-if (fs.existsSync(distPath)) {
+if (distPath) {
   app.use(express.static(distPath));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
     res.sendFile(path.join(distPath, 'index.html'));
   });
 } else {
-  console.error(`[Frontend Static HATA] Derlenmiş dist klasörü bulunamadı: ${distPath}`);
+  console.error(`[Frontend Static HATA] Derlenmiş dist klasörü veya index.html bulunamadı!`);
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.status(200).send(`<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SİES Akıllı Sipariş Takip</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0f172a; color: white; text-align: center; }
+    .card { background: #1e293b; padding: 40px; border-radius: 16px; border: 1px solid #334155; max-width: 450px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
+    h1 { color: #38bdf8; font-size: 24px; margin-bottom: 12px; }
+    p { color: #94a3b8; font-size: 15px; line-height: 1.5; }
+    .btn { display: inline-block; margin-top: 20px; padding: 10px 24px; background: #0284c7; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>SİES Akıllı Sipariş Takip</h1>
+    <p>Canlı sunucu başlatılıyor. Lütfen birkaç saniye sonra sayfayı yenileyiniz.</p>
+    <a href="/" class="btn" onclick="location.reload(); return false;">Yenile</a>
+  </div>
+</body>
+</html>`);
+  });
 }
 
 // Start Server
@@ -1036,4 +1067,5 @@ app.listen(PORT, () => {
   console.log(` API Endpoint: http://localhost:${PORT}/api/orders`);
   console.log(`=======================================================`);
 });
+
 
