@@ -11,7 +11,7 @@ dotenv.config();
 
 import { initDatabase, query } from './db/database.js';
 import { seedInitialUsers, generateToken, authenticateToken, requireAdmin } from './auth.js';
-import { processUploadedDocument } from './documentProcessor.js';
+import { processUploadedDocument, generateProductionFormPdf, calculateSHA256 } from './documentProcessor.js';
 import { getYandexStatus, uploadToYandexDisk } from './yandexClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -399,6 +399,111 @@ app.post('/api/orders/:id/items/status', authenticateToken, async (req, res) => 
 
     res.json({ success: true, updatedCount: itemIds.length, overallStatus });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GENERATE OFFICIAL PRODUCTION WORK ORDER FORM PDF AND SEND ITEMS TO PRODUCTION
+app.post('/api/orders/:id/production-form', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const { itemIds, notes } = req.body;
+
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'Lütfen üretime gönderilecek kalemleri seçin!' });
+    }
+
+    // 1. Fetch order details
+    const orderRes = await query(`
+      SELECT o.*, c.name as customer_name, u1.full_name as creator_name
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      LEFT JOIN users u1 ON o.created_by = u1.id
+      WHERE o.id = ?
+    `, [orderId]);
+
+    if (orderRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sipariş bulunamadı!' });
+    }
+
+    const order = orderRes.rows[0];
+
+    // 2. Fetch selected items
+    const placeholders = itemIds.map(() => '?').join(',');
+    const itemsRes = await query(
+      `SELECT * FROM order_items WHERE id IN (${placeholders}) AND order_id = ? ORDER BY line_no ASC, id ASC`,
+      [...itemIds, orderId]
+    );
+
+    const selectedItems = itemsRes.rows;
+    if (selectedItems.length === 0) {
+      return res.status(400).json({ error: 'Seçili kalemler bulunamadı!' });
+    }
+
+    // 3. Generate Production Form PDF file
+    const timestamp = Date.now();
+    const pdfFileName = `Uretim_Formu_${order.order_no || orderId}_${timestamp}.pdf`;
+    const pdfFilePath = path.join(uploadDir, pdfFileName);
+    const originalDocName = `Üretim Formu - Sipariş ${order.order_no || orderId} (${selectedItems.length} Kalem).pdf`;
+
+    await generateProductionFormPdf(order, selectedItems, pdfFilePath, notes || '');
+
+    const fileSize = fs.statSync(pdfFilePath).size;
+    const sha256 = calculateSHA256(pdfFilePath);
+
+    // 4. Save document record to DB under 'documents' table linked to order_id
+    const docRes = await query(
+      `INSERT INTO documents (
+        order_id, original_name, file_type, mime_type, file_size, sha256_hash, original_path, pdf_path, uploaded_by, archive_status
+      ) VALUES (?, ?, '.pdf', 'application/pdf', ?, ?, ?, ?, ?, 'PENDING')`,
+      [orderId, originalDocName, fileSize, sha256, pdfFilePath, pdfFilePath, req.user.id]
+    );
+
+    const docId = docRes.lastID || docRes.rows?.[0]?.id;
+
+    // 5. Update selected items status to 'IN_PRODUCTION'
+    for (const item of selectedItems) {
+      const prevStatus = item.status || 'PENDING';
+      await query(
+        'UPDATE order_items SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        ['IN_PRODUCTION', item.id]
+      );
+
+      await query(
+        'INSERT INTO order_item_status_history (order_item_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
+        [item.id, prevStatus, 'IN_PRODUCTION', req.user.id, `Üretim Formu (Doc #${docId}) oluşturularak üretime gönderildi.`]
+      );
+    }
+
+    // 6. Update overall order status if needed
+    await query(
+      "UPDATE orders SET status = 'IN_PRODUCTION', updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [req.user.id, orderId]
+    );
+
+    // 7. Order Status History Log
+    await query(
+      'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
+      [orderId, order.status, 'IN_PRODUCTION', req.user.id, `${selectedItems.length} kalem için Resmi Üretim İş Emri Formu oluşturuldu ve üretime gönderildi.`]
+    );
+
+    // Background Yandex Disk Upload
+    uploadToYandexDisk(pdfFilePath, 'UretimFormlari', `${docId}_${pdfFileName}`).then(async (yRes) => {
+      if (yRes.success) {
+        await query('UPDATE documents SET archive_status = ?, yandex_path = ? WHERE id = ?', ['ARCHIVED', yRes.yandexPath, docId]);
+      }
+    });
+
+    res.json({
+      success: true,
+      documentId: docId,
+      originalName: originalDocName,
+      pdfUrl: `/api/documents/${docId}/pdf`,
+      downloadUrl: `/api/documents/${docId}/download`,
+      itemCount: selectedItems.length
+    });
+  } catch (err) {
+    console.error('Üretim Formu Oluşturma Hatası:', err);
     res.status(500).json({ error: err.message });
   }
 });

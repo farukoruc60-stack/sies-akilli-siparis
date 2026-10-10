@@ -767,3 +767,263 @@ async function generatePdfFromImage(imagePath, outputPath) {
   const pdfBytes = await pdfDoc.save();
   fs.writeFileSync(outputPath, pdfBytes);
 }
+
+export async function generateProductionFormPdf(order, items, outputPath, formNotes = '') {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595.28, 841.89]);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 35;
+  const contentWidth = pageWidth - margin * 2;
+
+  // 1. Header Banner
+  page.drawRectangle({
+    x: margin,
+    y: pageHeight - 75,
+    width: contentWidth,
+    height: 45,
+    color: rgb(0.08, 0.25, 0.5)
+  });
+
+  page.drawText(sanitizeForPdf('SIES ELEKTRIK & METAL A.S.'), {
+    x: margin + 12,
+    y: pageHeight - 48,
+    size: 14,
+    font: boldFont,
+    color: rgb(1, 1, 1)
+  });
+
+  page.drawText(sanitizeForPdf('RESMI URETIM IS EMRI FORMU'), {
+    x: margin + 12,
+    y: pageHeight - 65,
+    size: 10,
+    font: font,
+    color: rgb(0.8, 0.9, 1)
+  });
+
+  const formDate = new Date().toLocaleDateString('tr-TR');
+  const formCode = `FORM-URETIM-${order.order_no || 'SO'}`;
+
+  page.drawText(sanitizeForPdf(`Tarih: ${formDate}`), {
+    x: pageWidth - margin - 140,
+    y: pageHeight - 48,
+    size: 9,
+    font: boldFont,
+    color: rgb(1, 1, 1)
+  });
+
+  page.drawText(sanitizeForPdf(`Form No: ${formCode}`), {
+    x: pageWidth - margin - 140,
+    y: pageHeight - 65,
+    size: 8,
+    font: font,
+    color: rgb(0.8, 0.9, 1)
+  });
+
+  // 2. Order & Customer Info Card
+  let y = pageHeight - 95;
+  page.drawRectangle({
+    x: margin,
+    y: y - 65,
+    width: contentWidth,
+    height: 65,
+    color: rgb(0.96, 0.97, 0.99),
+    borderColor: rgb(0.85, 0.88, 0.92),
+    borderWidth: 1
+  });
+
+  const custName = sanitizeForPdf(order.customer_name || 'MUSTERI BILGISI');
+  const orderNo = sanitizeForPdf(order.order_no || '-');
+  const custOrderNo = sanitizeForPdf(order.customer_order_no || '-');
+  const reqDate = sanitizeForPdf(order.requested_delivery_date || 'Belirtilmedi');
+
+  page.drawText(sanitizeForPdf('Musteri Unvani:'), { x: margin + 12, y: y - 20, size: 8.5, font: boldFont, color: rgb(0.3, 0.3, 0.3) });
+  page.drawText(custName.slice(0, 45), { x: margin + 95, y: y - 20, size: 9, font: boldFont, color: rgb(0.08, 0.25, 0.5) });
+
+  page.drawText(sanitizeForPdf('Siparis No:'), { x: margin + 12, y: y - 38, size: 8.5, font: boldFont, color: rgb(0.3, 0.3, 0.3) });
+  page.drawText(orderNo, { x: margin + 95, y: y - 38, size: 8.5, font: font, color: rgb(0.1, 0.1, 0.1) });
+
+  page.drawText(sanitizeForPdf('Musteri Ref No:'), { x: margin + 12, y: y - 54, size: 8.5, font: boldFont, color: rgb(0.3, 0.3, 0.3) });
+  page.drawText(custOrderNo, { x: margin + 95, y: y - 54, size: 8.5, font: font, color: rgb(0.1, 0.1, 0.1) });
+
+  page.drawText(sanitizeForPdf('Teslim Tarihi:'), { x: margin + 310, y: y - 20, size: 8.5, font: boldFont, color: rgb(0.3, 0.3, 0.3) });
+  page.drawText(reqDate, { x: margin + 380, y: y - 20, size: 8.5, font: font, color: rgb(0.1, 0.1, 0.1) });
+
+  page.drawText(sanitizeForPdf('Uretime Verilen:'), { x: margin + 310, y: y - 38, size: 8.5, font: boldFont, color: rgb(0.3, 0.3, 0.3) });
+  page.drawText(sanitizeForPdf(`${items.length} Kalem Urun`), { x: margin + 380, y: y - 38, size: 8.5, font: boldFont, color: rgb(0.0, 0.5, 0.4) });
+
+  y -= 80;
+
+  // 3. Section Title
+  page.drawText(sanitizeForPdf('URETIMDE IMAL EDILECEK KALEMLER LISTESI'), {
+    x: margin,
+    y: y,
+    size: 10,
+    font: boldFont,
+    color: rgb(0.08, 0.25, 0.5)
+  });
+
+  y -= 15;
+
+  // 4. Table Header
+  const headers = ['#', 'URUN KODU', 'URUN ACIKLAMASI / OZELLIKLER', 'MIKTAR', 'BIRIM', 'DURUM'];
+  const colWidths = [25, 110, 230, 55, 45, 60];
+  const rowHeight = 20;
+
+  page.drawRectangle({
+    x: margin,
+    y: y - rowHeight + 3,
+    width: contentWidth,
+    height: rowHeight,
+    color: rgb(0.12, 0.3, 0.55)
+  });
+
+  let xPos = margin;
+  headers.forEach((h, idx) => {
+    page.drawText(sanitizeForPdf(h), {
+      x: xPos + 4,
+      y: y - rowHeight + 8,
+      size: 7.5,
+      font: boldFont,
+      color: rgb(1, 1, 1)
+    });
+    xPos += colWidths[idx];
+  });
+
+  y -= rowHeight;
+
+  // 5. Table Rows
+  items.forEach((item, idx) => {
+    const isEven = idx % 2 === 0;
+    page.drawRectangle({
+      x: margin,
+      y: y - rowHeight + 3,
+      width: contentWidth,
+      height: rowHeight,
+      color: isEven ? rgb(0.98, 0.99, 1.0) : rgb(0.93, 0.95, 0.98),
+      borderColor: rgb(0.85, 0.88, 0.92),
+      borderWidth: 0.5
+    });
+
+    const lineNoStr = String(item.lineNo || item.line_no || idx + 1);
+    const codeStr = sanitizeForPdf(item.customerProductCode || item.customer_product_code || '-');
+    const nameStr = sanitizeForPdf(item.productName || item.product_name || 'Urun');
+    const qtyStr = String(item.quantity || 1);
+    const unitStr = sanitizeForPdf(item.unit || 'Adet');
+    const statusStr = 'URETIMDE';
+
+    const rowData = [lineNoStr, codeStr, nameStr, qtyStr, unitStr, statusStr];
+
+    let cellX = margin;
+    rowData.forEach((val, cIdx) => {
+      const cWidth = colWidths[cIdx];
+      let txt = val;
+      const currentFont = cIdx === 1 ? boldFont : font;
+      let fontSize = 7.5;
+
+      while (txt.length > 1 && currentFont.widthOfTextAtSize(txt, fontSize) > cWidth - 6) {
+        txt = txt.slice(0, -1);
+      }
+
+      page.drawText(txt, {
+        x: cellX + 4,
+        y: y - rowHeight + 7,
+        size: fontSize,
+        font: currentFont,
+        color: cIdx === 5 ? rgb(0.0, 0.5, 0.3) : rgb(0.15, 0.15, 0.15)
+      });
+
+      cellX += cWidth;
+    });
+
+    y -= rowHeight;
+  });
+
+  // 6. Notes & Work Instructions Box
+  y -= 15;
+  page.drawRectangle({
+    x: margin,
+    y: y - 55,
+    width: contentWidth,
+    height: 55,
+    color: rgb(0.99, 0.98, 0.93),
+    borderColor: rgb(0.95, 0.9, 0.7),
+    borderWidth: 1
+  });
+
+  page.drawText(sanitizeForPdf('URETIM NOTLARI VE IMALAT TALIMATLARI:'), {
+    x: margin + 8,
+    y: y - 16,
+    size: 8,
+    font: boldFont,
+    color: rgb(0.6, 0.4, 0.0)
+  });
+
+  const notesText = formNotes
+    ? sanitizeForPdf(formNotes)
+    : '1. Tum imalat SIES TS 822 kalite standartlarina uygun teknik resim ve tolerans araliklarinda yapilacaktir. 2. Uretim tamamlandiktan sonra Kalite Kontrol birimi tarafindan olculerek kaplama hattina sevk edilecektir.';
+
+  page.drawText(notesText.slice(0, 140), {
+    x: margin + 8,
+    y: y - 32,
+    size: 7.5,
+    font: font,
+    color: rgb(0.2, 0.2, 0.2)
+  });
+
+  if (notesText.length > 140) {
+    page.drawText(notesText.slice(140, 280), {
+      x: margin + 8,
+      y: y - 44,
+      size: 7.5,
+      font: font,
+      color: rgb(0.2, 0.2, 0.2)
+    });
+  }
+
+  // 7. Signatures Box (Bottom of page)
+  const sigY = 90;
+  const boxWidth = (contentWidth - 20) / 3;
+
+  const sigBoxes = [
+    { title: 'HAZIRLAYAN (SIPARIS AMIRI)', name: sanitizeForPdf(order.creator_name || 'Sistem') },
+    { title: 'URETIM AMIRI (IMALAT)', name: 'Imza / Tarih' },
+    { title: 'KALITE KONTROL', name: 'Onay / Tarih' }
+  ];
+
+  sigBoxes.forEach((box, bIdx) => {
+    const boxX = margin + bIdx * (boxWidth + 10);
+    page.drawRectangle({
+      x: boxX,
+      y: sigY - 50,
+      width: boxWidth,
+      height: 50,
+      color: rgb(0.97, 0.97, 0.98),
+      borderColor: rgb(0.85, 0.88, 0.92),
+      borderWidth: 1
+    });
+
+    page.drawText(sanitizeForPdf(box.title), {
+      x: boxX + 6,
+      y: sigY - 14,
+      size: 7,
+      font: boldFont,
+      color: rgb(0.3, 0.3, 0.3)
+    });
+
+    page.drawText(sanitizeForPdf(box.name), {
+      x: boxX + 6,
+      y: sigY - 38,
+      size: 7.5,
+      font: font,
+      color: rgb(0.5, 0.5, 0.5)
+    });
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  fs.writeFileSync(outputPath, pdfBytes);
+}
+

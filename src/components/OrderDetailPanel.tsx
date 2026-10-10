@@ -22,7 +22,8 @@ import {
   PackageCheck,
   ArrowRight,
   X,
-  FileCheck
+  FileCheck,
+  Printer
 } from 'lucide-react';
 import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -60,6 +61,13 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [batchStatus, setBatchStatus] = useState<string>('SHIPPING');
   const [batchUpdating, setBatchUpdating] = useState(false);
 
+  // Production Form Modal & Action State
+  const [productionModalOpen, setProductionModalOpen] = useState(false);
+  const [createdDocId, setCreatedDocId] = useState<number | null>(null);
+  const [createdDocName, setCreatedDocName] = useState<string>('');
+  const [sendProdSubmitting, setSendProdSubmitting] = useState(false);
+  const [productionNotes, setProductionNotes] = useState('');
+
   // Detailed Sevkiyat Modal State
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
   const [driverName, setDriverName] = useState('');
@@ -82,6 +90,42 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   }[]>([]);
 
   const { token } = useAuth();
+
+  // Handle Send Selected Items to Production & Generate PDF Form
+  const handleSendToProduction = async () => {
+    if (selectedItemIds.length === 0) {
+      alert('Lütfen üretime gönderilecek en az bir kalem seçin!');
+      return;
+    }
+
+    setSendProdSubmitting(true);
+    try {
+      const res = await fetch(`/api/orders/${order!.id}/production-form`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          itemIds: selectedItemIds,
+          notes: productionNotes.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Üretim formu oluşturulamadı');
+
+      setCreatedDocId(data.documentId);
+      setCreatedDocName(data.originalName);
+      setProductionModalOpen(true);
+      setSelectedItemIds([]);
+      onRefresh();
+    } catch (err: any) {
+      alert(`Hata: ${err.message}`);
+    } finally {
+      setSendProdSubmitting(false);
+    }
+  };
 
   // Group dispatches by Waybill Number
   const waybillGroups = React.useMemo(() => {
@@ -460,7 +504,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
         {[
           { id: 'summary', label: '1. Sipariş Özeti', icon: FileText },
           { id: 'items', label: `2. Sipariş Kalemleri (${(items || []).length})`, icon: Layers },
-          { id: 'documents', label: `3. Orijinal Belgeler (${(documents || []).length})`, icon: ExternalLink },
+          { id: 'documents', label: `3. Sipariş Belgeleri (${(documents || []).length})`, icon: ExternalLink },
           { id: 'production', label: '4. Üretim & Kaplama', icon: Factory },
           { id: 'shipping', label: `5. Sevkiyat (${waybillGroups.length} İrsaliye)`, icon: Truck },
           { id: 'history', label: '6. İşlem Geçmişi', icon: History }
@@ -555,7 +599,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
         {/* TAB 2: SELECTABLE & PARTIALLY SHIPPABLE ORDER ITEMS TABLE WITH REMAINING QUANTITY */}
         {activeTab === 'items' && (
           <div>
-            {/* Batch Partial Shipping Action Bar */}
+            {/* Batch Partial Shipping & Production Action Bar */}
             <div style={{
               background: 'var(--bg-card)',
               border: '1px solid var(--border-color)',
@@ -578,7 +622,24 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button
+                  onClick={handleSendToProduction}
+                  disabled={selectedItemIds.length === 0 || sendProdSubmitting}
+                  className="btn btn-primary"
+                  style={{
+                    fontSize: '0.85rem',
+                    padding: '0.5rem 1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    background: selectedItemIds.length > 0 ? '#0284C7' : undefined,
+                    border: selectedItemIds.length > 0 ? '1px solid #0284C7' : undefined
+                  }}
+                >
+                  <Factory size={18} /> {sendProdSubmitting ? 'Form Oluşturuluyor...' : 'Seçili Kalemleri Üretime Gönder (Form Oluştur)'}
+                </button>
+
                 <button
                   onClick={handleOpenDispatchModal}
                   disabled={selectedItemIds.length === 0}
@@ -746,47 +807,77 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
           </div>
         )}
 
-        {/* TAB 3: ORIGINAL DOCUMENTS */}
+        {/* TAB 3: SIPARIS BELGELERI */}
         {activeTab === 'documents' && (
           <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#fff' }}>Bağlı Sipariş Belgeleri ve Arşiv</h3>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--text-primary)' }}>
+              Sipariş Belgeleri ve Arşiv (Orijinal Sipariş, Üretim Formları ve İrsaliyeler)
+            </h3>
             {documents.length === 0 ? (
               <p style={{ color: 'var(--text-muted)' }}>Bu sipariş için yüklenmiş henüz bir belge bulunmuyor.</p>
             ) : (
               <div style={{ display: 'grid', gap: '1rem' }}>
-                {documents.map((doc) => (
-                  <div key={doc.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', padding: '1.25rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <FileText size={20} color="var(--primary)" />
-                        <strong style={{ fontSize: '1rem', color: '#fff' }}>{doc.originalName}</strong>
-                        <span className="badge badge-new" style={{ fontSize: '0.7rem' }}>{doc.fileType}</span>
-                      </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.4rem' }}>
-                        SHA-256 Özeti: <code style={{ color: '#60A5FA' }}>{doc.sha256Hash}</code>
-                      </div>
-                    </div>
+                {documents.map((doc: any) => {
+                  const docName = doc.originalName || doc.original_name || 'Belge.pdf';
+                  const docType = doc.fileType || doc.file_type || '.pdf';
+                  const docHash = doc.sha256Hash || doc.sha256_hash || '-';
+                  const isProductionForm = docName.toLowerCase().includes('üretim') || docName.toLowerCase().includes('uretim');
 
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <a
-                        href={`/api/documents/${doc.id}/pdf?token=${token}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="btn btn-secondary"
-                        style={{ textDecoration: 'none', fontSize: '0.8rem' }}
-                      >
-                        <ExternalLink size={14} /> PDF Önizle
-                      </a>
-                      <a
-                        href={`/api/documents/${doc.id}/download?token=${token}`}
-                        className="btn btn-primary"
-                        style={{ textDecoration: 'none', fontSize: '0.8rem' }}
-                      >
-                        <Download size={14} /> İndir
-                      </a>
+                  return (
+                    <div
+                      key={doc.id}
+                      style={{
+                        background: '#FFFFFF',
+                        border: isProductionForm ? '2px solid #0284C7' : '1px solid #E2E8F0',
+                        padding: '1.25rem',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                          <FileText size={20} color={isProductionForm ? '#0284C7' : 'var(--primary)'} />
+                          <strong style={{ fontSize: '1rem', color: '#0F172A' }}>{docName}</strong>
+                          <span
+                            className="badge badge-new"
+                            style={{
+                              fontSize: '0.7rem',
+                              background: isProductionForm ? '#E0F2FE' : undefined,
+                              color: isProductionForm ? '#0369A1' : undefined
+                            }}
+                          >
+                            {isProductionForm ? 'RESMİ ÜRETİM FORMU' : docType}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '0.4rem' }}>
+                          SHA-256 Özeti: <code style={{ color: '#0284C7', background: '#F1F5F9', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>{docHash}</code>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <a
+                          href={`/api/documents/${doc.id}/pdf?token=${token}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-secondary"
+                          style={{ textDecoration: 'none', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                        >
+                          <ExternalLink size={14} /> PDF Önizle / Yazdır
+                        </a>
+                        <a
+                          href={`/api/documents/${doc.id}/download?token=${token}`}
+                          className="btn btn-primary"
+                          style={{ textDecoration: 'none', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                        >
+                          <Download size={14} /> İndir
+                        </a>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1114,6 +1205,83 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                 style={{ background: '#F59E0B', border: '1px solid #F59E0B', color: '#000', fontWeight: 700 }}
               >
                 {dispatchSubmitting ? 'İşleniyor...' : '⚠️ Evet, Fazla Sevkiyatı Onayla'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* CREATED PRODUCTION FORM PDF PRINT / DOWNLOAD MODAL */}
+      {/* ============================================================== */}
+      {productionModalOpen && createdDocId && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1200 }}>
+          <div className="modal-content" style={{ maxWidth: '880px', width: '92%', height: '88vh', display: 'flex', flexDirection: 'column', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '1.25rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)' }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ background: '#E0F2FE', padding: '0.5rem', borderRadius: '8px', color: '#0284C7', display: 'flex' }}>
+                  <Factory size={24} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>✓ Resmi Üretim İş Emri Formu Oluşturuldu</h3>
+                  <span style={{ fontSize: '0.82rem', color: '#64748B' }}>{createdDocName}</span>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <a
+                  href={`/api/documents/${createdDocId}/download?token=${token}`}
+                  download
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none', background: '#10B981', border: '1px solid #10B981', fontWeight: 600 }}
+                >
+                  <Download size={16} /> İndir
+                </a>
+
+                <button
+                  onClick={() => {
+                    const iframe = document.getElementById('prodFormIframe') as HTMLIFrameElement;
+                    if (iframe && iframe.contentWindow) {
+                      iframe.contentWindow.print();
+                    } else {
+                      window.open(`/api/documents/${createdDocId}/pdf?token=${token}`, '_blank');
+                    }
+                  }}
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#0284C7', border: '1px solid #0284C7', fontWeight: 600 }}
+                >
+                  <Printer size={16} /> Yazdır
+                </button>
+
+                <button
+                  onClick={() => setProductionModalOpen(false)}
+                  style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#64748B', borderRadius: '6px', padding: '0.45rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  title="Kapat"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* PDF Iframe Viewer */}
+            <div style={{ flex: 1, background: '#F8FAFC', borderRadius: '8px', overflow: 'hidden', border: '1px solid #E2E8F0' }}>
+              <iframe
+                id="prodFormIframe"
+                src={`/api/documents/${createdDocId}/pdf?token=${token}`}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                title="Üretim Formu Önizleme"
+              />
+            </div>
+
+            {/* Modal Footer Info */}
+            <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#64748B' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <FileCheck size={16} color="#0284C7" />
+                Bu belge otomatik olarak <strong>"3. Sipariş Belgeleri"</strong> sekmesine kaydedildi.
+              </span>
+              <button onClick={() => setProductionModalOpen(false)} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>
+                Kapat
               </button>
             </div>
           </div>
