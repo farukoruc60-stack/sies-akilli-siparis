@@ -46,6 +46,22 @@ export default function App() {
     orderItems: OrderItem[];
   } | null>(null);
 
+  // Mobile responsiveness state
+  const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth <= 768);
+  const [mobileActiveView, setMobileActiveView] = useState<'list' | 'detail'>('list');
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      if (mobile && !isSidebarCollapsed) {
+        setIsSidebarCollapsed(true);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   // Fetch Orders List
   const fetchOrders = async () => {
     if (!token) return;
@@ -272,38 +288,73 @@ export default function App() {
 
         {/* Content Tabs */}
         {activeTab === 'orders' ? (
-          <>
-            {/* Panel 2: Inbox Order List */}
-            <OrderListPanel
-              orders={orders}
-              selectedOrderId={selectedOrder?.id || null}
-              onSelectOrder={(order) => {
-                setSelectedOrder(order);
-                fetchOrderDetail(order.id);
-              }}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              onUploadClick={handleUploadClick}
-              page={page}
-              totalPages={totalPages}
-              onPageChange={setPage}
-              totalCount={totalCount}
-            />
+          isMobile ? (
+            mobileActiveView === 'list' ? (
+              <OrderListPanel
+                orders={orders}
+                selectedOrderId={selectedOrder?.id || null}
+                onSelectOrder={(order) => {
+                  setSelectedOrder(order);
+                  fetchOrderDetail(order.id);
+                  setMobileActiveView('detail');
+                }}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+                onUploadClick={handleUploadClick}
+                page={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                totalCount={totalCount}
+              />
+            ) : (
+              <OrderDetailPanel
+                order={selectedOrder}
+                items={orderItems}
+                documents={orderDocuments}
+                history={orderHistory}
+                dispatches={orderDispatches}
+                onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
+                onUpdateOrder={handleUpdateOrder}
+                onStatusChange={handleStatusChange}
+                onBackToList={() => setMobileActiveView('list')}
+              />
+            )
+          ) : (
+            <>
+              {/* Panel 2: Inbox Order List */}
+              <OrderListPanel
+                orders={orders}
+                selectedOrderId={selectedOrder?.id || null}
+                onSelectOrder={(order) => {
+                  setSelectedOrder(order);
+                  fetchOrderDetail(order.id);
+                }}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+                onUploadClick={handleUploadClick}
+                page={page}
+                totalPages={totalPages}
+                onPageChange={setPage}
+                totalCount={totalCount}
+              />
 
-            {/* Panel 3: Order Detail Workspace */}
-            <OrderDetailPanel
-              order={selectedOrder}
-              items={orderItems}
-              documents={orderDocuments}
-              history={orderHistory}
-              dispatches={orderDispatches}
-              onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
-              onUpdateOrder={handleUpdateOrder}
-              onStatusChange={handleStatusChange}
-            />
-          </>
+              {/* Panel 3: Order Detail Workspace */}
+              <OrderDetailPanel
+                order={selectedOrder}
+                items={orderItems}
+                documents={orderDocuments}
+                history={orderHistory}
+                dispatches={orderDispatches}
+                onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
+                onUpdateOrder={handleUpdateOrder}
+                onStatusChange={handleStatusChange}
+              />
+            </>
+          )
         ) : (
           <div className="detail-panel" style={{ padding: '16px' }}>
             {activeTab === 'dashboard' && <DashboardView />}

@@ -24,7 +24,11 @@ import {
   X,
   FileCheck,
   Printer,
-  Tag
+  Tag,
+  MessageSquare,
+  Share2,
+  Phone,
+  ArrowLeft
 } from 'lucide-react';
 import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -41,6 +45,7 @@ interface OrderDetailPanelProps {
     updatedFields?: { customerOrderNo?: string; requestedDeliveryDate?: string }
   ) => Promise<void>;
   onStatusChange: (newStatus: string, notes: string) => Promise<void>;
+  onBackToList?: () => void;
 }
 
 export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
@@ -51,7 +56,8 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   dispatches = [],
   onRefresh,
   onUpdateOrder,
-  onStatusChange
+  onStatusChange,
+  onBackToList
 }) => {
   const [activeTab, setActiveTab] = useState<'summary' | 'items' | 'documents' | 'production' | 'shipping' | 'history'>('summary');
   const [editingItems, setEditingItems] = useState<OrderItem[]>([]);
@@ -101,6 +107,55 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
     dispatchQty: number;
     excessQty: number;
   }[]>([]);
+
+  // WhatsApp Share Modal State
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState('');
+  const [whatsappCustomText, setWhatsappCustomText] = useState('');
+
+  // Open WhatsApp Share Modal
+  const handleOpenWhatsAppModal = () => {
+    if (!order) return;
+
+    const itemsSummary = (items || [])
+      .slice(0, 5)
+      .map((it, idx) => `  ${idx + 1}. ${it.customerProductCode || it.customer_product_code || ''} - ${it.productName || it.product_name} (${it.quantity} ${it.unit || 'Adet'})`)
+      .join('\n');
+
+    const moreText = (items || []).length > 5 ? `\n  ... ve ${(items || []).length - 5} kalem daha.` : '';
+
+    const text = `📦 *SİES ELEKTRİK - SİPARİŞ İŞ EMRİ BİLGİSİ*
+
+👤 *Müşteri:* ${order.customer_name}
+📑 *Sipariş No:* ${order.order_no}
+📋 *Müşteri Sip Ref:* ${order.customer_order_no || '-'}
+📅 *Sipariş Tarihi:* ${formatDate(order.order_date)}
+📅 *Teslim Tarihi:* ${formatDate(order.requested_delivery_date)}
+📊 *Kalem Sayısı:* ${(items || []).length} Kalem (${totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)
+
+📋 *Sipariş Kalem Özeti:*
+${itemsSummary}${moreText}
+
+📌 *Sipariş Durumu:* ${order.status}
+
+🏢 *SİES ELEKTRİK MÜMESSİLLİK SAN. VE TİC. LTD. ŞTİ.*`;
+
+    setWhatsappCustomText(text);
+    setWhatsappPhone(order.customer_tax_number || '');
+    setWhatsappModalOpen(true);
+  };
+
+  const handleSendWhatsApp = () => {
+    const encodedText = encodeURIComponent(whatsappCustomText);
+    const cleanPhone = whatsappPhone.replace(/\D/g, '');
+
+    const url = cleanPhone
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone.startsWith('90') ? cleanPhone : '90' + cleanPhone}&text=${encodedText}`
+      : `https://api.whatsapp.com/send?text=${encodedText}`;
+
+    window.open(url, '_blank');
+    setWhatsappModalOpen(false);
+  };
 
   const { token } = useAuth();
 
@@ -511,7 +566,17 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            {onBackToList && (
+              <button onClick={onBackToList} className="btn btn-secondary" title="Sipariş Havuzuna Dön">
+                <ArrowLeft size={16} /> <span>Sipariş Listesi</span>
+              </button>
+            )}
+
+            <button onClick={handleOpenWhatsAppModal} className="btn btn-whatsapp" title="Siparişi WhatsApp İle Gönder / Paylaş">
+              <MessageSquare size={16} /> <span>WhatsApp'tan Gönder</span>
+            </button>
+
             <button onClick={onRefresh} className="btn btn-secondary" title="Siparişi Yenile">
               <RefreshCw size={16} />
             </button>
@@ -1508,6 +1573,73 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
               </span>
               <button onClick={() => setLabelModalOpen(false)} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>
                 Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* WHATSAPP DIRECT SHARE DIALOG MODAL */}
+      {/* ============================================================== */}
+      {whatsappModalOpen && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1300 }}>
+          <div className="modal-content" style={{ maxWidth: '640px', width: '92%', height: 'auto', maxHeight: '90vh', background: '#FFFFFF', borderRadius: '16px', padding: '1.5rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ background: '#DCFCE7', padding: '0.6rem', borderRadius: '10px', color: '#16A34A', display: 'flex' }}>
+                  <MessageSquare size={24} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>Siparişi WhatsApp ile Paylaş</h3>
+                  <span style={{ fontSize: '0.82rem', color: '#64748B' }}>PC & Mobil Uyumlu Anlık WhatsApp Gönderimi</span>
+                </div>
+              </div>
+
+              <button onClick={() => setWhatsappModalOpen(false)} style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#64748B', borderRadius: '6px', padding: '0.45rem', cursor: 'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Phone Number Input */}
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '0.35rem' }}>
+                ALICI WHATSAPP TELEFON NUMARASI (Opsiyonel):
+              </label>
+              <div style={{ position: 'relative' }}>
+                <Phone size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+                <input
+                  type="text"
+                  placeholder="ör. 0532 123 45 67 (Boş bırakırsanız WhatsApp içinde kişi seçersiniz)"
+                  value={whatsappPhone}
+                  onChange={(e) => setWhatsappPhone(e.target.value)}
+                  style={{ width: '100%', padding: '0.55rem 0.75rem 0.55rem 2.2rem', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+
+            {/* Message Preview */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '0.35rem' }}>
+                MESAJ İÇERİĞİ (İsteğe Göre Düzenlenebilir):
+              </label>
+              <textarea
+                rows={9}
+                value={whatsappCustomText}
+                onChange={(e) => setWhatsappCustomText(e.target.value)}
+                style={{ width: '100%', padding: '0.75rem', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '0.83rem', fontFamily: 'monospace', color: '#0F172A', background: '#F8FAFC', lineHeight: 1.4 }}
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button onClick={() => setWhatsappModalOpen(false)} className="btn btn-secondary">
+                İptal
+              </button>
+
+              <button onClick={handleSendWhatsApp} className="btn btn-whatsapp" style={{ padding: '0.6rem 1.25rem', fontSize: '0.88rem' }}>
+                <MessageSquare size={18} /> WhatsApp'ta Aç ve Gönder
               </button>
             </div>
           </div>

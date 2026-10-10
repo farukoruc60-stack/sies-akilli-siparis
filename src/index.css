@@ -191,3 +191,54 @@ table.custom-table tr:hover td {
   overflow: hidden;
   color: var(--text-primary);
 }
+
+/* WhatsApp Green Theme Utilities */
+.btn-whatsapp {
+  background: #25D366 !important;
+  color: #FFFFFF !important;
+  border: 1px solid #16A34A !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 3px rgba(37, 211, 102, 0.3) !important;
+}
+.btn-whatsapp:hover {
+  background: #128C7E !important;
+}
+
+/* Mobile Responsive Media Queries (< 768px) */
+@media (max-width: 768px) {
+  .app-layout {
+    height: 100vh;
+    height: -webkit-fill-available;
+  }
+  
+  .workspace-body {
+    flex-direction: column;
+    height: calc(100vh - 42px);
+  }
+
+  .modal-overlay {
+    padding: 0.5rem;
+  }
+
+  .modal-content {
+    height: 96vh;
+    max-height: 96vh;
+    border-radius: 12px;
+    padding: 0.85rem !important;
+  }
+
+  .table-container {
+    -webkit-overflow-scrolling: touch;
+    overflow-x: auto;
+  }
+
+  .btn {
+    min-height: 38px;
+    padding: 0.5rem 0.85rem;
+  }
+
+  .mobile-hide {
+    display: none !important;
+  }
+}
+
