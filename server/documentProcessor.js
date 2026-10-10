@@ -316,6 +316,47 @@ function parseTextContent(rawText, originalName = '') {
       continue;
     }
 
+    // Pattern 0: Universal Table Row Match (SıraNo? Code Desc Qty Unit Price? Total?)
+    const universalRowMatch = rawLine.match(/^(\d{1,3}\s+)?(SG[\s\-][0-9A-Z\-]+|Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|KALEM[\-\s]\d+|[A-Z0-9\-\.]{2,25})\s+(.*?)\s+(\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)\s*(\d+(?:[\.\,]\d+)?)?\s*(\d+(?:[\.\,]\d+)?)?/i);
+
+    if (universalRowMatch) {
+      const code = universalRowMatch[2].trim();
+      const desc = universalRowMatch[3]?.trim() || code;
+      const qty = parseFloat(universalRowMatch[4].replace(',', '.')) || 1;
+      const unitRaw = universalRowMatch[5].toUpperCase();
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+      
+      let unitPrice = 0;
+      if (universalRowMatch[6]) {
+        unitPrice = parseFloat(universalRowMatch[6].replace(',', '.')) || 0;
+      }
+      
+      let lineTotal = qty * unitPrice;
+      if (universalRowMatch[7]) {
+        const parsedTotal = parseFloat(universalRowMatch[7].replace(',', '.'));
+        if (!isNaN(parsedTotal) && parsedTotal > 0) lineTotal = parsedTotal;
+      }
+
+      orderItems.push({
+        lineNo: lineNo++,
+        customerProductCode: code,
+        internalProductCode: `SIES-${code.replace(/\s+/g, '-')}`,
+        productName: desc,
+        productDescription: desc,
+        quantity: qty,
+        unit: unit,
+        unitPrice: unitPrice,
+        currency: 'TRY',
+        lineTotal: lineTotal,
+        confidenceScore: 0.99,
+        status: 'OK'
+      });
+
+      currentCode = '';
+      currentDescLines = [];
+      continue;
+    }
+
     // Pattern 1: Single-line Composite PDF Row (e.g. Beşiktaş Tersane: "1-103810 - KABLO YOLU TAKOZU | M8*50 mm60,00adet5.10.2026-0,6000036,00USD")
     const compositeLineMatch = rawLine.match(/^(\d{1,3}[\-\s]+)?([0-9A-Z]{3,15})\s*[\-]\s*(.*?)\s*(\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})?\s*[\-]?\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)\s*(TRY|USD|EUR|TL)?$/i);
 
