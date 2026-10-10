@@ -23,33 +23,6 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-app.get('/api/debug-paths', (req, res) => {
-  try {
-    const cwd = process.cwd();
-    const dir = __dirname;
-    const cwdDist = path.join(cwd, 'dist');
-    const parentDist = path.join(dir, '../dist');
-    const cwdDistExists = fs.existsSync(cwdDist);
-    const parentDistExists = fs.existsSync(parentDist);
-    
-    let distFiles = [];
-    if (cwdDistExists) distFiles = fs.readdirSync(cwdDist);
-    else if (parentDistExists) distFiles = fs.readdirSync(parentDist);
-
-    res.json({
-      cwd,
-      __dirname: dir,
-      cwdDist,
-      cwdDistExists,
-      parentDistExists,
-      distFiles,
-      cwdFiles: fs.readdirSync(cwd)
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // File Upload Config
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
