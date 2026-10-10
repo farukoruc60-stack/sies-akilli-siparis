@@ -311,6 +311,59 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
     }
   };
 
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return 'Belirtilmedi';
+    if (typeof dateStr === 'string' && dateStr.includes('.')) return dateStr;
+    try {
+      const d = new Date(dateStr);
+      return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('tr-TR');
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  // Group dispatches by Waybill Number
+  const waybillGroups = React.useMemo(() => {
+    const map = new Map<string, {
+      waybill_number: string;
+      driver_name: string;
+      vehicle_plate: string;
+      notes?: string;
+      created_at: string;
+      creator_name?: string;
+      items: {
+        item_id: number;
+        code: string;
+        name: string;
+        quantity_shipped: number;
+      }[];
+    }>();
+
+    dispatches.forEach(d => {
+      const key = d.waybill_number || `IRS-${d.id}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          waybill_number: d.waybill_number,
+          driver_name: d.driver_name,
+          vehicle_plate: d.vehicle_plate,
+          notes: d.notes,
+          created_at: d.created_at,
+          creator_name: d.creator_name,
+          items: []
+        });
+      }
+
+      map.get(key)!.items.push({
+        item_id: d.order_item_id,
+        code: d.customer_product_code || '-',
+        name: d.product_name || 'Ürün Kalemi',
+        quantity_shipped: d.quantity_shipped
+      });
+    });
+
+    return Array.from(map.values());
+  }, [dispatches]);
+
   const getItemStatusBadge = (st?: string) => {
     switch (st) {
       case 'IN_PRODUCTION':
@@ -319,7 +372,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
         return <span className="badge badge-pending" style={{ fontSize: '0.7rem' }}>KAPLAMADA</span>;
       case 'SHIPPING':
       case 'PARTIALLY_SHIPPED':
-        return <span className="badge badge-new" style={{ fontSize: '0.7rem', background: 'rgba(245,158,11,0.2)', color: '#F59E0B', border: '1px solid #F59E0B' }}>PARÇA PARÇA SEVK EDİLDİ</span>;
+        return <span className="badge badge-new" style={{ fontSize: '0.7rem', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>PARÇA PARÇA SEVK EDİLDİ</span>;
       case 'COMPLETED':
       case 'SHIPPED':
         return <span className="badge badge-completed" style={{ fontSize: '0.7rem' }}>SEVK EDİLDİ (TAMAMLANDI)</span>;
@@ -363,7 +416,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
             </button>
             {isEditing ? (
               <button onClick={handleSaveEdit} disabled={saving} className="btn btn-primary">
-                <Save size={16} /> {saving ? 'Kaydedilizce...' : 'Değişiklikleri Kaydet'}
+                <Save size={16} /> {saving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
               </button>
             ) : (
               <button onClick={handleStartEdit} className="btn btn-secondary">
@@ -383,11 +436,11 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
           <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>SİPARİŞ TARİHİ</span>
-            <strong style={{ color: 'var(--text-primary)' }}>{order.order_date ? new Date(order.order_date).toLocaleDateString('tr-TR') : '-'}</strong>
+            <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.order_date)}</strong>
           </div>
           <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TESLİM TARİHİ</span>
-            <strong style={{ color: 'var(--text-primary)' }}>{order.requested_delivery_date ? new Date(order.requested_delivery_date).toLocaleDateString('tr-TR') : 'Belirtilmedi'}</strong>
+            <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.requested_delivery_date)}</strong>
           </div>
           <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
             <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TOPLAM KALEM / TUTAR</span>
@@ -407,7 +460,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
           { id: 'items', label: `2. Sipariş Kalemleri (${items.length})`, icon: Layers },
           { id: 'documents', label: `3. Orijinal Belgeler (${documents.length})`, icon: ExternalLink },
           { id: 'production', label: '4. Üretim & Kaplama', icon: Factory },
-          { id: 'shipping', label: `5. Sevkiyat (${dispatches.length})`, icon: Truck },
+          { id: 'shipping', label: `5. Sevkiyat (${waybillGroups.length} İrsaliye)`, icon: Truck },
           { id: 'history', label: '6. İşlem Geçmişi', icon: History }
         ].map((t) => {
           const Icon = t.icon;
@@ -491,7 +544,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                 <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
                   <strong>Sevk Edilen Kalemler:</strong> {items.filter(i => (i.shippedQuantity || 0) >= i.quantity).length} / {items.length} Kalem Tamamlandı
                 </p>
-                <p style={{ fontSize: '0.85rem' }}><strong>Toplam İrsaliye Sayısı:</strong> {dispatches.length} Adet Sevkiyat İrsaliyesi</p>
+                <p style={{ fontSize: '0.85rem' }}><strong>Toplam İrsaliye Sayısı:</strong> {waybillGroups.length} Adet Sevkiyat İrsaliyesi</p>
               </div>
             </div>
           </div>
@@ -516,7 +569,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <PackageCheck size={22} color="var(--primary)" />
                 <div>
-                  <h4 style={{ fontSize: '0.95rem', color: '#fff' }}>Parçalı Sevkiyat & Kalem Bazlı Miktar Takibi</h4>
+                  <h4 style={{ fontSize: '0.95rem', color: 'var(--text-primary)' }}>Parçalı Sevkiyat & Kalem Bazlı Miktar Takibi</h4>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
                     Seçilen Kalem Sayısı: <strong style={{ color: 'var(--primary)' }}>{selectedItemIds.length} Kalem</strong>
                   </span>
@@ -753,11 +806,14 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
           </div>
         )}
 
-        {/* TAB 5: SHIPPING LOG & DISPATCH HISTORY */}
+        {/* TAB 5: SHIPPING LOG & DISPATCH HISTORY (GROUPED BY WAYBILL) */}
         {activeTab === 'shipping' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#fff' }}>Sevkiyat Geçmişi ve İrsaliye Kayıtları</h3>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Sevkiyat Geçmişi ve İrsaliye Kayıtları</h3>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Toplam {waybillGroups.length} Adet Sevkiyat İrsaliyesi Düzenlendi</span>
+              </div>
               <button
                 onClick={handleOpenDispatchModal}
                 disabled={selectedItemIds.length === 0}
@@ -768,39 +824,69 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
               </button>
             </div>
 
-            {dispatches.length === 0 ? (
+            {waybillGroups.length === 0 ? (
               <div style={{ background: 'var(--bg-card)', padding: '2rem', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)' }}>
                 <Truck size={36} style={{ marginBottom: '0.5rem', opacity: 0.4 }} />
                 <p>Bu sipariş için henüz parçalı sevkiyat irsaliyesi kesilmemiştir.</p>
                 <p style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>Kalemler sekmesinden sevk edilecek kalemleri seçip "Seçilen Kalemleri Sevk Et" düğmesine tıklayın.</p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: '1rem' }}>
-                {dispatches.map((disp) => (
-                  <div key={disp.id} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderLeft: '4px solid #10B981', padding: '1.25rem', borderRadius: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <span className="badge badge-completed" style={{ fontSize: '0.8rem' }}>
-                            <FileCheck size={14} /> İRSALİYE NO: #{disp.waybill_number}
+              <div style={{ display: 'grid', gap: '1.25rem' }}>
+                {waybillGroups.map((group, idx) => (
+                  <div key={group.waybill_number || idx} style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderLeft: '5px solid #10B981', padding: '1.25rem', borderRadius: '10px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                        <span className="badge badge-completed" style={{ fontSize: '0.85rem', fontWeight: 700, padding: '0.35rem 0.65rem' }}>
+                          <FileCheck size={16} /> İRSALİYE NO: #{group.waybill_number}
+                        </span>
+                        {group.vehicle_plate && (
+                          <span style={{ fontSize: '0.85rem', color: '#0284C7', fontWeight: 600, background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.25rem 0.6rem', borderRadius: '6px' }}>
+                            Plaka: {group.vehicle_plate}
                           </span>
-                          <span style={{ fontSize: '0.85rem', color: '#fff', fontWeight: 600 }}>
-                            <User size={14} style={{ marginRight: '4px', display: 'inline' }} /> Şoför: {disp.driver_name}
+                        )}
+                        {group.driver_name && (
+                          <span style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 600 }}>
+                            <User size={14} style={{ marginRight: '4px', display: 'inline', verticalAlign: 'middle' }} /> Şoför: {group.driver_name}
                           </span>
-                          <span style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 600 }}>
-                            Plaka: {disp.vehicle_plate}
-                          </span>
-                        </div>
+                        )}
+                        <span style={{ fontSize: '0.8rem', background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 600 }}>
+                          {group.items.length} Kalem Sevk Edildi
+                        </span>
                       </div>
-                      <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                        {new Date(disp.created_at).toLocaleString('tr-TR')}
+                      <span style={{ fontSize: '0.8rem', color: '#64748B', fontWeight: 500 }}>
+                        {new Date(group.created_at).toLocaleString('tr-TR')}
                       </span>
                     </div>
 
-                    <div style={{ background: 'rgba(0,0,0,0.3)', padding: '0.75rem 1rem', borderRadius: '6px', fontSize: '0.85rem', color: '#fff' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', display: 'block', marginBottom: '0.25rem' }}>SEVK EDİLEN KALEM:</span>
-                      <strong>{disp.customer_product_code || '-'}</strong> - {disp.product_name} ➔ <strong style={{ color: '#10B981' }}>{disp.quantity_shipped} Sevk Edildi</strong>
-                      {disp.notes && <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Açıklama: {disp.notes}</div>}
+                    {/* Table of items in this waybill */}
+                    <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                            <th style={{ padding: '0.6rem 0.75rem', width: '40px' }}>#</th>
+                            <th style={{ padding: '0.6rem 0.75rem', width: '160px' }}>Ürün Kodu</th>
+                            <th style={{ padding: '0.6rem 0.75rem' }}>Ürün Açıklaması</th>
+                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', width: '150px' }}>Sevk Miktarı</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.items.map((item, itemIdx) => (
+                            <tr key={itemIdx} style={{ borderBottom: itemIdx < group.items.length - 1 ? '1px solid #E2E8F0' : 'none', background: itemIdx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
+                              <td style={{ padding: '0.65rem 0.75rem', color: '#94A3B8', fontWeight: 600 }}>{itemIdx + 1}</td>
+                              <td style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: '#0284C7' }}>{item.code}</td>
+                              <td style={{ padding: '0.65rem 0.75rem', color: '#1E293B', fontWeight: 500 }}>{item.name}</td>
+                              <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#059669' }}>
+                                {item.quantity_shipped} Sevk Edildi
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {group.notes && (
+                        <div style={{ padding: '0.6rem 0.75rem', background: '#FFFBEB', borderTop: '1px solid #FEF3C7', fontSize: '0.8rem', color: '#B45309' }}>
+                          <strong>Açıklama / Not:</strong> {group.notes}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -812,7 +898,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
         {/* TAB 6: HISTORY */}
         {activeTab === 'history' && (
           <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#fff' }}>Sipariş Değişiklik ve İşlem Geçmişi</h3>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--text-primary)' }}>Sipariş Değişiklik ve İşlem Geçmişi</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
               {history.map((h) => (
                 <div key={h.id} style={{ background: 'var(--bg-card)', padding: '0.85rem 1rem', borderRadius: '6px', borderLeft: '3px solid var(--primary)', fontSize: '0.85rem' }}>
@@ -820,7 +906,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                     <span>İşlemi Yapan: <strong>{h.userName || 'Sistem'}</strong></span>
                     <span>{new Date(h.createdAt).toLocaleString('tr-TR')}</span>
                   </div>
-                  <div style={{ color: '#fff' }}>{h.notes}</div>
+                  <div style={{ color: 'var(--text-primary)' }}>{h.notes}</div>
                 </div>
               ))}
             </div>
@@ -832,20 +918,20 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
       {/* DETAILED SEVKİYAT GİRİŞİ MODAL DIALOG */}
       {/* ============================================================== */}
       {dispatchModalOpen && (
-        <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.8)', zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '650px', width: '90%', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1000 }}>
+          <div className="modal-content" style={{ maxWidth: '680px', width: '90%', maxHeight: '90vh', overflowY: 'auto', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Truck size={22} color="var(--primary)" />
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>Parçalı Sevkiyat İrsaliyesi Oluştur</h3>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>Parçalı Sevkiyat İrsaliyesi Oluştur</h3>
               </div>
-              <button onClick={() => setDispatchModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}>
+              <button onClick={() => setDispatchModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
             </div>
 
             {modalError && (
-              <div style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #EF4444', color: '#F87171', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '1rem' }}>
+              <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '1rem' }}>
                 ⚠️ {modalError}
               </div>
             )}
@@ -853,7 +939,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
             {/* Vehicle & Driver Info Form */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: '0.35rem' }}>
                   ŞOFÖR ADI SOYADI *
                 </label>
                 <input
@@ -861,12 +947,12 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                   placeholder="Örn: Ahmet Yılmaz"
                   value={driverName}
                   onChange={(e) => setDriverName(e.target.value)}
-                  style={{ width: '100%', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: '0.35rem' }}>
                   ARAÇ PLAKASI *
                 </label>
                 <input
@@ -874,12 +960,12 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                   placeholder="Örn: 34 ABC 123"
                   value={vehiclePlate}
                   onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                  style={{ width: '100%', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: '0.35rem' }}>
                   İRSALİYE NUMARASI *
                 </label>
                 <input
@@ -887,12 +973,12 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                   placeholder="Örn: IRS-2026-0045"
                   value={waybillNumber}
                   onChange={(e) => setWaybillNumber(e.target.value)}
-                  style={{ width: '100%', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
+                <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: '0.35rem' }}>
                   SEVKİYAT NOTU (OPSİYONEL)
                 </label>
                 <input
@@ -900,13 +986,13 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                   placeholder="Örn: 1. Parti Şantiye Teslimatı"
                   value={dispatchNotes}
                   onChange={(e) => setDispatchNotes(e.target.value)}
-                  style={{ width: '100%', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
                 />
               </div>
             </div>
 
             {/* Selected Items Dispatch Quantities List */}
-            <h4 style={{ fontSize: '0.9rem', color: 'var(--primary)', marginBottom: '0.75rem' }}>
+            <h4 style={{ fontSize: '0.9rem', color: '#0284C7', marginBottom: '0.75rem', fontWeight: 700 }}>
               Sevk Edilecek Kalem Miktarlarını Belirleyin ({selectedItemIds.length} Kalem Seçili)
             </h4>
 
@@ -920,23 +1006,23 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                 const remaining = Math.max(0, qty - shipped);
 
                 return (
-                  <div key={id} style={{ background: 'var(--bg-card)', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                  <div key={id} style={{ background: '#F8FAFC', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                       <div>
-                        <strong style={{ color: 'var(--primary)', fontSize: '0.85rem' }}>
+                        <strong style={{ color: '#0284C7', fontSize: '0.85rem' }}>
                           {item.customerProductCode || item.customer_product_code || `Kalem #${id}`}
                         </strong>
-                        <span style={{ fontSize: '0.85rem', color: '#fff', marginLeft: '0.5rem' }}>
+                        <span style={{ fontSize: '0.85rem', color: '#1E293B', marginLeft: '0.5rem', fontWeight: 600 }}>
                           {item.productName || item.product_name}
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                        Sipariş: <strong>{qty} {item.unit}</strong> | Giden: <strong style={{ color: '#10B981' }}>{shipped}</strong> | Kalan: <strong style={{ color: '#00E5FF' }}>{remaining} {item.unit}</strong>
+                      <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                        Sipariş: <strong>{qty} {item.unit}</strong> | Giden: <strong style={{ color: '#059669' }}>{shipped}</strong> | Kalan: <strong style={{ color: '#0284C7' }}>{remaining} {item.unit}</strong>
                       </div>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Bu Sevkiyatta Gönderilecek Miktar:</label>
+                      <label style={{ fontSize: '0.8rem', color: '#475569' }}>Bu Sevkiyatta Gönderilecek Miktar:</label>
                       <input
                         type="number"
                         step="0.1"
@@ -947,16 +1033,16 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                         })}
                         style={{
                           width: '110px',
-                          background: 'rgba(0,0,0,0.6)',
-                          border: '1px solid var(--primary)',
-                          color: '#00E5FF',
+                          background: '#FFFFFF',
+                          border: '1px solid #0284C7',
+                          color: '#0284C7',
                           fontWeight: 700,
                           padding: '0.35rem 0.5rem',
                           borderRadius: '6px',
                           fontSize: '0.95rem'
                         }}
                       />
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{item.unit || 'Adet'}</span>
+                      <span style={{ fontSize: '0.85rem', color: '#64748B' }}>{item.unit || 'Adet'}</span>
                     </div>
                   </div>
                 );
@@ -985,33 +1071,33 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
       {/* EXCESS QUANTITY CONFIRMATION WARNING MODAL */}
       {/* ============================================================== */}
       {excessWarningOpen && (
-        <div className="modal-overlay" style={{ background: 'rgba(0,0,0,0.85)', zIndex: 1100 }}>
-          <div className="modal-content" style={{ maxWidth: '540px', width: '90%', border: '2px solid #F59E0B' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', color: '#F59E0B' }}>
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.7)', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '540px', width: '90%', border: '2px solid #F59E0B', background: '#FFFFFF', color: '#0F172A', padding: '1.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1rem', color: '#D97706' }}>
               <AlertTriangle size={32} />
               <div>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#F59E0B' }}>⚠️ DİKKAT: FAZLA MİKTARDA SEVKİYAT UYARISI</h3>
-                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Sipariş miktarından daha fazla teslimat yapılmak isteniyor.</p>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#D97706' }}>⚠️ DİKKAT: FAZLA MİKTARDA SEVKİYAT UYARISI</h3>
+                <p style={{ fontSize: '0.8rem', color: '#64748B' }}>Sipariş miktarından daha fazla teslimat yapılmak isteniyor.</p>
               </div>
             </div>
 
-            <p style={{ fontSize: '0.88rem', color: '#fff', marginBottom: '1rem', lineHeight: 1.5 }}>
+            <p style={{ fontSize: '0.88rem', color: '#1E293B', marginBottom: '1rem', lineHeight: 1.5 }}>
               Aşağıdaki kalem(ler) için girdiğiniz sevk miktarı, kalan sipariş miktarından <strong>FAZLANIZDIR</strong>:
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.25rem', maxHeight: '200px', overflowY: 'auto' }}>
               {excessItemsList.map((exc) => (
-                <div key={exc.itemId} style={{ background: 'rgba(245, 158, 11, 0.15)', border: '1px solid #F59E0B', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem' }}>
-                  <div style={{ fontWeight: 700, color: '#fff' }}>{exc.code} - {exc.name}</div>
-                  <div style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                    Kalan Miktar: <strong>{exc.remaining}</strong> ➔ Girilen Sevk: <strong style={{ color: '#F59E0B' }}>{exc.dispatchQty}</strong>
-                    <span style={{ color: '#EF4444', fontWeight: 700, marginLeft: '6px' }}>(+{exc.excessQty.toFixed(1)} Fazla Sevk)</span>
+                <div key={exc.itemId} style={{ background: '#FEF3C7', border: '1px solid #FDE68A', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem' }}>
+                  <div style={{ fontWeight: 700, color: '#92400E' }}>{exc.code} - {exc.name}</div>
+                  <div style={{ color: '#78350F', marginTop: '0.25rem' }}>
+                    Kalan Miktar: <strong>{exc.remaining}</strong> ➔ Girilen Sevk: <strong style={{ color: '#D97706' }}>{exc.dispatchQty}</strong>
+                    <span style={{ color: '#DC2626', fontWeight: 700, marginLeft: '6px' }}>(+{exc.excessQty.toFixed(1)} Fazla Sevk)</span>
                   </div>
                 </div>
               ))}
             </div>
 
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
+            <p style={{ fontSize: '0.85rem', color: '#64748B', marginBottom: '1.25rem' }}>
               Yine de bu miktar üzerinden sevkiyatı gerçekleştirmek istiyor musunuz?
             </p>
 
