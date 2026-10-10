@@ -121,9 +121,16 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` },
         body: formData
       });
-      const data = await res.json();
 
-      if (!res.ok) throw new Error(data.error || 'Dosya yükleme başarısız');
+      const text = await res.text();
+      let data: any = {};
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch (parseErr) {
+        throw new Error(`Sunucu yanıtı alınamadı veya sunucu kapalı (${res.status}). Lütfen arka plan sunucusunun çalıştığından emin olun.`);
+      }
+
+      if (!res.ok) throw new Error(data.error || `Dosya yükleme başarısız (${res.status})`);
 
       // Open Verification Screen with extracted metadata
       setVerificationData({
