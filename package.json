@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "start": "node server/server.js",
     "server": "node server/server.js",
     "client": "vite",
     "build": "tsc -b && vite build",
+    "postinstall": "tsc -b && vite build",
     "lint": "eslint ."
   },
   "dependencies": {

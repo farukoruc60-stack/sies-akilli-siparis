@@ -9,7 +9,7 @@ yarn-error.log*
 node_modules/
 
 # Production build outputs
-dist/
+# dist/
 build/
 
 # Local Environment Variables & Secrets
