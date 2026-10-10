@@ -20,6 +20,29 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+function normalizeDateToISO(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return null;
+  const trimmed = dateStr.trim();
+  if (!trimmed) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+
+  const match = trimmed.match(/^(\d{1,2})[\.\/-](\d{1,2})[\.\/-](\d{4})$/);
+  if (match) {
+    const day = match[1].padStart(2, '0');
+    const month = match[2].padStart(2, '0');
+    const year = match[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = new Date(trimmed);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().split('T')[0];
+  }
+
+  return null;
+}
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
@@ -295,12 +318,13 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     const orderNo = customerInfo.orderNo 
       ? `${customerInfo.orderNo}-${Math.floor(100 + Math.random() * 900)}` 
       : `SO-2026-${Math.floor(10000 + Math.random() * 90000)}`;
-    const orderDate = customerInfo.orderDate || new Date().toISOString().split('T')[0];
+    const parsedOrderDate = normalizeDateToISO(customerInfo.orderDate) || new Date().toISOString().split('T')[0];
+    const parsedDeliveryDate = normalizeDateToISO(customerInfo.deliveryDate || customerInfo.requestedDeliveryDate || customerInfo.requested_delivery_date);
 
     const newOrderRes = await query(
       `INSERT INTO orders (order_no, customer_id, customer_order_no, order_date, requested_delivery_date, status, created_by, updated_by, version)
        VALUES (?, ?, ?, ?, ?, 'APPROVED', ?, ?, 1)`,
-      [orderNo, customerId, customerInfo.orderNo || orderNo, orderDate, customerInfo.deliveryDate || null, req.user.id, req.user.id]
+      [orderNo, customerId, customerInfo.orderNo || orderNo, parsedOrderDate, parsedDeliveryDate, req.user.id, req.user.id]
     );
 
     const orderId = newOrderRes.lastID || newOrderRes.rows?.[0]?.id;
