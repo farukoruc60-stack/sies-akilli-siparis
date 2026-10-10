@@ -110,6 +110,43 @@ app.post('/api/users', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
+app.put('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const { email, fullName, role, password } = req.body;
+
+    if (password && password.trim()) {
+      const hash = await bcrypt.hash(password, 10);
+      await query(
+        'UPDATE users SET email = ?, full_name = ?, role = ?, password_hash = ? WHERE id = ?',
+        [email, fullName, role, hash, userId]
+      );
+    } else {
+      await query(
+        'UPDATE users SET email = ?, full_name = ?, role = ? WHERE id = ?',
+        [email, fullName, role, userId]
+      );
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: 'Kullanıcı güncellenemedi: ' + err.message });
+  }
+});
+
+app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    if (parseInt(userId, 10) === req.user.id) {
+      return res.status(400).json({ error: 'Kendi aktif kullanıcı hesabınızı silemezsiniz!' });
+    }
+    await query('DELETE FROM users WHERE id = ?', [userId]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ error: 'Kullanıcı silinemedi: ' + err.message });
+  }
+});
+
 // -------------------------------------------------------------
 // ORDER MANAGEMENT ROUTES
 // -------------------------------------------------------------
