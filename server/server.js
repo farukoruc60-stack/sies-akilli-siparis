@@ -53,7 +53,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(400).json({ error: 'E-posta ve şifre zorunludur!' });
     }
 
-    const resDb = await query('SELECT * FROM users WHERE email = ? AND is_active = 1', [email.toLowerCase().trim()]);
+    const resDb = await query('SELECT * FROM users WHERE email = ? AND is_active IS NOT FALSE', [email.toLowerCase().trim()]);
     const user = resDb.rows[0];
 
     if (!user) {

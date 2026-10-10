@@ -247,6 +247,12 @@ export async function query(sql, params = []) {
     let paramIndex = 1;
     let pgSql = sql.replace(/\?/g, () => `$${paramIndex++}`);
     
+    // Auto-convert SQLite-style integer booleans for Postgres compatibility
+    pgSql = pgSql.replace(/is_active\s*=\s*1/gi, 'is_active IS NOT FALSE');
+    pgSql = pgSql.replace(/is_active\s*=\s*0/gi, 'is_active IS FALSE');
+    pgSql = pgSql.replace(/VALUES\s*\(([^)]*),\s*1\s*\)/gi, 'VALUES ($1, true)');
+    pgSql = pgSql.replace(/VALUES\s*\(([^)]*),\s*0\s*\)/gi, 'VALUES ($1, false)');
+    
     // Auto-append RETURNING id for PG INSERT if not already present
     const trimmed = pgSql.trim().toUpperCase();
     if (trimmed.startsWith('INSERT INTO') && !trimmed.includes('RETURNING')) {

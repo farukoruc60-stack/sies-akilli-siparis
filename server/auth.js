@@ -23,7 +23,7 @@ export async function seedInitialUsers() {
     for (const u of defaultUsers) {
       const hash = await bcrypt.hash(u.pass, 10);
       await query(
-        'INSERT INTO users (email, password_hash, full_name, role, is_active) VALUES (?, ?, ?, ?, 1)',
+        'INSERT INTO users (email, password_hash, full_name, role, is_active) VALUES (?, ?, ?, ?, true)',
         [u.email, hash, u.name, u.role]
       );
     }
