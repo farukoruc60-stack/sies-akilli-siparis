@@ -176,7 +176,7 @@ function normalizeText(str) {
 function parseTextContent(rawText, originalName = '') {
   const text = cleanPdfText(rawText);
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  
+
   let customerInfo = {
     name: '',
     taxOffice: '',
@@ -189,144 +189,256 @@ function parseTextContent(rawText, originalName = '') {
     deliveryDate: ''
   };
 
-  let orderItems = [];
-  let lineNo = 1;
+  // 1. CUSTOMER NAME & METADATA EXTRACTION
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
 
-  // 1. HEADER & METADATA EXTRACTION
-  for (let idx = 0; idx < lines.length; idx++) {
-    const rawLine = lines[idx];
-    const normLine = normalizeText(rawLine);
-
-    // Müşteri Adı / Unvan Tespiti
+    // Customer Name detection
     if (!customerInfo.name) {
-      if (normLine.includes('BESIKTAS TERSANE')) {
+      if (line.includes('BESIKTAS TERSANE') || line.includes('BEŞİKTAŞ TERSANE')) {
         customerInfo.name = 'BEŞİKTAŞ TERSANE A.Ş.';
-      } else if (normLine.includes('ALIA YACHT')) {
+      } else if (line.includes('ALIA YACHT')) {
         customerInfo.name = 'ALIA YACHT CO.';
+      } else if (line.includes('Sirena Marine') || line.includes('Satış YapılanSirena Marine')) {
+        customerInfo.name = 'Sirena Marine Denizcilik San Ve Tic AŞ';
       } else {
-        const custMatch = normLine.match(/(?:Musteri\s*Adi|SEVK\s+ADRESI|FATURA\s+ADRESI|FIRMA|UNVAN)\s*[\:\-]?\s*([A-Z0-9\s\.\,\&\-]+?)(?:Sip|Tes|Tarih|Kaplama|VKN|Vergi|Formu|\d{2}\.\d{2}\.\d{4}|$)/i);
-        if (custMatch && custMatch[1].trim().length > 2 && !custMatch[1].includes('SIES') && !custMatch[1].includes('SATINALMA')) {
-          customerInfo.name = custMatch[1].trim();
+        const match = line.match(/(?:Satış Yapılan|Müşteri|Firma|Unvan|SEVK ADRESİ|FATURA ADRESİ)\s*:?\s*([A-ZÇĞİÖŞÜa-zçğıöşü0-9\s\.\,\&\-]+)/i);
+        if (match) {
+          let cName = match[1].trim();
+          cName = cName.replace(/^(Tedarikçi|Sipariş|Tarih|Tel|Fax|E mail|VKN|Vergi).*/i, '').trim();
+          if (cName.length > 3 && !cName.includes('SİES') && !cName.includes('SIES') && !cName.includes('FATURA')) {
+            if (i + 1 < lines.length && /^(Ve\s+Tic|San|A\.Ş|LTD|ŞTİ)/i.test(lines[i + 1])) {
+              cName += ' ' + lines[i + 1].trim();
+            }
+            customerInfo.name = cName;
+          }
         }
       }
     }
 
-    // Sipariş Tarihi
-    if (normLine.includes('Sip. Tarihi') || normLine.includes('Siparis Tarihi') || normLine.includes('Teklif Tarihi') || normLine.includes('Tarih')) {
-      const dateMatch = rawLine.match(/(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/);
-      if (dateMatch && !customerInfo.orderDate) customerInfo.orderDate = dateMatch[1];
-    }
+    // Order No detection (supports P27448, PO-36522, SO-12345, glued Sipariş36522, Sipariş No: 36522)
+    if (!customerInfo.orderNo && !line.includes('Sipariş Notu') && !line.includes('Sipariş Tarihi') && !line.includes('Sipariş Açıklama') && !line.includes('NoProje')) {
+      const pNoMatch = line.match(/\b(P\d{4,10}|SO\-\d{4,10}|PO\-\d{4,10})\b/i);
+      const gluedSipMatch = line.match(/Sipariş\s*([0-9]{4,10})\b/i);
 
-    // Teslim Tarihi
-    if (normLine.includes('Tes. Tarihi') || normLine.includes('Teslim Tarihi')) {
-      const dateMatch = rawLine.match(/(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/);
-      if (dateMatch) customerInfo.deliveryDate = dateMatch[1];
-    }
-
-    // Sipariş / Teklif No
-    const pNoMatch = rawLine.match(/\b(P\d{4,10}|SO\-\d{4,10}|PO\-\d{4,10})\b/i);
-    if (pNoMatch && !customerInfo.orderNo) {
-      customerInfo.orderNo = pNoMatch[1];
-    }
-
-    if (normLine.includes('Teklif No') || normLine.includes('Siparis No') || normLine.includes('Siparis Ref') || normLine.includes('Siparis#')) {
-      const noMatch = rawLine.match(/([A-Z0-9\-\/]{4,25})/);
-      if (noMatch && !customerInfo.orderNo && !noMatch[0].includes('TARİH')) {
-        customerInfo.orderNo = noMatch[0];
+      if (pNoMatch) {
+        customerInfo.orderNo = pNoMatch[1];
+      } else if (gluedSipMatch) {
+        customerInfo.orderNo = gluedSipMatch[1];
+      } else {
+        const sipNoMatch = line.match(/(?:Sipariş No|Teklif No|Sipariş Ref|Siparis#)\s*:?\s*([A-Z0-9\-\/]{3,25})/i);
+        if (sipNoMatch) {
+          let no = sipNoMatch[1].trim();
+          if (!/^(TARİH|FORMU|MİKTAR|MALZEME|PROJE|DÖVİZ|TUTAR)/i.test(no) && !no.includes('Sipariş')) {
+            customerInfo.orderNo = no;
+          }
+        }
       }
     }
 
-    // Vergi Numarası
-    if (normLine.includes('Vergi No') || normLine.includes('VKN') || normLine.includes('1660400175')) {
-      const vknMatch = rawLine.match(/\d{10,11}/);
-      if (vknMatch) customerInfo.taxNumber = vknMatch[0];
+    // Order Date detection
+    if (!customerInfo.orderDate || customerInfo.orderDate === new Date().toISOString().split('T')[0]) {
+      const dateMatch = line.match(/(?:Sipariş Tarihi|Sip\. Tarihi|Tarih)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
+      if (dateMatch) {
+        customerInfo.orderDate = dateMatch[1];
+      }
+    }
+
+    // Tax Number detection
+    if (!customerInfo.taxNumber) {
+      const vknMatch = line.match(/\d{10,11}/);
+      if (vknMatch && (line.includes('Vergi') || line.includes('VKN') || line.includes('BOĞAZİÇİ'))) {
+        customerInfo.taxNumber = vknMatch[0];
+      }
     }
   }
 
-  // Fallback Müşteri Unvanı Tespiti (San. Tic. A.Ş. vb)
-  if (!customerInfo.name || customerInfo.name.includes('SATINALMA') || customerInfo.name.includes('FATURA')) {
-    for (const rawLine of lines) {
-      const normLine = normalizeText(rawLine);
-      if (normLine.includes('SIES ELEKTRIK') || normLine.includes('URETIM FORMU') || normLine.includes('SATINALMA SIPARIS FORMU')) continue;
-      if (normLine.includes('BESIKTAS TERSANE')) {
+  // Fallback Customer Name check if unparsed
+  if (!customerInfo.name || customerInfo.name.includes('FATURA')) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line.includes('SİES ELEKTRİK') || line.includes('SATINALMA SİPARİŞ FORMU')) continue;
+      if (line.includes('BEŞİKTAŞ TERSANE') || line.includes('BESIKTAS TERSANE')) {
         customerInfo.name = 'BEŞİKTAŞ TERSANE A.Ş.';
         break;
       }
-      if (normLine.includes('SAN.') || normLine.includes('TIC.') || normLine.includes('A.S.') || normLine.includes('LTD') || normLine.includes('YACHT') || normLine.includes('TERSANE')) {
-        const clean = rawLine.replace(/MÜŞTERİ:|FİRMA:|ÜNVAN:|MÜŞTERİ ADI|SEVK ADRESİ:|FATURA ADRESİ:/i, '').trim();
-        if (clean.length > 3 && !clean.includes('SATINALMA')) {
-          customerInfo.name = clean;
-          break;
-        }
+      const m = line.match(/([A-ZÇĞİÖŞÜ\s]{3,40}\s+(?:SAN|TİC|A\.Ş|LTD|ŞTİ|CO|YACHT|TERSANE)[A-ZÇĞİÖŞÜ\s\.]*)/i);
+      if (m && !m[1].includes('SİES') && !m[1].includes('FATURA')) {
+        customerInfo.name = m[1].trim();
+        break;
       }
     }
   }
 
-  // 2. FLEXIBLE ITEM EXTRACTION ALGORITHM
+  // Fallback Order No if missing
+  if (!customerInfo.orderNo) {
+    customerInfo.orderNo = `SO-2026-${Math.floor(10000 + Math.random() * 90000)}`;
+  }
+
+  // 2. ORDER ITEMS TABLE PARSING STATE MACHINE
+  const orderItems = [];
+  let currentCode = '';
+  let currentDescLines = [];
+  let lineNo = 1;
+
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i].trim();
     if (!rawLine) continue;
 
-    const normLine = normalizeText(rawLine);
-
     // Skip Header/Footer Boilerplate
     if (
-      normLine.includes('URETIM FORMU') ||
-      normLine.includes('SATINALMA SIPARIS FORMU') ||
-      normLine.includes('TEKLIF / SIPARIS FORMU') ||
-      normLine.includes('Sayfa No:') ||
-      normLine.includes('Dok. No:') ||
-      normLine.includes('SIES Elektrik')
+      rawLine.includes('Satınalma Siparişi') ||
+      rawLine.includes('SATINALMA SİPARİŞ FORMU') ||
+      rawLine.includes('Döküman No') ||
+      rawLine.includes('KalemKalem Açıklama') ||
+      rawLine.includes('NoProjeMalzeme') ||
+      rawLine.includes('Ödeme Koşulları') ||
+      rawLine.includes('Genel Notlar') ||
+      rawLine.includes('Kişisel Verilerin')
     ) {
       continue;
     }
 
-    // Match Quantity + Unit anywhere in the line (handles compressed table columns like "mm60,00adet")
-    const qtyUnitMatch = rawLine.match(/(\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)(?=[0-9\s\.\,\-\/\$€₺\b]|$)/i);
+    // Pattern 1: Single-line Composite PDF Row (e.g. Beşiktaş Tersane: "1-103810 - KABLO YOLU TAKOZU | M8*50 mm60,00adet5.10.2026-0,6000036,00USD")
+    const compositeLineMatch = rawLine.match(/^(\d{1,3}[\-\s]+)?([0-9A-Z]{3,15})\s*[\-]\s*(.*?)\s*(\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})?\s*[\-]?\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)\s*(TRY|USD|EUR|TL)?$/i);
 
-    if (qtyUnitMatch) {
-      const qtyStr = qtyUnitMatch[1];
-      const qty = parseFloat(qtyStr.replace(',', '.')) || 1;
-      const unitRaw = qtyUnitMatch[2].trim().toUpperCase();
+    // Pattern 2: Glued Multi-line Quantity Row (e.g. Sirena Marine: "26M24.23629.9817/08/2026")
+    const gluedQtyMatch = rawLine.match(/^(\d+(?:[\.\,]\d+)?)\s*(M|ADET|AD|BOY|KG|METRE|MT|SET|PAKET|PCS)\s*(\d+[\.\,]\d{2})\s*(\d+[\.\,]\d{2})\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})?/i);
+
+    // Pattern 3: Standard Spaced Quantity Line (e.g. "60,00 adet 5.10.2026 0,6000 36,00 USD")
+    const standardQtyMatch = rawLine.match(/(\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)(?=[0-9\s\.\,\-\/\$€₺\b]|$)/i);
+
+    // Pattern 4: Precise Product Code Line Match (Y03003203, 1-103810, SG-10-2A, P27448)
+    const productCodeMatch = rawLine.match(/^(Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|SG[\s\-][0-9A-Z\-]+|KALEM[\-\s]\d+)\s*(.*)/i);
+
+    if (compositeLineMatch) {
+      const code = compositeLineMatch[2].trim();
+      const desc = compositeLineMatch[3].trim();
+      const qty = parseFloat(compositeLineMatch[4].replace(',', '.')) || 1;
+      const unitRaw = compositeLineMatch[5].toUpperCase();
       const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+      const unitPrice = parseFloat(compositeLineMatch[7]?.replace(',', '.')) || 0;
+      const lineTotal = parseFloat(compositeLineMatch[8]?.replace(',', '.')) || (qty * unitPrice);
+      const currency = compositeLineMatch[9] || 'TRY';
 
-      // Portion before quantity
-      const textBeforeQty = rawLine.substring(0, qtyUnitMatch.index).trim();
-      
-      // Clean leading line index (e.g. "1 - " or "1. " or "1-")
-      let cleanText = textBeforeQty.replace(/^(\d{1,3}[\s\.\t\-]+)/, '').trim();
-      if (cleanText.startsWith('-')) cleanText = cleanText.substring(1).trim();
+      orderItems.push({
+        lineNo: lineNo++,
+        customerProductCode: code,
+        internalProductCode: `SIES-${code.replace(/\s+/g, '-')}`,
+        productName: desc || code,
+        productDescription: desc || code,
+        quantity: qty,
+        unit: unit,
+        unitPrice: unitPrice,
+        currency: currency,
+        lineTotal: lineTotal,
+        confidenceScore: 0.99,
+        status: 'OK'
+      });
 
-      // Extract item code & name
-      let pCode = '';
-      let pName = '';
+      currentCode = '';
+      currentDescLines = [];
+    } else if (productCodeMatch && !gluedQtyMatch && !rawLine.startsWith('Sipariş') && !rawLine.startsWith('Satış') && !rawLine.startsWith('Tedarikçi')) {
+      const code = productCodeMatch[1].trim();
+      let rest = productCodeMatch[2].trim();
 
-      const codeMatch = cleanText.match(/^([A-Z0-9\-\/\*\.\_]{3,20})/i);
-      if (codeMatch) {
-        pCode = codeMatch[1].trim();
-        pName = cleanText.substring(codeMatch[0].length).replace(/^[\s\-\:\/\|\*]+/, '').trim();
+      const inlineQtyMatch = rest.match(/(.*?)\s*(\d+(?:[\.\,]\d+)?)\s*(M|ADET|AD|BOY|KG|METRE|MT|SET|PAKET|PCS)\s*(\d+[\.\,]\d{2})\s*(\d+[\.\,]\d{2})\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})?/i);
+
+      if (inlineQtyMatch) {
+        const descPart = inlineQtyMatch[1].trim();
+        const qty = parseFloat(inlineQtyMatch[2].replace(',', '.')) || 1;
+        const unitRaw = inlineQtyMatch[3].toUpperCase();
+        const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+        const unitPrice = parseFloat(inlineQtyMatch[4].replace(',', '.')) || 0;
+        const lineTotal = parseFloat(inlineQtyMatch[5].replace(',', '.')) || (qty * unitPrice);
+
+        const fullDesc = [...currentDescLines, descPart].join(' ').trim() || descPart || code;
+
+        orderItems.push({
+          lineNo: lineNo++,
+          customerProductCode: code,
+          internalProductCode: `SIES-${code.replace(/\s+/g, '-')}`,
+          productName: fullDesc,
+          productDescription: fullDesc,
+          quantity: qty,
+          unit: unit,
+          unitPrice: unitPrice,
+          currency: 'TRY',
+          lineTotal: lineTotal,
+          confidenceScore: 0.99,
+          status: 'OK'
+        });
+
+        currentCode = '';
+        currentDescLines = [];
       } else {
-        pCode = `KALEM-${lineNo}`;
-        pName = cleanText;
+        currentCode = code;
+        currentDescLines = rest ? [rest] : [];
       }
+    } else if (gluedQtyMatch) {
+      const qty = parseFloat(gluedQtyMatch[1].replace(',', '.')) || 1;
+      const unitRaw = gluedQtyMatch[2].toUpperCase();
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+      const unitPrice = parseFloat(gluedQtyMatch[3].replace(',', '.')) || 0;
+      const lineTotal = parseFloat(gluedQtyMatch[4].replace(',', '.')) || (qty * unitPrice);
 
-      if (!pName || pName.length < 2) pName = pCode;
-
-      // Extract trailing price if present
-      const textAfterUnit = rawLine.substring(qtyUnitMatch.index + qtyUnitMatch[0].length).trim();
-      const priceMatch = textAfterUnit.match(/(\d+(?:[\.\,]\d+)?)/);
-      let unitPrice = 0;
-      if (priceMatch) {
-        const pVal = parseFloat(priceMatch[1].replace(',', '.'));
-        if (!isNaN(pVal) && pVal < 100000) unitPrice = pVal;
-      }
+      const pName = currentDescLines.join(' ').trim() || currentCode || `Kalem-${lineNo}`;
+      const pCode = currentCode || `KALEM-${lineNo}`;
 
       orderItems.push({
         lineNo: lineNo++,
         customerProductCode: pCode,
         internalProductCode: `SIES-${pCode.replace(/\s+/g, '-')}`,
         productName: pName,
-        productDescription: `${pName} (${pCode})`,
+        productDescription: pName,
+        quantity: qty,
+        unit: unit,
+        unitPrice: unitPrice,
+        currency: 'TRY',
+        lineTotal: lineTotal,
+        confidenceScore: 0.99,
+        status: 'OK'
+      });
+
+      currentCode = '';
+      currentDescLines = [];
+    } else if (standardQtyMatch && !rawLine.includes('Ödeme') && !rawLine.includes('Döviz')) {
+      const qty = parseFloat(standardQtyMatch[1].replace(',', '.')) || 1;
+      const unitRaw = standardQtyMatch[2].toUpperCase();
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+
+      const textBefore = rawLine.substring(0, standardQtyMatch.index).trim();
+      let pCode = currentCode;
+      let pName = currentDescLines.join(' ').trim();
+
+      if (textBefore) {
+        const codeInBefore = textBefore.match(/^([Y0-9A-Z]{1,4}[\-0-9A-Z\.\_]{3,20})/i);
+        if (codeInBefore) {
+          pCode = codeInBefore[1].trim();
+          const restName = textBefore.substring(codeInBefore[0].length).replace(/^[\s\-\:]+/, '').trim();
+          if (restName) pName = pName ? `${pName} ${restName}` : restName;
+        } else {
+          pName = pName ? `${pName} ${textBefore}` : textBefore;
+        }
+      }
+
+      const textAfter = rawLine.substring(standardQtyMatch.index + standardQtyMatch[0].length).trim();
+      const priceMatch = textAfter.match(/(\d+(?:[\.\,]\d+)?)/);
+      let unitPrice = 0;
+      if (priceMatch) {
+        const pVal = parseFloat(priceMatch[1].replace(',', '.'));
+        if (!isNaN(pVal) && pVal < 100000) unitPrice = pVal;
+      }
+
+      if (!pCode) pCode = `KALEM-${lineNo}`;
+      if (!pName) pName = pCode;
+
+      orderItems.push({
+        lineNo: lineNo++,
+        customerProductCode: pCode,
+        internalProductCode: `SIES-${pCode.replace(/\s+/g, '-')}`,
+        productName: pName,
+        productDescription: pName,
         quantity: qty,
         unit: unit,
         unitPrice: unitPrice,
@@ -335,6 +447,17 @@ function parseTextContent(rawText, originalName = '') {
         confidenceScore: 0.99,
         status: 'OK'
       });
+
+      currentCode = '';
+      currentDescLines = [];
+    } else {
+      if (currentCode && !rawLine.startsWith('Toplam') && !rawLine.startsWith('Ara Toplam') && !rawLine.startsWith('Sayfa')) {
+        currentDescLines.push(rawLine);
+      } else if (orderItems.length > 0 && (rawLine.startsWith('KANALI') || rawLine.startsWith('DELİKLİ') || rawLine.includes('RAL9001'))) {
+        const lastItem = orderItems[orderItems.length - 1];
+        lastItem.productName += ' ' + rawLine;
+        lastItem.productDescription += ' ' + rawLine;
+      }
     }
   }
 
