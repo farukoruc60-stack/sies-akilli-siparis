@@ -1026,13 +1026,18 @@ console.log(`[Frontend Static] Bulunan dist yollari: ${distPath || 'BULUNAMADI'}
 console.log(`=======================================================`);
 
 if (distPath) {
+  const indexHtmlPath = path.join(distPath, 'index.html');
+  const indexHtmlContent = fs.readFileSync(indexHtmlPath, 'utf8');
+  console.log(`[Frontend Static SUCCESS] index.html başarıyla okundu (${indexHtmlContent.length} bayt).`);
+
   app.use(express.static(distPath));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(distPath, 'index.html'));
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(indexHtmlContent);
   });
 } else {
-  console.error(`[Frontend Static HATA] Derlenmiş dist klasörü veya index.html bulunamadı!`);
+  console.error(`[Frontend Static HATA] Derlenmiş dist klasörü veya index.html bulunamadı! Aranan yollar:`, candidatePaths);
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
     res.status(200).send(`<!DOCTYPE html>
@@ -1052,7 +1057,7 @@ if (distPath) {
 <body>
   <div class="card">
     <h1>SİES Akıllı Sipariş Takip</h1>
-    <p>Canlı sunucu başlatılıyor. Lütfen birkaç saniye sonra sayfayı yenileyiniz.</p>
+    <p>Canlı sunucu derleniyor. Lütfen 10 saniye sonra sayfayı yenileyiniz.</p>
     <a href="/" class="btn" onclick="location.reload(); return false;">Yenile</a>
   </div>
 </body>
