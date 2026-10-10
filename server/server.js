@@ -12,7 +12,7 @@ dotenv.config();
 import { initDatabase, query } from './db/database.js';
 import { seedInitialUsers, generateToken, authenticateToken, requireAdmin } from './auth.js';
 import { processUploadedDocument, generateProductionFormPdf, generateShippingLabelsPdf, calculateSHA256 } from './documentProcessor.js';
-import { getYandexStatus, uploadToYandexDisk } from './yandexClient.js';
+import { getYandexStatus, uploadToYandexDisk, saveYandexToken } from './yandexClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -883,6 +883,21 @@ app.get('/api/yandex/status', authenticateToken, async (req, res) => {
   res.json(status);
 });
 
+app.post('/api/yandex/token', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { token } = req.body;
+    if (!token || !token.trim()) {
+      return res.status(400).json({ error: 'Lütfen geçerli bir Yandex Disk OAuth2 Token girin!' });
+    }
+
+    saveYandexToken(token);
+    const status = await getYandexStatus();
+    res.json({ success: true, status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // -------------------------------------------------------------
 // CUSTOMERS API ROUTES
 // -------------------------------------------------------------
@@ -993,6 +1008,16 @@ app.get('/api/audit-logs', authenticateToken, requireAdmin, async (req, res) => 
     res.status(500).json({ error: err.message });
   }
 });
+
+// Serve Frontend Production Build if dist directory exists
+const distDir = path.join(__dirname, '../dist');
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/')) return next();
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
 
 // Start Server
 app.listen(PORT, () => {
