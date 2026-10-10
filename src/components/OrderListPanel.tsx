@@ -149,9 +149,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   };
 
   return (
-    <div style={{
-      width: '360px',
-      minWidth: '320px',
+    <div className="order-list-panel" style={{
       backgroundColor: '#FFFFFF',
       borderRight: '1px solid #E2E8F0',
       display: 'flex',

@@ -66,7 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside style={{
+    <aside className="app-sidebar" style={{
       width: isCollapsed ? '60px' : '240px',
       minWidth: isCollapsed ? '60px' : '240px',
       backgroundColor: '#F4F5F7',

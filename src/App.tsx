@@ -17,9 +17,27 @@ import { CoatingView } from './pages/CoatingView';
 import { ShippingView } from './pages/ShippingView';
 import { SettingsView } from './pages/SettingsView';
 import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, ExtractedCustomerInfo } from './types';
+import { 
+  Layers, 
+  UploadCloud, 
+  Factory, 
+  Truck, 
+  Settings, 
+  Menu, 
+  X, 
+  LogOut, 
+  Users, 
+  Package, 
+  FileText, 
+  BarChart3, 
+  UserCheck, 
+  LayoutDashboard,
+  ShieldCheck,
+  Paintbrush
+} from 'lucide-react';
 
 export default function App() {
-  const { isAuthenticated, token } = useAuth();
+  const { isAuthenticated, token, user, logout } = useAuth();
 
   const [activeTab, setActiveTab] = useState<string>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -49,6 +67,7 @@ export default function App() {
   // Mobile responsiveness state
   const [isMobile, setIsMobile] = useState<boolean>(() => window.innerWidth <= 768);
   const [mobileActiveView, setMobileActiveView] = useState<'list' | 'detail'>('list');
+  const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -273,6 +292,7 @@ export default function App() {
         title="Akıllı Sipariş Takip Platformu"
         onRefresh={() => fetchOrders()}
         onNewOrder={handleUploadClick}
+        onToggleMobileDrawer={() => setIsMobileDrawerOpen(true)}
       />
 
       {/* Main Workspace Body */}
@@ -370,6 +390,183 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* Mobile Bottom Navigation Bar (< 768px) */}
+      <nav className="mobile-bottom-nav">
+        <button 
+          className={`mobile-nav-item ${activeTab === 'orders' ? 'active' : ''}`}
+          onClick={() => {
+            setActiveTab('orders');
+            setMobileActiveView('list');
+          }}
+        >
+          <Layers size={20} />
+          <span>Siparişler</span>
+        </button>
+
+        <button 
+          className="mobile-nav-item primary"
+          onClick={handleUploadClick}
+        >
+          <UploadCloud size={22} />
+          <span>Yükle</span>
+        </button>
+
+        <button 
+          className={`mobile-nav-item ${activeTab === 'production' ? 'active' : ''}`}
+          onClick={() => setActiveTab('production')}
+        >
+          <Factory size={20} />
+          <span>Üretim</span>
+        </button>
+
+        <button 
+          className={`mobile-nav-item ${activeTab === 'shipping' ? 'active' : ''}`}
+          onClick={() => setActiveTab('shipping')}
+        >
+          <Truck size={20} />
+          <span>Sevkiyat</span>
+        </button>
+
+        <button 
+          className="mobile-nav-item"
+          onClick={() => setIsMobileDrawerOpen(true)}
+        >
+          <Menu size={20} />
+          <span>Menü</span>
+        </button>
+      </nav>
+
+      {/* Mobile Slide-out Drawer Menu */}
+      {isMobileDrawerOpen && (
+        <div className="mobile-drawer-overlay" onClick={() => setIsMobileDrawerOpen(false)}>
+          <div className="mobile-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-drawer-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <img src="/sies-logo.jpg" alt="Logo" style={{ height: '26px', borderRadius: '4px' }} />
+                <span style={{ fontWeight: 700, fontSize: '13px', color: '#1E293B' }}>SİES MENÜ</span>
+              </div>
+              <button 
+                onClick={() => setIsMobileDrawerOpen(false)}
+                style={{ background: 'none', border: 'none', color: '#64748B', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* User Info Card inside Mobile Drawer */}
+            {user && (
+              <div style={{ margin: '12px', padding: '12px', background: '#F8FAFC', borderRadius: '12px', border: '1px solid #E2E8F0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={18} style={{ color: '#4361EE' }} />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '13px', color: '#1E293B' }}>{user.name}</div>
+                    <div style={{ fontSize: '11px', color: '#64748B' }}>{user.email} ({user.role})</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="mobile-drawer-links">
+              <div className="drawer-section-title">ANA MENÜ</div>
+              <button 
+                className={`drawer-link ${activeTab === 'orders' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('orders'); setMobileActiveView('list'); setIsMobileDrawerOpen(false); }}
+              >
+                <Layers size={18} /> Sipariş Havuzu
+              </button>
+              <button 
+                className={`drawer-link ${activeTab === 'dashboard' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('dashboard'); setIsMobileDrawerOpen(false); }}
+              >
+                <LayoutDashboard size={18} /> Gösterge Paneli
+              </button>
+
+              <div className="drawer-section-title">OPERASYONEL MODÜLLER</div>
+              <button 
+                className={`drawer-link ${activeTab === 'customers' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('customers'); setIsMobileDrawerOpen(false); }}
+              >
+                <Users size={18} /> Müşteriler & Cari
+              </button>
+              <button 
+                className={`drawer-link ${activeTab === 'products' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('products'); setIsMobileDrawerOpen(false); }}
+              >
+                <Package size={18} /> Ürün ve Kalemler
+              </button>
+              <button 
+                className={`drawer-link ${activeTab === 'production' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('production'); setIsMobileDrawerOpen(false); }}
+              >
+                <Factory size={18} /> Üretim Takibi
+              </button>
+              <button 
+                className={`drawer-link ${activeTab === 'coating' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('coating'); setIsMobileDrawerOpen(false); }}
+              >
+                <Paintbrush size={18} /> Kaplama / Boya Takibi
+              </button>
+              <button 
+                className={`drawer-link ${activeTab === 'shipping' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('shipping'); setIsMobileDrawerOpen(false); }}
+              >
+                <Truck size={18} /> Sevkiyat & İrsaliye
+              </button>
+              <button 
+                className={`drawer-link ${activeTab === 'archive' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('archive'); setIsMobileDrawerOpen(false); }}
+              >
+                <FileText size={18} /> Belge Arşivi
+              </button>
+              <button 
+                className={`drawer-link ${activeTab === 'reports' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('reports'); setIsMobileDrawerOpen(false); }}
+              >
+                <BarChart3 size={18} /> Raporlar & Analitik
+              </button>
+
+              <div className="drawer-section-title">YÖNETİM</div>
+              <button 
+                className={`drawer-link ${activeTab === 'users' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('users'); setIsMobileDrawerOpen(false); }}
+              >
+                <UserCheck size={18} /> Kullanıcı Yönetimi
+              </button>
+              <button 
+                className={`drawer-link ${activeTab === 'settings' ? 'active' : ''}`}
+                onClick={() => { setActiveTab('settings'); setIsMobileDrawerOpen(false); }}
+              >
+                <Settings size={18} /> Sistem Ayarları
+              </button>
+            </div>
+
+            {/* Logout Footer Button */}
+            <div style={{ padding: '16px', borderTop: '1px solid #E2E8F0', marginTop: 'auto' }}>
+              <button 
+                onClick={() => { logout(); setIsMobileDrawerOpen(false); }}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  background: '#FEE2E2',
+                  border: '1px solid #FCA5A5',
+                  color: '#DC2626',
+                  borderRadius: '10px',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  cursor: 'pointer'
+                }}
+              >
+                <LogOut size={18} /> Çıkış Yap
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Verification Modal for Newly Uploaded Documents */}
       {verificationModalOpen && verificationData && (

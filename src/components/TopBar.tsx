@@ -1,50 +1,76 @@
 import React from 'react';
-import { Layers, RefreshCw, UserCheck, LogOut, Database, ShieldCheck } from 'lucide-react';
+import { Layers, RefreshCw, UserCheck, LogOut, Database, ShieldCheck, Menu } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface TopBarProps {
   title?: string;
   onRefresh?: () => void;
   onNewOrder?: () => void;
+  onToggleMobileDrawer?: () => void;
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ 
   title = 'SİES ELEKTRİK | Akıllı Sipariş Takip Platformu',
   onRefresh,
-  onNewOrder
+  onNewOrder,
+  onToggleMobileDrawer
 }) => {
   const { user, logout } = useAuth();
 
   return (
-    <header style={{
-      height: '42px',
-      backgroundColor: '#F1F3F5',
+    <header className="app-topbar" style={{
+      height: '44px',
+      backgroundColor: '#FFFFFF',
       borderBottom: '1px solid #E2E8F0',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '0 16px',
+      padding: '0 12px',
       fontSize: '12px',
       color: '#4A5568',
       userSelect: 'none',
       zIndex: 50
     }}>
       {/* Left Brand & Title */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+        {onToggleMobileDrawer && (
+          <button
+            onClick={onToggleMobileDrawer}
+            className="mobile-show-inline"
+            style={{
+              background: '#F1F5F9',
+              border: '1px solid #CBD5E1',
+              borderRadius: '8px',
+              padding: '6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#334155'
+            }}
+            title="Menüyü Aç"
+          >
+            <Menu size={18} />
+          </button>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', shrink: 0 }}>
           <img 
             src="/sies-logo.jpg" 
             alt="SİES Logo" 
-            style={{ height: '26px', objectFit: 'contain', borderRadius: '4px' }} 
+            style={{ height: '24px', objectFit: 'contain', borderRadius: '4px' }} 
           />
-          <span style={{ fontWeight: 700, color: '#1A202C', fontSize: '12.5px', whiteSpace: 'nowrap' }}>
+          <span className="desktop-company-title" style={{ fontWeight: 700, color: '#1A202C', fontSize: '12px', whiteSpace: 'nowrap' }}>
             SİES ELEKTRİK MÜMESSİLLİK SAN. VE TİC. LTD. ŞTİ.
+          </span>
+          <span className="mobile-company-title" style={{ fontWeight: 700, color: '#1A202C', fontSize: '12px', whiteSpace: 'nowrap' }}>
+            SİES | Sipariş Takip
           </span>
         </div>
 
-        <span style={{ color: '#CBD5E0' }}>|</span>
+        <span className="mobile-hide" style={{ color: '#CBD5E0' }}>|</span>
 
-        <span style={{ fontWeight: 500, color: '#4A5568', fontSize: '12px' }}>{title}</span>
+        <span className="mobile-hide" style={{ fontWeight: 500, color: '#4A5568', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
       </div>
 
       {/* Right User & System Status */}
