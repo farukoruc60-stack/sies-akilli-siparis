@@ -654,6 +654,117 @@ app.get('/api/yandex/status', authenticateToken, async (req, res) => {
   res.json(status);
 });
 
+// -------------------------------------------------------------
+// CUSTOMERS API ROUTES
+// -------------------------------------------------------------
+app.get('/api/customers', authenticateToken, async (req, res) => {
+  try {
+    const custsRes = await query(`
+      SELECT c.*, 
+             COUNT(o.id) as total_orders,
+             MAX(o.created_at) as last_order_date
+      FROM customers c
+      LEFT JOIN orders o ON o.customer_id = c.id
+      GROUP BY c.id
+      ORDER BY c.name ASC
+    `);
+    res.json(custsRes.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/customers', authenticateToken, async (req, res) => {
+  try {
+    const { name, taxOffice, taxNumber, address, phone, email } = req.body;
+    if (!name) return res.status(400).json({ error: 'Müşteri unvanı zorunludur!' });
+
+    const newCust = await query(
+      'INSERT INTO customers (name, tax_office, tax_number, address, phone, email) VALUES (?, ?, ?, ?, ?, ?)',
+      [name.trim(), taxOffice || '', taxNumber || '', address || '', phone || '', email || '']
+    );
+
+    res.json({ success: true, id: newCust.lastID || newCust.rows?.[0]?.id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// PRODUCTS & ORDER ITEMS API ROUTES
+// -------------------------------------------------------------
+app.get('/api/products', authenticateToken, async (req, res) => {
+  try {
+    const itemsRes = await query(`
+      SELECT oi.*, o.order_no, o.status as order_status, c.name as customer_name
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      LEFT JOIN customers c ON o.customer_id = c.id
+      ORDER BY oi.id DESC
+      LIMIT 200
+    `);
+    res.json(itemsRes.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// PRODUCTION API ROUTES
+// -------------------------------------------------------------
+app.get('/api/production', authenticateToken, async (req, res) => {
+  try {
+    const itemsRes = await query(`
+      SELECT oi.*, o.order_no, o.status as order_status, c.name as customer_name
+      FROM order_items oi
+      JOIN orders o ON oi.order_id = o.id
+      LEFT JOIN customers c ON o.customer_id = c.id
+      ORDER BY oi.id DESC
+    `);
+    res.json(itemsRes.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// ALL DISPATCHES API ROUTE
+// -------------------------------------------------------------
+app.get('/api/dispatches/all', authenticateToken, async (req, res) => {
+  try {
+    const dispatchesRes = await query(`
+      SELECT d.*, oi.customer_product_code, oi.product_name, o.order_no, c.name as customer_name, u.full_name as creator_name
+      FROM dispatches d
+      JOIN orders o ON d.order_id = o.id
+      LEFT JOIN customers c ON o.customer_id = c.id
+      LEFT JOIN order_items oi ON d.order_item_id = oi.id
+      LEFT JOIN users u ON d.created_by = u.id
+      ORDER BY d.created_at DESC
+    `);
+    res.json(dispatchesRes.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// AUDIT LOGS & SETTINGS ROUTES
+// -------------------------------------------------------------
+app.get('/api/audit-logs', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const logsRes = await query(`
+      SELECT a.*, u.full_name as user_name
+      FROM audit_logs a
+      LEFT JOIN users u ON a.user_id = u.id
+      ORDER BY a.created_at DESC
+      LIMIT 100
+    `);
+    res.json(logsRes.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Start Server
 app.listen(PORT, () => {
   console.log(`=======================================================`);
@@ -661,3 +772,4 @@ app.listen(PORT, () => {
   console.log(` API Endpoint: http://localhost:${PORT}/api/orders`);
   console.log(`=======================================================`);
 });
+

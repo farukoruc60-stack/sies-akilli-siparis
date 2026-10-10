@@ -52,7 +52,7 @@ export const DashboardView: React.FC = () => {
     <div style={{ padding: '1.5rem', height: '100%', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#fff' }}>Gösterge Paneli</h1>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>Gösterge Paneli</h1>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
             Canlı veritabanı istatistikleri ve anlık sipariş durumu
           </p>
@@ -67,19 +67,20 @@ export const DashboardView: React.FC = () => {
           const Icon = c.icon;
           return (
             <div key={idx} style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-color)',
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
               borderRadius: '12px',
               padding: '1.25rem',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between'
+              justifyContent: 'space-between',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
             }}>
               <div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.25rem' }}>
+                <span style={{ fontSize: '0.78rem', color: '#64748B', display: 'block', marginBottom: '0.25rem' }}>
                   {c.title}
                 </span>
-                <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#fff' }}>
+                <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#0F172A' }}>
                   {loading ? '...' : c.value}
                 </span>
               </div>
@@ -87,7 +88,7 @@ export const DashboardView: React.FC = () => {
                 width: '44px',
                 height: '44px',
                 borderRadius: '10px',
-                background: `${c.color}20`,
+                background: `${c.color}15`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

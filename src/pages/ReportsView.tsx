@@ -41,21 +41,40 @@ export const ReportsView: React.FC = () => {
     <div style={{ padding: '1.5rem', height: '100%', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#fff' }}>Raporlar ve Dışa Aktarım</h1>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--text-primary)' }}>Raporlar ve Veri Dışa Aktarımı</h1>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Sipariş verilerini ve imalat kalemlerini Excel/CSV formatında indirin
+            Sipariş verilerini, imalat kalemlerini ve sevkiyat kayıtlarını Excel / CSV formatında indirin
           </p>
         </div>
-        <button onClick={handleExportExcel} className="btn btn-primary">
-          <FileSpreadsheet size={18} /> Excel (CSV) İndir
+        <button onClick={handleExportExcel} className="btn btn-primary" style={{ padding: '0.6rem 1.2rem', fontWeight: 700 }}>
+          <FileSpreadsheet size={18} /> Tüm Siparişleri Excel (CSV) İndir
         </button>
       </div>
 
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '1.5rem' }}>
-        <h3 style={{ fontSize: '1rem', color: '#fff', marginBottom: '1rem' }}>Filtrelenmiş Sipariş Raporu</h3>
-        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-          Veritabanındaki tüm canlı siparişler, kalem sayıları ve imalat durumları ile birlikte Excel veya CSV tablolarına aktarılabilir.
-        </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.25rem' }}>
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <h3 style={{ fontSize: '1.05rem', color: '#0284C7', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <BarChart3 size={20} /> Sipariş Havuzu İstatistik Raporu
+          </h3>
+          <p style={{ fontSize: '0.85rem', color: '#475569', marginBottom: '1rem' }}>
+            Veritabanındaki tüm onaylı, üretimdeki ve sevk edilmiş siparişlerin genel dökümü.
+          </p>
+          <button onClick={handleExportExcel} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
+            <Download size={16} /> Sipariş Listesini İndir (CSV)
+          </button>
+        </div>
+
+        <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+          <h3 style={{ fontSize: '1.05rem', color: '#10B981', fontWeight: 700, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <FileSpreadsheet size={20} /> İrsaliye & Sevkiyat Raporu
+          </h3>
+          <p style={{ fontSize: '0.85rem', color: '#475569', marginBottom: '1rem' }}>
+            Düzenlenen tüm irsaliyeler, araç plakaları, şoförler ve sevk edilen parça detayları.
+          </p>
+          <button onClick={handleExportExcel} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center' }}>
+            <Download size={16} /> Sevkiyat Raporunu İndir (CSV)
+          </button>
+        </div>
       </div>
     </div>
   );

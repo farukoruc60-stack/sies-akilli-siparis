@@ -9,6 +9,12 @@ import { DashboardView } from './pages/DashboardView';
 import { ArchiveView } from './pages/ArchiveView';
 import { ReportsView } from './pages/ReportsView';
 import { UsersView } from './pages/UsersView';
+import { CustomersView } from './pages/CustomersView';
+import { ProductsView } from './pages/ProductsView';
+import { ProductionView } from './pages/ProductionView';
+import { CoatingView } from './pages/CoatingView';
+import { ShippingView } from './pages/ShippingView';
+import { SettingsView } from './pages/SettingsView';
 import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, ExtractedCustomerInfo } from './types';
 
 export default function App() {
@@ -231,11 +237,17 @@ export default function App() {
 
       {/* Main Workspace Content based on active tab */}
       {activeTab === 'dashboard' && <DashboardView />}
+      {activeTab === 'customers' && <CustomersView />}
+      {activeTab === 'products' && <ProductsView />}
+      {activeTab === 'production' && <ProductionView />}
+      {activeTab === 'coating' && <CoatingView />}
+      {activeTab === 'shipping' && <ShippingView />}
       {activeTab === 'archive' && <ArchiveView />}
       {activeTab === 'reports' && <ReportsView />}
       {activeTab === 'users' && <UsersView />}
-      
-      {['orders', 'customers', 'products', 'production', 'coating', 'shipping', 'settings'].includes(activeTab) && (
+      {activeTab === 'settings' && <SettingsView />}
+
+      {activeTab === 'orders' && (
         <>
           {/* Panel 2: Inbox Order List */}
           <OrderListPanel
