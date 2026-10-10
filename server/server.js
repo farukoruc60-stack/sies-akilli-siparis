@@ -11,7 +11,7 @@ dotenv.config();
 
 import { initDatabase, query } from './db/database.js';
 import { seedInitialUsers, generateToken, authenticateToken, requireAdmin } from './auth.js';
-import { processUploadedDocument, generateProductionFormPdf, calculateSHA256 } from './documentProcessor.js';
+import { processUploadedDocument, generateProductionFormPdf, generateShippingLabelsPdf, calculateSHA256 } from './documentProcessor.js';
 import { getYandexStatus, uploadToYandexDisk } from './yandexClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -504,6 +504,93 @@ app.post('/api/orders/:id/production-form', authenticateToken, async (req, res) 
     });
   } catch (err) {
     console.error('Üretim Formu Oluşturma Hatası:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GENERATE SHIPPING LABELS PDF (100x100mm OR 100x50mm) FOR SELECTED ITEMS
+app.post('/api/orders/:id/shipping-labels', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const { itemIds, size = '100x100' } = req.body;
+
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'Lütfen etiketi basılacak kalemleri seçin!' });
+    }
+
+    // 1. Fetch order details
+    const orderRes = await query(`
+      SELECT o.*, c.name as customer_name, u1.full_name as creator_name
+      FROM orders o
+      LEFT JOIN customers c ON o.customer_id = c.id
+      LEFT JOIN users u1 ON o.created_by = u1.id
+      WHERE o.id = ?
+    `, [orderId]);
+
+    if (orderRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Sipariş bulunamadı!' });
+    }
+
+    const order = orderRes.rows[0];
+
+    // 2. Fetch selected items
+    const placeholders = itemIds.map(() => '?').join(',');
+    const itemsRes = await query(
+      `SELECT * FROM order_items WHERE id IN (${placeholders}) AND order_id = ? ORDER BY line_no ASC, id ASC`,
+      [...itemIds, orderId]
+    );
+
+    const selectedItems = itemsRes.rows;
+    if (selectedItems.length === 0) {
+      return res.status(400).json({ error: 'Seçili kalemler bulunamadı!' });
+    }
+
+    // 3. Generate Shipping Labels PDF
+    const timestamp = Date.now();
+    const labelSizeStr = size === '100x50' ? '100x50mm' : '100x100mm';
+    const pdfFileName = `Sevkiyat_Etiketi_${order.order_no || orderId}_${size}_${timestamp}.pdf`;
+    const pdfFilePath = path.join(uploadDir, pdfFileName);
+    const originalDocName = `Sevkiyat Etiketleri (${labelSizeStr}) - Sipariş ${order.order_no || orderId} (${selectedItems.length} Kalem).pdf`;
+
+    await generateShippingLabelsPdf(order, selectedItems, pdfFilePath, size);
+
+    const fileSize = fs.statSync(pdfFilePath).size;
+    const sha256 = calculateSHA256(pdfFilePath);
+
+    // 4. Save document record to DB under 'documents' table linked to order_id
+    const docRes = await query(
+      `INSERT INTO documents (
+        order_id, original_name, file_type, mime_type, file_size, sha256_hash, original_path, pdf_path, uploaded_by, archive_status
+      ) VALUES (?, ?, '.pdf', 'application/pdf', ?, ?, ?, ?, ?, 'PENDING')`,
+      [orderId, originalDocName, fileSize, sha256, pdfFilePath, pdfFilePath, req.user.id]
+    );
+
+    const docId = docRes.lastID || docRes.rows?.[0]?.id;
+
+    // 5. Order Status History Log
+    await query(
+      'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
+      [orderId, order.status, order.status, req.user.id, `${selectedItems.length} kalem için ${labelSizeStr} boyutunda Sevkiyat Etiketi basıldı.`]
+    );
+
+    // Background Yandex Disk Upload
+    uploadToYandexDisk(pdfFilePath, 'SevkiyatEtiketleri', `${docId}_${pdfFileName}`).then(async (yRes) => {
+      if (yRes.success) {
+        await query('UPDATE documents SET archive_status = ?, yandex_path = ? WHERE id = ?', ['ARCHIVED', yRes.yandexPath, docId]);
+      }
+    });
+
+    res.json({
+      success: true,
+      documentId: docId,
+      originalName: originalDocName,
+      pdfUrl: `/api/documents/${docId}/pdf`,
+      downloadUrl: `/api/documents/${docId}/download`,
+      itemCount: selectedItems.length,
+      size: labelSizeStr
+    });
+  } catch (err) {
+    console.error('Sevkiyat Etiketi Oluşturma Hatası:', err);
     res.status(500).json({ error: err.message });
   }
 });

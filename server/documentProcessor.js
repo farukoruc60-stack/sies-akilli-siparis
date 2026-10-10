@@ -1210,3 +1210,340 @@ export async function generateProductionFormPdf(order, items, outputPath, formNo
   fs.writeFileSync(outputPath, pdfBytes);
 }
 
+export async function generateShippingLabelsPdf(order, items, outputPath, labelSize = '100x100') {
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const logoImg = await loadLogoImage(pdfDoc);
+
+  const is100x50 = labelSize === '100x50';
+  // 1 mm = 2.83465 pt
+  const pageWidth = 283.46; // 100 mm
+  const pageHeight = is100x50 ? 141.73 : 283.46; // 50 mm or 100 mm
+  const margin = 8;
+  const contentWidth = pageWidth - margin * 2;
+  const contentHeight = pageHeight - margin * 2;
+
+  const orderNo = sanitizeForPdf(order.order_no || 'SO');
+  const custName = sanitizeForPdf(order.customer_name || 'MUSTERI');
+  const custRef = sanitizeForPdf(order.customer_order_no || '-');
+  const dateStr = new Date().toLocaleDateString('tr-TR');
+
+  for (let idx = 0; idx < items.length; idx++) {
+    const item = items[idx];
+    const page = pdfDoc.addPage([pageWidth, pageHeight]);
+
+    // Outer Border Line
+    page.drawRectangle({
+      x: margin,
+      y: margin,
+      width: contentWidth,
+      height: contentHeight,
+      borderColor: rgb(0.1, 0.1, 0.1),
+      borderWidth: 1.5,
+      color: rgb(1, 1, 1)
+    });
+
+    if (!is100x50) {
+      // ==============================================================
+      // 100mm x 100mm KARE SEVKİYAT ETİKETİ TASARIMI
+      // ==============================================================
+      
+      // Header Card
+      page.drawRectangle({
+        x: margin + 3,
+        y: pageHeight - margin - 42,
+        width: contentWidth - 6,
+        height: 39,
+        color: rgb(0.97, 0.98, 1.0),
+        borderColor: rgb(0.08, 0.25, 0.5),
+        borderWidth: 1
+      });
+
+      if (logoImg) {
+        page.drawImage(logoImg, {
+          x: margin + 8,
+          y: pageHeight - margin - 38,
+          width: 70,
+          height: 32
+        });
+      }
+
+      const hTextX = logoImg ? margin + 84 : margin + 8;
+      page.drawText(sanitizeForPdf('SIES ELEKTRIK MUMESSILLIK'), {
+        x: hTextX,
+        y: pageHeight - margin - 18,
+        size: 8,
+        font: boldFont,
+        color: rgb(0.08, 0.25, 0.5)
+      });
+
+      page.drawText(sanitizeForPdf('SEVKIYAT KOLI / PAKET ETIKETI'), {
+        x: hTextX,
+        y: pageHeight - margin - 32,
+        size: 7.5,
+        font: boldFont,
+        color: rgb(0.85, 0.45, 0.0)
+      });
+
+      // Customer Info Box
+      let y = pageHeight - margin - 48;
+      page.drawRectangle({
+        x: margin + 3,
+        y: y - 36,
+        width: contentWidth - 6,
+        height: 36,
+        color: rgb(0.98, 0.98, 0.98),
+        borderColor: rgb(0.85, 0.85, 0.85),
+        borderWidth: 0.5
+      });
+
+      page.drawText(sanitizeForPdf('ALICI / MUSTERI:'), { x: margin + 8, y: y - 12, size: 7, font: boldFont, color: rgb(0.4, 0.4, 0.4) });
+      page.drawText(custName.slice(0, 34), { x: margin + 8, y: y - 24, size: 8.5, font: boldFont, color: rgb(0.08, 0.25, 0.5) });
+
+      page.drawText(sanitizeForPdf(`Sip No: ${orderNo}`), { x: margin + 8, y: y - 34, size: 7.5, font: font, color: rgb(0.2, 0.2, 0.2) });
+      page.drawText(sanitizeForPdf(`Ref: ${custRef}`), { x: margin + 140, y: y - 34, size: 7.5, font: font, color: rgb(0.2, 0.2, 0.2) });
+      page.drawText(sanitizeForPdf(`Tarih: ${dateStr}`), { x: margin + 210, y: y - 34, size: 7, font: font, color: rgb(0.4, 0.4, 0.4) });
+
+      // Product Details Main Box (Heavy Orange Border)
+      y -= 42;
+      page.drawRectangle({
+        x: margin + 3,
+        y: y - 90,
+        width: contentWidth - 6,
+        height: 90,
+        color: rgb(1, 1, 1),
+        borderColor: rgb(0.85, 0.45, 0.0),
+        borderWidth: 1.5
+      });
+
+      const pCode = sanitizeForPdf(item.customerProductCode || item.customer_product_code || `KALEM-${idx+1}`);
+      const pName = sanitizeForPdf(item.productName || item.product_name || 'Urun');
+      const qtyStr = `${item.quantity || 1} ${sanitizeForPdf(item.unit || 'Adet')}`;
+      const lineNoStr = `KALEM ${idx + 1} / ${items.length}`;
+
+      // Orange header bar inside item box
+      page.drawRectangle({
+        x: margin + 4,
+        y: y - 20,
+        width: contentWidth - 8,
+        height: 19,
+        color: rgb(0.85, 0.45, 0.0)
+      });
+
+      page.drawText(sanitizeForPdf(`URUN KODU: ${pCode}`), {
+        x: margin + 10,
+        y: y - 14,
+        size: 10,
+        font: boldFont,
+        color: rgb(1, 1, 1)
+      });
+
+      page.drawText(sanitizeForPdf(lineNoStr), {
+        x: pageWidth - margin - 75,
+        y: y - 14,
+        size: 8,
+        font: boldFont,
+        color: rgb(1, 1, 1)
+      });
+
+      // Description text
+      page.drawText(pName.slice(0, 42), {
+        x: margin + 8,
+        y: y - 34,
+        size: 8.5,
+        font: boldFont,
+        color: rgb(0.1, 0.1, 0.1)
+      });
+      if (pName.length > 42) {
+        page.drawText(pName.slice(42, 84), {
+          x: margin + 8,
+          y: y - 45,
+          size: 8,
+          font: font,
+          color: rgb(0.3, 0.3, 0.3)
+        });
+      }
+
+      // Quantity highlight
+      page.drawRectangle({
+        x: margin + 8,
+        y: y - 82,
+        width: 140,
+        height: 25,
+        color: rgb(0.92, 0.96, 1.0),
+        borderColor: rgb(0.08, 0.25, 0.5),
+        borderWidth: 1
+      });
+
+      page.drawText(sanitizeForPdf('SEVK MIKTARI:'), { x: margin + 12, y: y - 68, size: 7, font: boldFont, color: rgb(0.3, 0.3, 0.3) });
+      page.drawText(qtyStr, { x: margin + 12, y: y - 80, size: 10.5, font: boldFont, color: rgb(0.08, 0.25, 0.5) });
+
+      // Simulated Barcode Box on right
+      const barX = margin + 160;
+      page.drawRectangle({
+        x: barX,
+        y: y - 82,
+        width: contentWidth - 170,
+        height: 25,
+        color: rgb(0.95, 0.95, 0.95),
+        borderColor: rgb(0.7, 0.7, 0.7),
+        borderWidth: 0.5
+      });
+
+      // Draw barcode lines
+      let bPos = barX + 6;
+      const barPattern = [2, 1, 3, 1, 2, 4, 1, 2, 1, 3, 2, 1, 4, 1, 2, 3, 1, 2];
+      barPattern.forEach((bw, bIdx) => {
+        if (bIdx % 2 === 0 && bPos < barX + contentWidth - 180) {
+          page.drawRectangle({
+            x: bPos,
+            y: y - 76,
+            width: bw,
+            height: 16,
+            color: rgb(0.1, 0.1, 0.1)
+          });
+        }
+        bPos += bw + 1;
+      });
+
+      // Barcode Code Text
+      page.drawText(sanitizeForPdf(`*${orderNo}-${pCode}*`), {
+        x: barX + 6,
+        y: y - 81,
+        size: 5.5,
+        font: font,
+        color: rgb(0.3, 0.3, 0.3)
+      });
+
+      // Bottom Instructions Footer
+      page.drawText(sanitizeForPdf('SIES TS 822 STANDARTLARINDA URETILMISTIR | KALITE KONTROL OK'), {
+        x: margin + 8,
+        y: margin + 6,
+        size: 6,
+        font: font,
+        color: rgb(0.5, 0.5, 0.5)
+      });
+
+    } else {
+      // ==============================================================
+      // 100mm x 50mm STANDART SEVKİYAT ETİKETİ TASARIMI
+      // ==============================================================
+      
+      // Header Bar
+      page.drawRectangle({
+        x: margin + 2,
+        y: pageHeight - margin - 25,
+        width: contentWidth - 4,
+        height: 23,
+        color: rgb(0.08, 0.25, 0.5)
+      });
+
+      if (logoImg) {
+        page.drawImage(logoImg, {
+          x: margin + 5,
+          y: pageHeight - margin - 23,
+          width: 45,
+          height: 20
+        });
+      }
+
+      const hTextX = logoImg ? margin + 55 : margin + 6;
+
+      page.drawText(sanitizeForPdf('SIES ELEKTRIK MUMESSILLIK LTD. STI.'), {
+        x: hTextX,
+        y: pageHeight - margin - 12,
+        size: 7,
+        font: boldFont,
+        color: rgb(1, 1, 1)
+      });
+
+      page.drawText(sanitizeForPdf(`SEVKİYAT ETİKETİ | Sip: ${orderNo}`), {
+        x: hTextX,
+        y: pageHeight - margin - 21,
+        size: 6.5,
+        font: font,
+        color: rgb(0.85, 0.9, 1)
+      });
+
+      // Customer Info line
+      let y = pageHeight - margin - 29;
+      page.drawText(sanitizeForPdf(`ALICI: ${custName.slice(0, 35)}`), {
+        x: margin + 6,
+        y: y - 8,
+        size: 7.5,
+        font: boldFont,
+        color: rgb(0.1, 0.1, 0.1)
+      });
+
+      y -= 18;
+      // Item Box
+      page.drawRectangle({
+        x: margin + 2,
+        y: y - 45,
+        width: contentWidth - 4,
+        height: 45,
+        color: rgb(0.98, 0.99, 1.0),
+        borderColor: rgb(0.85, 0.45, 0.0),
+        borderWidth: 1
+      });
+
+      const pCode = sanitizeForPdf(item.customerProductCode || item.customer_product_code || `KALEM-${idx+1}`);
+      const pName = sanitizeForPdf(item.productName || item.product_name || 'Urun');
+      const qtyStr = `${item.quantity || 1} ${sanitizeForPdf(item.unit || 'Adet')}`;
+
+      page.drawText(sanitizeForPdf(`KOD: ${pCode}`), {
+        x: margin + 6,
+        y: y - 10,
+        size: 8.5,
+        font: boldFont,
+        color: rgb(0.85, 0.45, 0.0)
+      });
+
+      page.drawText(sanitizeForPdf(`MIKTAR: ${qtyStr}`), {
+        x: pageWidth - margin - 85,
+        y: y - 10,
+        size: 8.5,
+        font: boldFont,
+        color: rgb(0.08, 0.25, 0.5)
+      });
+
+      page.drawText(pName.slice(0, 48), {
+        x: margin + 6,
+        y: y - 22,
+        size: 7.5,
+        font: font,
+        color: rgb(0.2, 0.2, 0.2)
+      });
+
+      // Barcode line
+      let bPos = margin + 6;
+      const barPattern = [2, 1, 3, 1, 2, 4, 1, 2, 1, 3, 2, 1, 4, 1, 2, 3, 1, 2, 1, 3, 2, 1, 2];
+      barPattern.forEach((bw, bIdx) => {
+        if (bIdx % 2 === 0 && bPos < contentWidth - 20) {
+          page.drawRectangle({
+            x: bPos,
+            y: y - 42,
+            width: bw,
+            height: 14,
+            color: rgb(0.1, 0.1, 0.1)
+          });
+        }
+        bPos += bw + 1;
+      });
+
+      page.drawText(sanitizeForPdf(`*${orderNo}-${pCode}* | ${dateStr}`), {
+        x: margin + 130,
+        y: y - 40,
+        size: 6,
+        font: font,
+        color: rgb(0.4, 0.4, 0.4)
+      });
+    }
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  fs.writeFileSync(outputPath, pdfBytes);
+}
+
+

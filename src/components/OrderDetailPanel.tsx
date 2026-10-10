@@ -23,7 +23,8 @@ import {
   ArrowRight,
   X,
   FileCheck,
-  Printer
+  Printer,
+  Tag
 } from 'lucide-react';
 import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -67,6 +68,13 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [createdDocName, setCreatedDocName] = useState<string>('');
   const [sendProdSubmitting, setSendProdSubmitting] = useState(false);
   const [productionNotes, setProductionNotes] = useState('');
+
+  // Shipping Label Modal & Action State
+  const [labelModalOpen, setLabelModalOpen] = useState(false);
+  const [selectedLabelSize, setSelectedLabelSize] = useState<'100x100' | '100x50'>('100x100');
+  const [createdLabelDocId, setCreatedLabelDocId] = useState<number | null>(null);
+  const [createdLabelDocName, setCreatedLabelDocName] = useState<string>('');
+  const [labelSubmitting, setLabelSubmitting] = useState(false);
 
   // Detailed Sevkiyat Modal State
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
@@ -124,6 +132,42 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
       alert(`Hata: ${err.message}`);
     } finally {
       setSendProdSubmitting(false);
+    }
+  };
+
+  // Handle Generate Shipping Labels PDF (100x100mm or 100x50mm)
+  const handleGenerateShippingLabels = async (labelSize: '100x100' | '100x50' = '100x100') => {
+    if (selectedItemIds.length === 0) {
+      alert('Lütfen etiket yazdırılacak en az bir kalem seçin!');
+      return;
+    }
+
+    setLabelSubmitting(true);
+    try {
+      const res = await fetch(`/api/orders/${order!.id}/shipping-labels`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          itemIds: selectedItemIds,
+          size: labelSize
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sevkiyat etiketi oluşturulamadı');
+
+      setSelectedLabelSize(labelSize);
+      setCreatedLabelDocId(data.documentId);
+      setCreatedLabelDocName(data.originalName);
+      setLabelModalOpen(true);
+      onRefresh();
+    } catch (err: any) {
+      alert(`Hata: ${err.message}`);
+    } finally {
+      setLabelSubmitting(false);
     }
   };
 
@@ -638,6 +682,23 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                   }}
                 >
                   <Factory size={18} /> {sendProdSubmitting ? 'Form Oluşturuluyor...' : 'Seçili Kalemleri Üretime Gönder (Form Oluştur)'}
+                </button>
+
+                <button
+                  onClick={() => handleGenerateShippingLabels('100x100')}
+                  disabled={selectedItemIds.length === 0 || labelSubmitting}
+                  className="btn btn-primary"
+                  style={{
+                    fontSize: '0.85rem',
+                    padding: '0.5rem 1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    background: selectedItemIds.length > 0 ? '#8B5CF6' : undefined,
+                    border: selectedItemIds.length > 0 ? '1px solid #8B5CF6' : undefined
+                  }}
+                >
+                  <Tag size={18} /> {labelSubmitting ? 'Etiket Hazırlanıyor...' : 'Seçili Kalemlere Etiket Yazdır'}
                 </button>
 
                 <button
@@ -1281,6 +1342,117 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
                 Bu belge otomatik olarak <strong>"3. Sipariş Belgeleri"</strong> sekmesine kaydedildi.
               </span>
               <button onClick={() => setProductionModalOpen(false)} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* CREATED SHIPPING LABEL PDF PRINT / DOWNLOAD MODAL */}
+      {/* ============================================================== */}
+      {labelModalOpen && createdLabelDocId && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1200 }}>
+          <div className="modal-content" style={{ maxWidth: '880px', width: '92%', height: '88vh', display: 'flex', flexDirection: 'column', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', borderRadius: '12px', padding: '1.25rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)' }}>
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ background: '#F3E8FF', padding: '0.5rem', borderRadius: '8px', color: '#8B5CF6', display: 'flex' }}>
+                  <Tag size={24} />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>✓ Sevkiyat Etiketi Hazırlandı</h3>
+                  <span style={{ fontSize: '0.82rem', color: '#64748B' }}>{createdLabelDocName}</span>
+                </div>
+              </div>
+
+              {/* Label Size Toggle Buttons & Actions */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', background: '#F1F5F9', padding: '0.2rem', borderRadius: '8px', border: '1px solid #CBD5E1' }}>
+                  <button
+                    onClick={() => handleGenerateShippingLabels('100x100')}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: selectedLabelSize === '100x100' ? '#8B5CF6' : 'transparent',
+                      color: selectedLabelSize === '100x100' ? '#FFFFFF' : '#475569'
+                    }}
+                  >
+                    100mm x 100mm (Kare)
+                  </button>
+                  <button
+                    onClick={() => handleGenerateShippingLabels('100x50')}
+                    style={{
+                      padding: '0.35rem 0.75rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: selectedLabelSize === '100x50' ? '#8B5CF6' : 'transparent',
+                      color: selectedLabelSize === '100x50' ? '#FFFFFF' : '#475569'
+                    }}
+                  >
+                    100mm x 50mm (Standart)
+                  </button>
+                </div>
+
+                <a
+                  href={`/api/documents/${createdLabelDocId}/download?token=${token}`}
+                  download
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none', background: '#10B981', border: '1px solid #10B981', fontWeight: 600 }}
+                >
+                  <Download size={16} /> İndir
+                </a>
+
+                <button
+                  onClick={() => {
+                    const iframe = document.getElementById('labelPdfIframe') as HTMLIFrameElement;
+                    if (iframe && iframe.contentWindow) {
+                      iframe.contentWindow.print();
+                    } else {
+                      window.open(`/api/documents/${createdLabelDocId}/pdf?token=${token}`, '_blank');
+                    }
+                  }}
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#8B5CF6', border: '1px solid #8B5CF6', fontWeight: 600 }}
+                >
+                  <Printer size={16} /> Etiket Yazdır
+                </button>
+
+                <button
+                  onClick={() => setLabelModalOpen(false)}
+                  style={{ background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#64748B', borderRadius: '6px', padding: '0.45rem', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                  title="Kapat"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* PDF Iframe Viewer */}
+            <div style={{ flex: 1, background: '#F8FAFC', borderRadius: '8px', overflow: 'hidden', border: '1px solid #E2E8F0' }}>
+              <iframe
+                id="labelPdfIframe"
+                src={`/api/documents/${createdLabelDocId}/pdf?token=${token}`}
+                style={{ width: '100%', height: '100%', border: 'none' }}
+                title="Sevkiyat Etiketi Önizleme"
+              />
+            </div>
+
+            {/* Modal Footer Info */}
+            <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem', color: '#64748B' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <FileCheck size={16} color="#8B5CF6" />
+                Bu etiket belgesi otomatik olarak <strong>"3. Sipariş Belgeleri"</strong> sekmesine kaydedildi.
+              </span>
+              <button onClick={() => setLabelModalOpen(false)} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>
                 Kapat
               </button>
             </div>
