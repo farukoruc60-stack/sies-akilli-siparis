@@ -96,6 +96,24 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
     }
   };
 
+  const fixTurkishEncoding = (text?: string): string => {
+    if (!text) return '';
+    return String(text)
+      .replace(/Ä°/g, 'İ')
+      .replace(/i̇/g, 'i')
+      .replace(/Ä±/g, 'ı')
+      .replace(/Åž/g, 'Ş')
+      .replace(/ÅŸ/g, 'ş')
+      .replace(/Äž/g, 'Ğ')
+      .replace(/ÄŸ/g, 'ğ')
+      .replace(/Ãœ/g, 'Ü')
+      .replace(/Ã¼/g, 'ü')
+      .replace(/Ã–/g, 'Ö')
+      .replace(/Ã¶/g, 'ö')
+      .replace(/Ã‡/g, 'Ç')
+      .replace(/Ã§/g, 'ç');
+  };
+
   const getStatusBadge = (status: OrderStatus) => {
     switch (status) {
       case 'NEW':
@@ -140,7 +158,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   const customerGroups = useMemo(() => {
     const map = new Map<string, Order[]>();
     orders.forEach(order => {
-      const name = order.customer_name || 'Bilinmeyen Müşteri';
+      const name = fixTurkishEncoding(order.customer_name) || 'Bilinmeyen Müşteri';
       if (!map.has(name)) {
         map.set(name, []);
       }
@@ -187,7 +205,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
           {/* Satır 1: Müşteri Adı + Durum Rozeti */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
             <span style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '190px' }}>
-              {order.customer_name}
+              {fixTurkishEncoding(order.customer_name)}
             </span>
             {getStatusBadge(order.status)}
           </div>
@@ -196,14 +214,14 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
           <div style={{ fontSize: '11.5px', color: '#334155', marginBottom: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
             <span>
               {order.customer_order_no ? (
-                <span>Müş. Sip No: <strong style={{ color: '#0F172A' }}>{order.customer_order_no}</strong></span>
+                <span>Müş. Sip No: <strong style={{ color: '#0F172A' }}>{fixTurkishEncoding(order.customer_order_no)}</strong></span>
               ) : (
                 <span>Sip No: <strong style={{ color: '#3B82F6' }}>{order.order_no}</strong></span>
               )}
             </span>
             {order.project_no && (
               <span style={{ fontSize: '10.5px', color: '#64748B', background: '#F1F5F9', padding: '1px 5px', borderRadius: '4px' }}>
-                Prj: {order.project_no}
+                Prj: {fixTurkishEncoding(order.project_no)}
               </span>
             )}
           </div>
@@ -213,7 +231,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
             <div style={{ fontSize: '11px', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <span style={{ color: '#94A3B8', fontSize: '10px' }}>Kaplama:</span>
               <span style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, color: '#334155' }}>
-                {order.coating_type}
+                {fixTurkishEncoding(order.coating_type)}
               </span>
             </div>
           )}

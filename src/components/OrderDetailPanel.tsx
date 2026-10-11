@@ -154,7 +154,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
 📋 *Sipariş Kalem Özeti:*
 ${itemsSummary}${moreText}
 
-📌 *Sipariş Durumu:* ${order.status}
+📌 *Sipariş Durumu:* ${getStatusTurkishLabel(order.status)}
 
 🏢 *SİES ELEKTRİK MÜMESSİLLİK SAN. VE TİC. LTD. ŞTİ.*`;
 
@@ -589,6 +589,52 @@ ${itemsSummary}${moreText}
     return String(dateStr);
   };
 
+  const fixTurkishEncoding = (text?: string): string => {
+    if (!text) return '';
+    return String(text)
+      .replace(/Ä°/g, 'İ')
+      .replace(/i̇/g, 'i')
+      .replace(/Ä±/g, 'ı')
+      .replace(/Åž/g, 'Ş')
+      .replace(/ÅŸ/g, 'ş')
+      .replace(/Äž/g, 'Ğ')
+      .replace(/ÄŸ/g, 'ğ')
+      .replace(/Ãœ/g, 'Ü')
+      .replace(/Ã¼/g, 'ü')
+      .replace(/Ã–/g, 'Ö')
+      .replace(/Ã¶/g, 'ö')
+      .replace(/Ã‡/g, 'Ç')
+      .replace(/Ã§/g, 'ç');
+  };
+
+  const getStatusTurkishLabel = (st?: string) => {
+    if (!st) return 'Yeni';
+    const upper = st.toUpperCase();
+    if (upper === 'NEW' || upper === 'YENI' || upper === 'YENİ') return 'Yeni';
+    if (upper === 'IN_PRODUCTION' || upper === 'PRODUCTION' || upper === 'ÜRETİMDE' || upper === 'URETIMDE') return 'Üretimde';
+    if (upper === 'COATING' || upper === 'COATING_PENDING' || upper === 'KAPLAMADA') return 'Kaplamada';
+    if (upper === 'PAINTING' || upper === 'BOYADA') return 'Boyada';
+    if (upper === 'PACKAGING' || upper === 'PAKETLEMEDE') return 'Paketlemede';
+    if (upper === 'PARTIAL_SHIPPING' || upper === 'SHIPPING_PENDING' || upper === 'KISMI SEVK' || upper === 'KISMİ SEVK') return 'Kısmi Sevk';
+    if (upper === 'COMPLETED' || upper === 'TAMAMLANDI') return 'Tamamlandı';
+    if (upper === 'REVIEW_PENDING' || upper === 'BEKLEMEDE') return 'Beklemede';
+    if (upper === 'CANCELLED' || upper === 'İPTAL') return 'İptal';
+    return st;
+  };
+
+  const getStatusColor = (st?: string) => {
+    if (!st) return '#059669';
+    const upper = st.toUpperCase();
+    if (upper === 'NEW' || upper === 'YENI' || upper === 'YENİ') return '#059669';
+    if (upper === 'IN_PRODUCTION' || upper === 'PRODUCTION' || upper === 'ÜRETİMDE' || upper === 'URETIMDE') return '#D97706';
+    if (upper === 'COATING' || upper === 'KAPLAMADA') return '#2563EB';
+    if (upper === 'PAINTING' || upper === 'BOYADA') return '#7C3AED';
+    if (upper === 'PACKAGING' || upper === 'PAKETLEMEDE') return '#0284C7';
+    if (upper === 'PARTIAL_SHIPPING' || upper === 'KISMI SEVK' || upper === 'KISMİ SEVK') return '#EA580C';
+    if (upper === 'COMPLETED' || upper === 'TAMAMLANDI') return '#10B981';
+    return '#475569';
+  };
+
 
 
   const getItemStatusBadge = (st?: string) => {
@@ -687,7 +733,7 @@ ${itemsSummary}${moreText}
         <div className="order-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
           <div style={{ flex: 1, minWidth: '260px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{order.customer_name}</h1>
+              <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{fixTurkishEncoding(order.customer_name)}</h1>
               <span className="badge badge-approved" style={{ fontSize: '0.75rem' }}>
                 <ShieldCheck size={13} /> SİP NO: {order.order_no}
               </span>
@@ -830,11 +876,11 @@ ${itemsSummary}${moreText}
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>KAPLAMA CİNSİ</span>
-              <strong style={{ color: order.coating_type ? '#0284C7' : 'var(--text-muted)' }}>{order.coating_type || 'Belirtilmedi'}</strong>
+              <strong style={{ color: order.coating_type ? '#0284C7' : 'var(--text-muted)' }}>{fixTurkishEncoding(order.coating_type) || 'Belirtilmedi'}</strong>
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>PROJE NO</span>
-              <strong style={{ color: 'var(--text-primary)' }}>{order.project_no || 'Belirtilmedi'}</strong>
+              <strong style={{ color: 'var(--text-primary)' }}>{fixTurkishEncoding(order.project_no) || 'Belirtilmedi'}</strong>
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TOPLAM KALEM / TUTAR</span>
@@ -842,7 +888,7 @@ ${itemsSummary}${moreText}
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>DURUM</span>
-              <strong style={{ color: '#059669' }}>{order.status}</strong>
+              <strong style={{ color: getStatusColor(order.status) }}>{getStatusTurkishLabel(order.status)}</strong>
             </div>
           </div>
         )}
@@ -1123,158 +1169,7 @@ ${itemsSummary}${moreText}
               </div>
             </div>
 
-            {/* 4. SİES AI MÜŞTERİ ANALİZ VE ZEKA KARTI */}
-            <div style={{
-              background: 'linear-gradient(135deg, #0F172A 0%, #1E1B4B 60%, #0F172A 100%)',
-              border: '1px solid rgba(129, 140, 248, 0.35)',
-              borderRadius: '14px',
-              padding: '1.35rem 1.5rem',
-              color: '#F8FAFC',
-              boxShadow: '0 10px 25px -5px rgba(99, 102, 241, 0.25)',
-              position: 'relative',
-              overflow: 'hidden'
-            }}>
-              {/* Header */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(251, 191, 36, 0.15)', border: '1px solid rgba(251, 191, 36, 0.3)', display: 'center', alignItems: 'center', justifyContent: 'center' }}>
-                    <Sparkles size={20} color="#FBBF24" />
-                  </div>
-                  <div>
-                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FFFFFF', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      SİES AI • Müşteri Akıllı Analizi & Sipariş Davranışı
-                    </h3>
-                    <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>
-                      {order.customer_name} — Kurumsal Sipariş Örüntüleri ve Alım Alışkanlıkları
-                    </span>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{
-                    padding: '0.3rem 0.75rem',
-                    borderRadius: '20px',
-                    background: 'rgba(99, 102, 241, 0.2)',
-                    border: '1px solid rgba(165, 180, 252, 0.3)',
-                    color: '#C7D2FE',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px'
-                  }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', display: 'inline-block', boxShadow: '0 0 6px #10B981' }} />
-                    Canlı AI Zeka Motoru ({customerInsights?.year || 2026} Analizi)
-                  </div>
-                </div>
-              </div>
-
-              {/* 4'lü AI Metrik Kutuları */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.85rem', marginBottom: '1rem' }}>
-                {/* Metrik 1: Yıl İçi Sipariş Sırası */}
-                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '0.9rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <Award size={15} color="#FBBF24" />
-                    <span style={{ fontSize: '0.7rem', color: '#CBD5E1', textTransform: 'uppercase', fontWeight: 600 }}>Yıl İçi Sırası</span>
-                  </div>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#FBBF24' }}>
-                    {customerInsights?.orderRankThisYear ? `${customerInsights.orderRankThisYear}. Siparişi` : '1. Siparişi'}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
-                    {customerInsights?.year || 2026} yılı toplam {customerInsights?.totalOrdersThisYear || 1} sipariş (Tüm Zamanlar: {customerInsights?.totalOrdersAllTime || 1})
-                  </div>
-                </div>
-
-                {/* Metrik 2: Bu Siparişin Ciro Payı */}
-                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '0.9rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <TrendingUp size={15} color="#34D399" />
-                    <span style={{ fontSize: '0.7rem', color: '#CBD5E1', textTransform: 'uppercase', fontWeight: 600 }}>Bu Siparişin Ciro Payı</span>
-                  </div>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#34D399' }}>
-                    %{customerInsights?.thisOrderRevenueSharePercent ?? 100}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
-                    Tutar: {(customerInsights?.thisOrderAmount || totalOrderAmount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
-                  </div>
-                </div>
-
-                {/* Metrik 3: Toplam Müşteri Sipariş Hacmi */}
-                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '0.9rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <Tag size={15} color="#60A5FA" />
-                    <span style={{ fontSize: '0.7rem', color: '#CBD5E1', textTransform: 'uppercase', fontWeight: 600 }}>Toplam Cari Hacim</span>
-                  </div>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#60A5FA' }}>
-                    {(customerInsights?.totalCustomerRevenue || totalOrderAmount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
-                    Müşterinin sistemdeki kümülatif sipariş hacmi
-                  </div>
-                </div>
-
-                {/* Metrik 4: Favori Kaplama / Proses */}
-                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '0.9rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
-                    <Paintbrush size={15} color="#C084FC" />
-                    <span style={{ fontSize: '0.7rem', color: '#CBD5E1', textTransform: 'uppercase', fontWeight: 600 }}>Tercih Edilen Kaplama</span>
-                  </div>
-                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#C084FC' }}>
-                    {customerInsights?.favoriteCoatings?.[0]?.name || order.coating_type || 'Paslanmaz / Standart'}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
-                    {customerInsights?.favoriteCoatings?.[0] ? `${customerInsights.favoriteCoatings[0].count} siparişte seçildi` : 'Aktif sipariş kaplama türü'}
-                  </div>
-                </div>
-              </div>
-
-              {/* AI Sentez Yorumu & Favori Ürünler */}
-              <div style={{
-                background: 'rgba(255, 255, 255, 0.07)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: '10px',
-                padding: '0.95rem 1.1rem'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                  <Sparkles size={18} color="#A78BFA" style={{ flexShrink: 0, marginTop: '2px' }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#DDD6FE', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Yapay Zeka Sentez Özeti & Öngörü:
-                    </div>
-                    <div style={{ fontSize: '0.86rem', lineHeight: '1.45', color: '#E2E8F0' }}>
-                      {customerInsights?.aiSynthesisSummary || (
-                        `${order.customer_name} firması için bu sipariş ${new Date(order.created_at || Date.now()).getFullYear()} yılı içerisindeki siparişler arasındadır. Müşteri proses tercihlerinde ağırlıklı olarak "${order.coating_type || 'paslanmaz'}" işlemlerine odaklanmaktadır. Toplam ${totalItemsCount} kalem ve ${totalOrderAmount.toLocaleString('tr-TR')} TRY değerindedir.`
-                      )}
-                    </div>
-
-                    {/* Sık Alınan Ürünler Listesi */}
-                    {customerInsights?.favoriteProducts && customerInsights.favoriteProducts.length > 0 && (
-                      <div style={{ marginTop: '0.75rem', paddingTop: '0.65rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: '0.73rem', color: '#94A3B8', fontWeight: 600 }}>Sık Tercih Edilen Ürünler:</span>
-                        {customerInsights.favoriteProducts.slice(0, 4).map((p, pIdx) => (
-                          <span
-                            key={pIdx}
-                            style={{
-                              background: 'rgba(129, 140, 248, 0.2)',
-                              border: '1px solid rgba(165, 180, 252, 0.3)',
-                              color: '#E0E7FF',
-                              padding: '0.15rem 0.5rem',
-                              borderRadius: '6px',
-                              fontSize: '0.73rem',
-                              fontWeight: 600
-                            }}
-                          >
-                            {p.product_name} ({p.cnt} kez{p.total_qty ? ` • ${p.total_qty} ${p.unit || 'Adet'}` : ''})
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 5. İki Kolonlu Alt Panel: Belgeler ve Kullanıcı Denetim Tarihçesi */}
+            {/* 4. İki Kolonlu Alt Panel: Belgeler ve Kullanıcı Denetim Tarihçesi */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
               {/* Sol Kolon: İlişkili Belgeler & Hızlı Erişim */}
               <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
@@ -1296,21 +1191,21 @@ ${itemsSummary}${moreText}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                   {/* Orijinal Belge */}
                   {(() => {
-                    const origDoc = (documents || []).find(d => d.file_type === 'ORIGINAL_ORDER' || (d as any).document_type === 'ORIGINAL_ORDER');
+                    const origDoc = (documents || []).find(d => d.file_type === 'ORIGINAL_ORDER' || (d as any).document_type === 'ORIGINAL_ORDER' || !d.original_name?.includes('Muafiyet'));
                     return (
                       <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.65rem 0.85rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <FileText size={16} color="#DC2626" />
                           <div>
                             <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1E293B' }}>
-                              {origDoc?.file_name || 'Orijinal Müşteri Sipariş Formu'}
+                              {fixTurkishEncoding(origDoc?.original_name || origDoc?.file_name || 'Orijinal Müşteri Sipariş Formu')}
                             </div>
                             <span style={{ fontSize: '0.7rem', color: '#64748B' }}>Orijinal Taranan PDF / Form</span>
                           </div>
                         </div>
                         {origDoc ? (
                           <a
-                            href={origDoc.file_path || `/api/documents/${origDoc.id}/view`}
+                            href={`/api/documents/${origDoc.id}/pdf?token=${token}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -1329,7 +1224,8 @@ ${itemsSummary}${moreText}
                     const exemptionDoc = (documents || []).find(d => 
                       d.file_type === 'KDV_EXEMPTION' || 
                       (d as any).document_type === 'KDV_EXEMPTION' || 
-                      (d.file_name && d.file_name.toLowerCase().includes('muafiyet'))
+                      (d.file_name && d.file_name.toLowerCase().includes('muafiyet')) ||
+                      (d.original_name && d.original_name.toLowerCase().includes('muafiyet'))
                     );
                     return (
                       <div style={{ background: exemptionDoc ? '#ECFDF5' : '#F8FAFC', border: exemptionDoc ? '1px solid #A7F3D0' : '1px solid #E2E8F0', padding: '0.65rem 0.85rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1337,7 +1233,7 @@ ${itemsSummary}${moreText}
                           <ShieldCheck size={16} color={exemptionDoc ? '#059669' : '#94A3B8'} />
                           <div>
                             <div style={{ fontSize: '0.8rem', fontWeight: 600, color: exemptionDoc ? '#065F46' : '#64748B' }}>
-                              {exemptionDoc ? (exemptionDoc.file_name || 'KDV Muafiyet Belgesi') : 'KDV Muafiyet Belgesi Yok'}
+                              {exemptionDoc ? fixTurkishEncoding(exemptionDoc.original_name || exemptionDoc.file_name || 'KDV Muafiyet Belgesi') : 'KDV Muafiyet Belgesi Yok'}
                             </div>
                             <span style={{ fontSize: '0.7rem', color: exemptionDoc ? '#047857' : '#94A3B8' }}>
                               {exemptionDoc ? 'KDV İstisna Yazısı Ekli' : 'İhracat / KDV Muafiyeti girilmedi (Opsiyonel)'}
@@ -1346,7 +1242,7 @@ ${itemsSummary}${moreText}
                         </div>
                         {exemptionDoc && (
                           <a
-                            href={exemptionDoc.file_path || `/api/documents/${exemptionDoc.id}/view`}
+                            href={`/api/documents/${exemptionDoc.id}/pdf?token=${token}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
@@ -1537,9 +1433,9 @@ ${itemsSummary}${moreText}
                     fontSize: '0.85rem'
                   }}
                 >
-                  <option value="IN_PRODUCTION">Üretime Al (IN_PRODUCTION)</option>
-                  <option value="COATING">Kaplama / Boyaya Sevk Et (COATING)</option>
-                  <option value="SHIPPING">Sevkiyata Al (SHIPPING)</option>
+                  <option value="IN_PRODUCTION">Üretime Al</option>
+                  <option value="COATING">Kaplamaya Sevk Et</option>
+                  <option value="SHIPPING">Sevkiyata Al</option>
                 </select>
 
                 <button
@@ -1694,7 +1590,7 @@ ${itemsSummary}${moreText}
             ) : (
               <div style={{ display: 'grid', gap: '1rem' }}>
                 {documents.map((doc: any) => {
-                  const docName = doc.originalName || doc.original_name || 'Belge.pdf';
+                  const docName = fixTurkishEncoding(doc.originalName || doc.original_name || 'Belge.pdf');
                   const docType = doc.fileType || doc.file_type || '.pdf';
                   const docHash = doc.sha256Hash || doc.sha256_hash || '-';
                   const isProductionForm = docName.toLowerCase().includes('üretim') || docName.toLowerCase().includes('uretim');

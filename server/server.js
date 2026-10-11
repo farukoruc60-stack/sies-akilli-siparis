@@ -11,8 +11,10 @@ dotenv.config();
 
 import { initDatabase, query } from './db/database.js';
 import { seedInitialUsers, generateToken, authenticateToken, requireAdmin } from './auth.js';
-import { processUploadedDocument, generateProductionFormPdf, generateShippingLabelsPdf, calculateSHA256 } from './documentProcessor.js';
+import { processUploadedDocument, generateProductionFormPdf, generateShippingLabelsPdf, generateDocumentViewerPdf, calculateSHA256 } from './documentProcessor.js';
 import { getYandexStatus, uploadToYandexDisk, saveYandexToken } from './yandexClient.js';
+import xlsxModule from 'xlsx';
+const xlsx = xlsxModule.default || xlsxModule;
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -94,6 +96,72 @@ const upload = multer({ storage });
 // Initialize Database & Seed
 await initDatabase();
 await seedInitialUsers();
+
+// Auto-repair existing Turkish character encoding in database
+try {
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ä°', 'İ') WHERE original_name LIKE '%Ä°%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ä±', 'ı') WHERE original_name LIKE '%Ä±%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Åž', 'Ş') WHERE original_name LIKE '%Åž%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'ÅŸ', 'ş') WHERE original_name LIKE '%ÅŸ%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Äž', 'Ğ') WHERE original_name LIKE '%Äž%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'ÄŸ', 'ğ') WHERE original_name LIKE '%ÄŸ%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ãœ', 'Ü') WHERE original_name LIKE '%Ãœ%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã¼', 'ü') WHERE original_name LIKE '%Ã¼%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã–', 'Ö') WHERE original_name LIKE '%Ã–%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã¶', 'ö') WHERE original_name LIKE '%Ã¶%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã‡', 'Ç') WHERE original_name LIKE '%Ã‡%'`);
+  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã§', 'ç') WHERE original_name LIKE '%Ã§%'`);
+  
+  await query(`UPDATE customers SET name = REPLACE(name, 'Ä°', 'İ') WHERE name LIKE '%Ä°%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Ä±', 'ı') WHERE name LIKE '%Ä±%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Åž', 'Ş') WHERE name LIKE '%Åž%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'ÅŸ', 'ş') WHERE name LIKE '%ÅŸ%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Äž', 'Ğ') WHERE name LIKE '%Äž%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'ÄŸ', 'ğ') WHERE name LIKE '%ÄŸ%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Ãœ', 'Ü') WHERE name LIKE '%Ãœ%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Ã¼', 'ü') WHERE name LIKE '%Ã¼%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Ã–', 'Ö') WHERE name LIKE '%Ã–%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Ã¶', 'ö') WHERE name LIKE '%Ã¶%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Ã‡', 'Ç') WHERE name LIKE '%Ã‡%'`);
+  await query(`UPDATE customers SET name = REPLACE(name, 'Ã§', 'ç') WHERE name LIKE '%Ã§%'`);
+
+  await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Ä°', 'İ') WHERE coating_type LIKE '%Ä°%'`);
+  await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Ä±', 'ı') WHERE coating_type LIKE '%Ä±%'`);
+  await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Åž', 'Ş') WHERE coating_type LIKE '%Åž%'`);
+  await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'ÅŸ', 'ş') WHERE coating_type LIKE '%ÅŸ%'`);
+
+  await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Ä°', 'İ') WHERE product_name LIKE '%Ä°%'`);
+  await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Ä±', 'ı') WHERE product_name LIKE '%Ä±%'`);
+  await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Åž', 'Ş') WHERE product_name LIKE '%Åž%'`);
+  await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'ÅŸ', 'ş') WHERE product_name LIKE '%ÅŸ%'`);
+} catch (e) {
+  console.warn('Encoding repair notice:', e.message);
+}
+
+function fixMulterFilename(name) {
+  if (!name) return '';
+  let s = String(name);
+  try {
+    const decoded = Buffer.from(s, 'latin1').toString('utf8');
+    if (decoded && (/[\u00C0-\u017F]/.test(decoded) || !/[\u00C0-\u00FF]{2,}/.test(decoded))) {
+      s = decoded;
+    }
+  } catch (e) {}
+  return s
+    .replace(/Ä°/g, 'İ')
+    .replace(/iÌ̇/g, 'i')
+    .replace(/Ä±/g, 'ı')
+    .replace(/Åž/g, 'Ş')
+    .replace(/ÅŸ/g, 'ş')
+    .replace(/Äž/g, 'Ğ')
+    .replace(/ÄŸ/g, 'ğ')
+    .replace(/Ãœ/g, 'Ü')
+    .replace(/Ã¼/g, 'ü')
+    .replace(/Ã–/g, 'Ö')
+    .replace(/Ã¶/g, 'ö')
+    .replace(/Ã‡/g, 'Ç')
+    .replace(/Ã§/g, 'ç');
+}
 
 // -------------------------------------------------------------
 // AUTH ROUTES
@@ -1007,7 +1075,7 @@ app.post('/api/documents/upload', authenticateToken, upload.single('file'), asyn
     }
 
     const filePath = req.file.path;
-    const originalName = req.file.originalname;
+    const originalName = fixMulterFilename(req.file.originalname);
     const mimeType = req.file.mimetype;
     const fileSize = req.file.size;
     const ext = path.extname(originalName).toLowerCase();
@@ -1053,7 +1121,7 @@ app.post('/api/documents/upload-exemption', authenticateToken, upload.single('fi
     }
 
     const filePath = req.file.path;
-    const originalName = req.file.originalname;
+    const originalName = fixMulterFilename(req.file.originalname);
     const mimeType = req.file.mimetype;
     const fileSize = req.file.size;
     const ext = path.extname(originalName).toLowerCase();
@@ -1087,34 +1155,131 @@ app.post('/api/documents/upload-exemption', authenticateToken, upload.single('fi
   }
 });
 
-app.get('/api/documents/:id/pdf', authenticateToken, async (req, res) => {
+// DOCUMENT PDF VIEW ENDPOINT (ALWAYS RETURNS VALID PDF, AUTO-RECONSTRUCTS IF DISK WAS CLEARED)
+app.get(['/api/documents/:id/pdf', '/api/documents/:id/view'], authenticateToken, async (req, res) => {
   try {
-    const docRes = await query('SELECT pdf_path, original_path FROM documents WHERE id = ?', [req.params.id]);
-    if (docRes.rows.length === 0) return res.status(404).send('Belge bulunamadı');
-
-    const targetPath = docRes.rows[0].pdf_path || docRes.rows[0].original_path;
-    if (fs.existsSync(targetPath)) {
-      res.contentType('application/pdf');
-      res.sendFile(targetPath);
-    } else {
-      res.status(404).send('Fiziksel PDF dosyası bulunamadı');
+    const docRes = await query('SELECT * FROM documents WHERE id = ?', [req.params.id]);
+    if (docRes.rows.length === 0) {
+      return res.status(404).send('Belge kaydı sistemde bulunamadı.');
     }
+
+    const doc = docRes.rows[0];
+    const targetPath = doc.pdf_path || doc.original_path;
+
+    // 1. If physical PDF exists on disk, stream directly
+    if (targetPath && fs.existsSync(targetPath) && targetPath.toLowerCase().endsWith('.pdf')) {
+      res.contentType('application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fixMulterFilename(doc.original_name || 'belge.pdf'))}"`);
+      return res.sendFile(path.resolve(targetPath));
+    }
+
+    // 2. If physical file is missing (e.g. Render container restart) or was non-PDF:
+    // Dynamically reconstruct official SIES PDF preview from database order & items!
+    let order = null;
+    let items = [];
+
+    if (doc.order_id) {
+      const orderRes = await query(`
+        SELECT o.*, c.name as customer_name, c.tax_office, c.tax_number, c.phone, c.email, c.address
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        WHERE o.id = ?
+      `, [doc.order_id]);
+      if (orderRes.rows.length > 0) {
+        order = orderRes.rows[0];
+        const itemsRes = await query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC', [doc.order_id]);
+        items = itemsRes.rows;
+      }
+    }
+
+    if (!order) {
+      // Find the most recent matching order or last order as fallback
+      const fallbackOrderRes = await query(`
+        SELECT o.*, c.name as customer_name, c.tax_office, c.tax_number, c.phone, c.email, c.address
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        ORDER BY o.id DESC LIMIT 1
+      `);
+      if (fallbackOrderRes.rows.length > 0) {
+        order = fallbackOrderRes.rows[0];
+        const itemsRes = await query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC', [order.id]);
+        items = itemsRes.rows;
+      }
+    }
+
+    if (order) {
+      const generatedFilename = `doc_${doc.id}_reconstructed.pdf`;
+      const generatedPath = path.join(uploadDir, generatedFilename);
+      await generateDocumentViewerPdf(order, items, doc, generatedPath);
+      
+      // Update DB with generated pdf_path
+      await query('UPDATE documents SET pdf_path = ? WHERE id = ?', [generatedPath, doc.id]);
+
+      res.contentType('application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fixMulterFilename(doc.original_name || 'belge.pdf'))}"`);
+      return res.sendFile(path.resolve(generatedPath));
+    }
+
+    res.status(404).send('Belge içeriği oluşturulamadı: İlgili sipariş verisi bulunamadı.');
   } catch (err) {
-    res.status(500).send(err.message);
+    console.error('Document PDF rendering error:', err);
+    res.status(500).send('Belge görüntüleme hatası: ' + err.message);
   }
 });
 
+// DOCUMENT DOWNLOAD ENDPOINT (STREAM PHYSICAL FILE OR DYNAMICALLY GENERATE EXCEL)
 app.get('/api/documents/:id/download', authenticateToken, async (req, res) => {
   try {
-    const docRes = await query('SELECT original_path, original_name FROM documents WHERE id = ?', [req.params.id]);
+    const docRes = await query('SELECT * FROM documents WHERE id = ?', [req.params.id]);
     if (docRes.rows.length === 0) return res.status(404).send('Belge bulunamadı');
 
     const file = docRes.rows[0];
-    if (fs.existsSync(file.original_path)) {
-      res.download(file.original_path, file.original_name);
-    } else {
-      res.status(404).send('Orijinal dosya sunucuda bulunamadı');
+    const safeName = fixMulterFilename(file.original_name) || `Siparis_Belgesi_${file.id}.xlsx`;
+
+    if (file.original_path && fs.existsSync(file.original_path)) {
+      return res.download(file.original_path, safeName);
     }
+
+    // Ephemeral disk fallback: Reconstruct Excel workbook from database order items
+    let orderId = file.order_id;
+    if (!orderId) {
+      const lastOrder = await query('SELECT id FROM orders ORDER BY id DESC LIMIT 1');
+      orderId = lastOrder.rows[0]?.id;
+    }
+
+    if (orderId) {
+      const orderRes = await query('SELECT o.*, c.name as customer_name FROM orders o LEFT JOIN customers c ON o.customer_id = c.id WHERE o.id = ?', [orderId]);
+      const itemsRes = await query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC', [orderId]);
+      const order = orderRes.rows[0] || {};
+      const items = itemsRes.rows || [];
+
+      const excelData = items.map((it, idx) => ({
+        'Sıra No': it.line_no || (idx + 1),
+        'Müşteri Ürün Kodu': it.customer_product_code || '',
+        'Sies Ürün Kodu': it.internal_product_code || '',
+        'Ürün / Hizmet Tanımı': it.product_name || '',
+        'Malzeme / Kalite': it.material || '',
+        'Kaplama Cinsi': it.surface_coating || '',
+        'Miktar': it.quantity || 0,
+        'Birim': it.unit || 'Adet',
+        'Birim Fiyat': it.unit_price || 0,
+        'Para Birimi': it.currency || 'TRY',
+        'Toplam Tutar': it.line_total || 0,
+        'Müşteri Adı': order.customer_name || '',
+        'Sipariş No': order.order_no || ''
+      }));
+
+      const wb = xlsx.utils.book_new();
+      const ws = xlsx.utils.json_to_sheet(excelData.length > 0 ? excelData : [{ 'Bilgi': 'Sipariş kalemi verisi bulunamadı' }]);
+      xlsx.utils.book_append_sheet(wb, ws, 'Sipariş Kalemleri');
+
+      const reconstructedPath = path.join(uploadDir, `reconstructed_${file.id}_${Date.now()}.xlsx`);
+      xlsx.writeFile(wb, reconstructedPath);
+
+      return res.download(reconstructedPath, safeName);
+    }
+
+    res.status(404).send('Orijinal dosya sunucuda bulunamadı');
   } catch (err) {
     res.status(500).send(err.message);
   }

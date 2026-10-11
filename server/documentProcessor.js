@@ -2231,4 +2231,204 @@ export async function generateShippingLabelsPdf(order, items, outputPath, labelS
   fs.writeFileSync(outputPath, pdfBytes);
 }
 
+export async function generateDocumentViewerPdf(order, items, document, outputPath) {
+  const pdfDoc = await PDFDocument.create();
+  let page = pdfDoc.addPage([595.28, 841.89]);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 35;
+  const contentWidth = pageWidth - margin * 2;
+
+  const logoImg = await loadLogoImage(pdfDoc);
+
+  // 1. Header Card with Embedded Logo & Official Full Company Name
+  page.drawRectangle({
+    x: margin,
+    y: pageHeight - 85,
+    width: contentWidth,
+    height: 55,
+    color: rgb(0.98, 0.99, 1.0),
+    borderColor: rgb(0.08, 0.25, 0.5),
+    borderWidth: 1.5
+  });
+
+  if (logoImg) {
+    page.drawImage(logoImg, {
+      x: margin + 8,
+      y: pageHeight - 80,
+      width: 92,
+      height: 45
+    });
+  }
+
+  const titleX = logoImg ? margin + 110 : margin + 12;
+
+  page.drawText(sanitizeForPdf('SIES ELEKTRIK MUMESSILLIK SAN. VE TIC. LTD. STI.'), {
+    x: titleX,
+    y: pageHeight - 46,
+    size: 9.5,
+    font: boldFont,
+    color: rgb(0.08, 0.25, 0.5)
+  });
+
+  page.drawText(sanitizeForPdf('RESMI SIPARIS VE KALEM LISTESI FORMU'), {
+    x: titleX,
+    y: pageHeight - 68,
+    size: 11,
+    font: boldFont,
+    color: rgb(0.08, 0.5, 0.3)
+  });
+
+  const formDate = new Date().toLocaleDateString('tr-TR');
+  const docTitle = sanitizeForPdf(fixTurkishEncoding(document?.original_name || 'Siparis_Belgesi'));
+
+  page.drawText(sanitizeForPdf(`Tarih: ${formDate}`), {
+    x: pageWidth - margin - 145,
+    y: pageHeight - 46,
+    size: 8.5,
+    font: boldFont,
+    color: rgb(0.15, 0.15, 0.15)
+  });
+
+  page.drawText(sanitizeForPdf(`Sip No: ${order?.order_no || 'SO'}`), {
+    x: pageWidth - margin - 145,
+    y: pageHeight - 68,
+    size: 8.5,
+    font: boldFont,
+    color: rgb(0.08, 0.25, 0.5)
+  });
+
+  // 2. Order Metadata Box
+  let y = pageHeight - 95;
+  page.drawRectangle({
+    x: margin,
+    y: y - 60,
+    width: contentWidth,
+    height: 60,
+    color: rgb(0.97, 0.98, 1.0),
+    borderColor: rgb(0.85, 0.88, 0.92),
+    borderWidth: 1
+  });
+
+  const custName = sanitizeForPdf(order?.customer_name || 'MUSTERI UNVANI');
+  page.drawText(sanitizeForPdf(`MUSTERI: ${custName}`), {
+    x: margin + 10,
+    y: y - 18,
+    size: 9,
+    font: boldFont,
+    color: rgb(0.1, 0.1, 0.1)
+  });
+
+  page.drawText(sanitizeForPdf(`Orijinal Belge: ${docTitle}`), {
+    x: margin + 10,
+    y: y - 34,
+    size: 8,
+    font: font,
+    color: rgb(0.3, 0.3, 0.3)
+  });
+
+  const metaRightText = sanitizeForPdf(`Kaplama: ${order?.coating_type || 'Standart'} | Teslim: ${order?.requested_delivery_date || '-'}`);
+  page.drawText(metaRightText, {
+    x: margin + 10,
+    y: y - 50,
+    size: 8,
+    font: font,
+    color: rgb(0.4, 0.4, 0.4)
+  });
+
+  // 3. Table Header
+  y -= 75;
+  const colWidths = [30, 95, 235, 55, 40, 70];
+  const colTitles = ['#', 'URUN KODU', 'URUN ACIKLAMASI', 'MIKTAR', 'BIRIM', 'TUTAR'];
+
+  page.drawRectangle({
+    x: margin,
+    y: y - 22,
+    width: contentWidth,
+    height: 22,
+    color: rgb(0.08, 0.25, 0.5)
+  });
+
+  let hX = margin;
+  colTitles.forEach((t, i) => {
+    page.drawText(sanitizeForPdf(t), {
+      x: hX + 4,
+      y: y - 15,
+      size: 7.5,
+      font: boldFont,
+      color: rgb(1, 1, 1)
+    });
+    hX += colWidths[i];
+  });
+
+  y -= 22;
+  const rowHeight = 20;
+
+  const validItems = items || [];
+  for (let idx = 0; idx < validItems.length; idx++) {
+    const it = validItems[idx];
+    if (y < margin + 40) {
+      page = pdfDoc.addPage([pageWidth, pageHeight]);
+      y = pageHeight - margin - 20;
+    }
+
+    if (idx % 2 === 1) {
+      page.drawRectangle({
+        x: margin,
+        y: y - rowHeight + 3,
+        width: contentWidth,
+        height: rowHeight,
+        color: rgb(0.97, 0.98, 0.99)
+      });
+    }
+
+    page.drawRectangle({
+      x: margin,
+      y: y - rowHeight + 3,
+      width: contentWidth,
+      height: rowHeight,
+      borderColor: rgb(0.88, 0.9, 0.93),
+      borderWidth: 0.5
+    });
+
+    const pCode = sanitizeForPdf(it.customer_product_code || it.customerProductCode || `K-${idx+1}`);
+    const pName = sanitizeForPdf(it.product_name || it.productName || 'Urun Tanimi');
+    const pQty = String(it.quantity || 1);
+    const pUnit = sanitizeForPdf(it.unit || 'Adet');
+    const pTotal = `${(parseFloat(it.line_total || it.lineTotal || 0) || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY`;
+
+    const rowCells = [String(idx + 1), pCode.slice(0, 16), pName.slice(0, 48), pQty, pUnit, pTotal];
+    let rX = margin;
+    rowCells.forEach((cText, cIdx) => {
+      page.drawText(cText, {
+        x: rX + 4,
+        y: y - rowHeight + 7,
+        size: 7.5,
+        font: font,
+        color: rgb(0.15, 0.15, 0.15)
+      });
+      rX += colWidths[cIdx];
+    });
+
+    y -= rowHeight;
+  }
+
+  // 4. Footer Note & Verification Hash
+  y -= 15;
+  const hashText = document?.sha256_hash ? `SHA-256 Dogrulama Ozeti: ${document.sha256_hash}` : 'SIES Akilli Siparis Takip Platformu';
+  page.drawText(sanitizeForPdf(hashText), {
+    x: margin + 4,
+    y: Math.max(y, 25),
+    size: 7,
+    font: font,
+    color: rgb(0.5, 0.5, 0.5)
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  fs.writeFileSync(outputPath, pdfBytes);
+}
+
 
