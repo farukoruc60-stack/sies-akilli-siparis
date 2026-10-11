@@ -141,3 +141,18 @@ export interface ExtractedCustomerInfo {
   requestedDeliveryDate?: string;
   exemptionDocId?: number;
 }
+
+export interface CustomerInsights {
+  customerName: string;
+  year: number;
+  orderRankThisYear: number;
+  totalOrdersThisYear: number;
+  totalOrdersAllTime: number;
+  totalCustomerRevenue: number;
+  thisOrderAmount: number;
+  thisOrderRevenueSharePercent: number;
+  favoriteCoatings: { name: string; count: number }[];
+  favoriteProducts: { product_name: string; cnt: number; total_qty?: number; unit?: string }[];
+  aiSynthesisSummary: string;
+}
+

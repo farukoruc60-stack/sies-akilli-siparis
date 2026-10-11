@@ -16,7 +16,7 @@ import { ProductionView } from './pages/ProductionView';
 import { CoatingView } from './pages/CoatingView';
 import { ShippingView } from './pages/ShippingView';
 import { SettingsView } from './pages/SettingsView';
-import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, ExtractedCustomerInfo } from './types';
+import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, ExtractedCustomerInfo, CustomerInsights } from './types';
 import { toTurkishErrorMessage } from './utils/errorMessage';
 import { 
   Layers, 
@@ -47,6 +47,7 @@ export default function App() {
   const [orderDocuments, setOrderDocuments] = useState<OrderDocument[]>([]);
   const [orderHistory, setOrderHistory] = useState<OrderStatusHistory[]>([]);
   const [orderDispatches, setOrderDispatches] = useState<DispatchRecord[]>([]);
+  const [customerInsights, setCustomerInsights] = useState<CustomerInsights | null>(null);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -126,6 +127,7 @@ export default function App() {
       setOrderDocuments(data.documents || []);
       setOrderHistory(data.history || []);
       setOrderDispatches(data.dispatches || []);
+      setCustomerInsights(data.customerInsights || null);
     } catch (err) {
       console.error('Sipariş detayı alınamadı:', err);
     }
@@ -382,6 +384,7 @@ export default function App() {
                 documents={orderDocuments}
                 history={orderHistory}
                 dispatches={orderDispatches}
+                customerInsights={customerInsights}
                 onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
                 onUpdateOrder={handleUpdateOrder}
                 onDeleteOrder={handleDeleteOrder}
@@ -417,6 +420,7 @@ export default function App() {
                 documents={orderDocuments}
                 history={orderHistory}
                 dispatches={orderDispatches}
+                customerInsights={customerInsights}
                 onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
                 onUpdateOrder={handleUpdateOrder}
                 onDeleteOrder={handleDeleteOrder}

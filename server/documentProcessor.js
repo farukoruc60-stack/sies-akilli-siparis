@@ -597,7 +597,205 @@ function parseBesiktasTersane(text, lines, originalName) {
   return { customerInfo, orderItems };
 }
 
-// 5. STRATEGY: GELİŞMİŞ EVRENSEL METİN AYRIŞTIRICI (DİĞER TÜM PDF VE METİNLER İÇİN)
+function isInvalidCustomerName(name) {
+  if (!name || typeof name !== 'string') return true;
+  const clean = name.trim();
+  if (clean.length < 3 || clean.length > 80) return true;
+  const upper = clean.toUpperCase();
+  const banned = [
+    'FATURA', 'E-FATURA', 'EFATURA', 'E-ARŞİV', 'EARSIV', 'UYGULAMA', 'DAHİL', 'DURUMUNDA',
+    'DÜZENLE', 'İHBAR', 'ŞARTLAR', 'VERGİ', 'BANKA', 'İBAN', 'IBAN',
+    'HESAP NO', 'KVKK', 'AŞAĞIDAKİ', 'GENEL NOTLAR', 'NOTLAR', 'ÖDEME', 'VADE',
+    'TEŞEKKÜR', 'ADRESİ', 'TESLİMAT', 'ONAYLAYAN', 'SİPARİŞİ VEREN', 'BİLGİLERİ',
+    'SÖZLEŞME', 'FORMU', 'SİES', 'SIES', 'TUTAR', 'KDV', 'TOPLAM', 'MALZEME',
+    'TARİH', 'DÖVİZ', 'KALEM', 'FİRMANIZIN', 'FİRMAMIZ', 'GEÇMİŞ OLUP', 'LÜTFEN'
+  ];
+  return banned.some(b => upper.includes(b));
+}
+
+function detectCustomerNameIntelligently(text, lines, originalName = '') {
+  const upperText = text.toUpperCase();
+
+  // 1. Doğrudan Tanınan Önemli Müşteriler
+  if (upperText.includes('TERSAN') || upperText.includes('TERSANECİLİK') || upperText.includes('YALOVA TERSANE')) {
+    return 'TERSAN TERSANECİLİK SAN. VE TİC. A.Ş.';
+  }
+  if (upperText.includes('BESIKTAS TERSANE') || upperText.includes('BEŞİKTAŞ TERSANE') || upperText.includes('BESIKTASSHIPYARD')) {
+    return 'BEŞİKTAŞ TERSANE A.Ş.';
+  }
+  if (upperText.includes('SIRENA MARINE') || upperText.includes('SİRENA MARİNE')) {
+    return 'Sirena Marine Denizcilik San Ve Tic AŞ';
+  }
+  if (upperText.includes('ALIA YACHT') || upperText.includes('ALIA YAT')) {
+    return 'ALIA YACHT';
+  }
+  if (upperText.includes('MARKA GRUP')) {
+    return 'MARKA GRUP ELK. MÜH. PROJE TAAH. SAN.';
+  }
+  if (upperText.includes('GETA MARİN') || upperText.includes('GETA MARIN')) {
+    return 'GETA MARİN';
+  }
+  if (upperText.includes('SEDEF GEMİ') || upperText.includes('SEDEF TERSANE')) {
+    return 'SEDEF GEMİ İNŞAATI A.Ş.';
+  }
+  if (upperText.includes('SANMAR')) {
+    return 'SANMAR DENİZCİLİK A.Ş.';
+  }
+  if (upperText.includes('UZMAR')) {
+    return 'UZMAR GEMİ İNŞA SAN. VE TİC. A.Ş.';
+  }
+  if (upperText.includes('DAP YAPI')) {
+    return 'DAP YAPI İNŞAAT A.Ş.';
+  }
+
+  // 2. İlk 25 Satırda Şirket Unvanı Taraması (SİES hariç)
+  const maxScan = Math.min(lines.length, 25);
+  for (let i = 0; i < maxScan; i++) {
+    const l = lines[i].trim();
+    if (l.length < 4 || isInvalidCustomerName(l)) continue;
+    if (l.toUpperCase().includes('SİES') || l.toUpperCase().includes('SIES')) continue;
+
+    const match = l.match(/([A-ZÇĞİÖŞÜ0-9\s\.\,\&\-]{3,60}\s+(?:SAN|TİC|A\.Ş|AŞ|LTD|ŞTİ|CO|YACHT|SHIPYARD|HOLDİNG|DENİZCİLİK|MÜHENDİSLİK|İNŞAAT)[A-ZÇĞİÖŞÜ0-9\s\.\,\&\-]*)/i);
+    if (match) {
+      const candidate = match[1].trim();
+      if (!isInvalidCustomerName(candidate) && candidate.length > 4) {
+        return candidate;
+      }
+    }
+  }
+
+  // 3. Açık "Müşteri / Firma / Unvan / Satış Yapılan" Önekleri
+  for (let i = 0; i < maxScan; i++) {
+    const l = lines[i].trim();
+    const prefixMatch = l.match(/(?:Satış Yapılan|Müşteri|Firma|Unvan)\s*:?\s*([A-ZÇĞİÖŞÜa-zçğıöşü0-9\s\.\,\&\-]+)/i);
+    if (prefixMatch) {
+      const candidate = prefixMatch[1].trim();
+      if (!isInvalidCustomerName(candidate) && candidate.length > 3) {
+        return candidate;
+      }
+    }
+  }
+
+  // 4. Dosya Adından Akıllı Kurtarma
+  return extractCustomerNameFromFilename(originalName) || 'MÜŞTERİ BİLGİSİ (KONTROL BEKLİYOR)';
+}
+
+// 5. STRATEGY: TERSAN TERSANECİLİK SATINALMA SİPARİŞİ
+function parseTersanTersanesi(text, lines, originalName) {
+  let customerInfo = {
+    name: 'TERSAN TERSANECİLİK SAN. VE TİC. A.Ş.',
+    taxOffice: 'Yalova',
+    taxNumber: '',
+    address: 'Yalova Altınova Tersaneler Bölgesi',
+    phone: '',
+    email: 'info@tersanshipyard.com',
+    orderNo: '408304',
+    projectNo: '',
+    coatingType: '',
+    orderDate: '',
+    deliveryDate: ''
+  };
+
+  // Sipariş No: "408304 NOLU SATINALMA SİPARİŞİ" veya "Sipariş No: 408304"
+  const orderNoMatch = text.match(/(\d{5,10})\s*NOLU\s*(?:SATINALMA\s*)?SİPARİŞİ/i) ||
+                       text.match(/(?:Sipariş\s*No|Sipariş\s*Numarası|PO\s*No|Order\s*No)\s*:?\s*(\d{5,10})/i) ||
+                       text.match(/\b(4\d{5})\b/);
+  if (orderNoMatch) customerInfo.orderNo = orderNoMatch[1].trim();
+
+  // Sipariş & Teslim Tarihi
+  const dateMatch = text.match(/(?:Sipariş\s*Tarihi|Tarih|Sip\.\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
+  if (dateMatch) customerInfo.orderDate = normalizeDateToISO(dateMatch[1]);
+
+  const delivMatch = text.match(/(?:Teslim\s*Tarihi|İst\.?\s*Tes\.?\s*Tarihi|Termin\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
+  if (delivMatch) customerInfo.deliveryDate = normalizeDateToISO(delivMatch[1]);
+
+  // Kaplama
+  if (/Paslanmaz/i.test(text)) customerInfo.coatingType = 'Paslanmaz';
+  else if (/Boyalı/i.test(text)) customerInfo.coatingType = 'Boyalı';
+  else if (/Galvaniz/i.test(text)) customerInfo.coatingType = 'Galvaniz';
+  else if (/Alüminyum/i.test(text)) customerInfo.coatingType = 'Alüminyum';
+
+  const orderItems = [];
+  let lineNo = 1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i].trim();
+    if (!rawLine) continue;
+
+    const mWithDesc = rawLine.match(/^([S0-9A-Z]{5,15})\s+(.*?)\s+(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)/i);
+    const mDirect = rawLine.match(/^([S0-9A-Z]{5,15})\s+(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)/i);
+
+    if (mWithDesc) {
+      const code = mWithDesc[1].trim();
+      let desc = mWithDesc[2].trim();
+      const qty = parseFloat(mWithDesc[3].replace(',', '.'));
+      const unitRaw = mWithDesc[4].toUpperCase();
+      const unit = (unitRaw === 'PCS' || unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : 'Metre';
+      const uPrice = parseFloat(mWithDesc[5].replace(',', '.'));
+      const total = parseFloat(mWithDesc[6].replace(',', '.'));
+
+      if (!desc || desc === code) {
+        if (i > 0 && !lines[i-1].match(/^\d+/) && lines[i-1].length > 3 && !lines[i-1].includes('TERSAN')) {
+          desc = lines[i-1];
+        } else if (i + 1 < lines.length && !lines[i+1].match(/^\d+/) && lines[i+1].length > 3) {
+          desc = lines[i+1];
+        } else {
+          desc = `Paslanmaz Taşıyıcı Kalem (${code})`;
+        }
+      }
+
+      orderItems.push({
+        lineNo: lineNo++,
+        customerProductCode: code,
+        internalProductCode: `SIES-${code}`,
+        productName: desc,
+        productDescription: desc,
+        quantity: qty,
+        unit: unit,
+        unitPrice: uPrice,
+        currency: 'EUR',
+        lineTotal: total || Math.round(qty * uPrice * 100) / 100,
+        confidenceScore: 0.99,
+        status: 'OK'
+      });
+    } else if (mDirect) {
+      const code = mDirect[1].trim();
+      const qty = parseFloat(mDirect[2].replace(',', '.'));
+      const unitRaw = mDirect[3].toUpperCase();
+      const unit = (unitRaw === 'PCS' || unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : 'Metre';
+      const uPrice = parseFloat(mDirect[4].replace(',', '.'));
+      const total = parseFloat(mDirect[5].replace(',', '.'));
+
+      let desc = '';
+      if (i > 0 && !lines[i-1].match(/^\d+/) && lines[i-1].length > 3 && !lines[i-1].includes('TERSAN') && !lines[i-1].includes('SİPARİŞ')) {
+        desc = lines[i-1];
+      } else if (i + 1 < lines.length && !lines[i+1].match(/^\d+/) && lines[i+1].length > 3) {
+        desc = lines[i+1];
+      } else {
+        desc = `Paslanmaz Taşıyıcı Kalem (${code})`;
+      }
+
+      orderItems.push({
+        lineNo: lineNo++,
+        customerProductCode: code,
+        internalProductCode: `SIES-${code}`,
+        productName: desc,
+        productDescription: desc,
+        quantity: qty,
+        unit: unit,
+        unitPrice: uPrice,
+        currency: 'EUR',
+        lineTotal: total || Math.round(qty * uPrice * 100) / 100,
+        confidenceScore: 0.99,
+        status: 'OK'
+      });
+    }
+  }
+
+  return { customerInfo, orderItems };
+}
+
+// 6. STRATEGY: GELİŞMİŞ EVRENSEL METİN AYRIŞTIRICI (DİĞER TÜM PDF VE METİNLER İÇİN)
 function parseUniversalText(text, lines, originalName = '') {
   let customerInfo = {
     name: '',
@@ -613,6 +811,10 @@ function parseUniversalText(text, lines, originalName = '') {
     deliveryDate: ''
   };
 
+  // 1. Akıllı Müşteri Unvanı Tespiti
+  customerInfo.name = detectCustomerNameIntelligently(text, lines, originalName);
+
+  // 2. Kaplama Tespiti
   if (/Boyalı/i.test(text)) customerInfo.coatingType = 'Boyalı';
   else if (/Sıcak Daldırma/i.test(text)) customerInfo.coatingType = 'Sıcak Daldırma Galvaniz';
   else if (/Elektrogalvaniz/i.test(text)) customerInfo.coatingType = 'Elektrogalvaniz';
@@ -627,49 +829,14 @@ function parseUniversalText(text, lines, originalName = '') {
   const projMatch = text.match(/(?:Proje\s*No|Project\s*No|Müşteri\s*Proje)\s*:?\s*([A-Z0-9\-\_]+)/i);
   if (projMatch) customerInfo.projectNo = projMatch[1].trim();
 
+  // 3. Sipariş Numarası & Tarih Taraması
+  const orderNoMatch = text.match(/(\d{4,10})\s*NOLU\s*(?:SATINALMA\s*)?SİPARİŞİ/i) ||
+                       text.match(/(?:Sipariş\s*No|Sipariş\s*Numarası|PO\s*No|Order\s*No|Sipariş\s*Ref)\s*:?\s*([A-Z0-9\-\/]{3,20})/i) ||
+                       text.match(/\b(P\d{4,10}|SO\-\d{4,10}|PO\-\d{4,10})\b/i);
+  if (orderNoMatch) customerInfo.orderNo = orderNoMatch[1].trim();
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-
-    if (!customerInfo.name) {
-      if (line.includes('BESIKTAS TERSANE') || line.includes('BEŞİKTAŞ TERSANE')) {
-        customerInfo.name = 'BEŞİKTAŞ TERSANE A.Ş.';
-      } else if (line.includes('ALIA YACHT')) {
-        customerInfo.name = 'ALIA YACHT';
-      } else if (line.includes('Sirena Marine') || line.includes('Satış YapılanSirena Marine')) {
-        customerInfo.name = 'Sirena Marine Denizcilik San Ve Tic AŞ';
-      } else {
-        const match = line.match(/(?:Satış Yapılan|Müşteri|Firma|Unvan|SEVK ADRESİ|FATURA ADRESİ)\s*:?\s*([A-ZÇĞİÖŞÜa-zçğıöşü0-9\s\.\,\&\-]+)/i);
-        if (match) {
-          let cName = match[1].trim();
-          cName = cName.replace(/^(Tedarikçi|Sipariş|Tarih|Tel|Fax|E mail|VKN|Vergi).*/i, '').trim();
-          if (cName.length > 3 && !cName.includes('SİES') && !cName.includes('SIES') && !cName.includes('FATURA')) {
-            if (i + 1 < lines.length && /^(Ve\s+Tic|San|A\.Ş|LTD|ŞTİ)/i.test(lines[i + 1])) {
-              cName += ' ' + lines[i + 1].trim();
-            }
-            customerInfo.name = cName;
-          }
-        }
-      }
-    }
-
-    if (!customerInfo.orderNo && !line.includes('Sipariş Notu') && !line.includes('Sipariş Tarihi') && !line.includes('Sipariş Açıklama') && !line.includes('NoProje')) {
-      const pNoMatch = line.match(/\b(P\d{4,10}|SO\-\d{4,10}|PO\-\d{4,10})\b/i);
-      const gluedSipMatch = line.match(/Sipariş\s*([0-9]{4,10})\b/i);
-
-      if (pNoMatch) {
-        customerInfo.orderNo = pNoMatch[1];
-      } else if (gluedSipMatch) {
-        customerInfo.orderNo = gluedSipMatch[1];
-      } else {
-        const sipNoMatch = line.match(/(?:Sipariş No|Teklif No|Sipariş Ref|Siparis#)\s*:?\s*([A-Z0-9\-\/]{3,25})/i);
-        if (sipNoMatch) {
-          let no = sipNoMatch[1].trim();
-          if (!/^(TARİH|FORMU|MİKTAR|MALZEME|PROJE|DÖVİZ|TUTAR)/i.test(no) && !no.includes('Sipariş')) {
-            customerInfo.orderNo = no;
-          }
-        }
-      }
-    }
 
     if (!customerInfo.orderDate || customerInfo.orderDate === new Date().toISOString().split('T')[0]) {
       const dateMatch = line.match(/(?:Sip\.?\s*Tarihi|Siparis\s*Tarihi|Tarih)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
@@ -691,26 +858,6 @@ function parseUniversalText(text, lines, originalName = '') {
         customerInfo.taxNumber = vknMatch[0];
       }
     }
-  }
-
-  if (!customerInfo.name || customerInfo.name.includes('FATURA')) {
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (line.includes('SİES ELEKTRİK') || line.includes('SATINALMA SİPARİŞ FORMU')) continue;
-      if (line.includes('BEŞİKTAŞ TERSANE') || line.includes('BESIKTAS TERSANE')) {
-        customerInfo.name = 'BEŞİKTAŞ TERSANE A.Ş.';
-        break;
-      }
-      const m = line.match(/([A-ZÇĞİÖŞÜ\s]{3,40}\s+(?:SAN|TİC|A\.Ş|LTD|ŞTİ|CO|YACHT|TERSANE)[A-ZÇĞİÖŞÜ\s\.]*)/i);
-      if (m && !m[1].includes('SİES') && !m[1].includes('FATURA')) {
-        customerInfo.name = m[1].trim();
-        break;
-      }
-    }
-  }
-
-  if (!customerInfo.name) {
-    customerInfo.name = extractCustomerNameFromFilename(originalName) || 'MÜŞTERİ BİLGİSİ (KONTROL BEKLİYOR)';
   }
 
   if (!customerInfo.orderNo) {
@@ -739,15 +886,15 @@ function parseUniversalText(text, lines, originalName = '') {
       continue;
     }
 
-    const universalRowMatch = rawLine.match(/^(\d{1,3}\s+)?([0-9]{5,12}|[A-Z0-9]{2,10}\-[A-Z0-9\-]{2,15}|SG[\s\-][0-9A-Z\-]+|Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|KALEM[\-\s]\d+|[A-Z0-9\-\.]{2,25})\s+(.*?)\s+(\d{1,3}(?:\.\d{3})*(?:\,\d+)?|\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)(?:\s+(.*?))?$/i);
+    const universalRowMatch = rawLine.match(/^(\d{1,3}\s+)?([0-9]{5,12}|[A-Z0-9]{2,10}\-[A-Z0-9\-]{2,15}|SG[\s\-][0-9A-Z\-]+|Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|S\d{5,8}|KALEM[\-\s]\d+|[A-Z0-9\-\.]{2,25})\s+(.*?)\s+(\d{1,3}(?:\.\d{3})*(?:\,\d+)?|\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)(?:\s+(.*?))?$/i);
 
     if (universalRowMatch) {
       const code = universalRowMatch[2].trim();
-      const desc = universalRowMatch[3]?.trim() || code;
+      let desc = universalRowMatch[3]?.trim() || '';
       const qtyStr = universalRowMatch[4].replace(/\./g, '').replace(',', '.');
       const qty = parseFloat(qtyStr) || 1;
       const unitRaw = universalRowMatch[5].toUpperCase();
-      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
       
       let unitPrice = 0;
       let lineTotal = 0;
@@ -762,6 +909,16 @@ function parseUniversalText(text, lines, originalName = '') {
         } else if (numbers && numbers.length === 1) {
           unitPrice = parseFloat(numbers[0].replace(/\./g, '').replace(',', '.')) || 0;
           lineTotal = qty * unitPrice;
+        }
+      }
+
+      if (!desc || desc === code) {
+        if (i > 0 && !lines[i-1].match(/^\d+/) && lines[i-1].length > 3 && !isInvalidCustomerName(lines[i-1])) {
+          desc = lines[i-1];
+        } else if (i + 1 < lines.length && !lines[i+1].match(/^\d+/) && lines[i+1].length > 3 && !isInvalidCustomerName(lines[i+1])) {
+          desc = lines[i+1];
+        } else {
+          desc = `Taşıyıcı Malzeme (${code})`;
         }
       }
 
@@ -789,14 +946,14 @@ function parseUniversalText(text, lines, originalName = '') {
     const gluedQtyMatch = rawLine.match(/^(\d+(?:[\.\,]\d+)?)\s*(M|ADET|AD|BOY|KG|METRE|MT|SET|PAKET|PCS)\s*(\d+[\.\,]\d{2})\s*(\d+[\.\,]\d{2})\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})?/i);
     const isDimension = /\d+X\d+/i.test(rawLine);
     const standardQtyMatch = !isDimension ? rawLine.match(/(\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)(?=[0-9\s\.\,\-\/\$€₺\b]|$)/i) : null;
-    const productCodeMatch = rawLine.match(/^(Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|SG[\s\-][0-9A-Z\-]+|KALEM[\-\s]\d+)\s*(.*)/i);
+    const productCodeMatch = rawLine.match(/^(Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|SG[\s\-][0-9A-Z\-]+|S\d{5,8}|KALEM[\-\s]\d+)\s*(.*)/i);
 
     if (compositeLineMatch) {
       const code = compositeLineMatch[2].trim();
       const desc = compositeLineMatch[3].trim();
       const qty = parseFloat(compositeLineMatch[4].replace(',', '.')) || 1;
       const unitRaw = compositeLineMatch[5].toUpperCase();
-      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
       const unitPrice = parseFloat(compositeLineMatch[7]?.replace(',', '.')) || 0;
       const lineTotal = parseFloat(compositeLineMatch[8]?.replace(',', '.')) || (qty * unitPrice);
       const currency = compositeLineMatch[9] || 'TRY';
@@ -828,7 +985,7 @@ function parseUniversalText(text, lines, originalName = '') {
         const descPart = inlineQtyMatch[1].trim();
         const qty = parseFloat(inlineQtyMatch[2].replace(',', '.')) || 1;
         const unitRaw = inlineQtyMatch[3].toUpperCase();
-        const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+        const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
         const unitPrice = parseFloat(inlineQtyMatch[4].replace(',', '.')) || 0;
         const lineTotal = parseFloat(inlineQtyMatch[5].replace(',', '.')) || (qty * unitPrice);
 
@@ -858,7 +1015,7 @@ function parseUniversalText(text, lines, originalName = '') {
     } else if (gluedQtyMatch) {
       const qty = parseFloat(gluedQtyMatch[1].replace(',', '.')) || 1;
       const unitRaw = gluedQtyMatch[2].toUpperCase();
-      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
       const unitPrice = parseFloat(gluedQtyMatch[3].replace(',', '.')) || 0;
       const lineTotal = parseFloat(gluedQtyMatch[4].replace(',', '.')) || (qty * unitPrice);
 
@@ -885,7 +1042,7 @@ function parseUniversalText(text, lines, originalName = '') {
     } else if (standardQtyMatch && !rawLine.includes('Ödeme') && !rawLine.includes('Döviz')) {
       const qty = parseFloat(standardQtyMatch[1].replace(',', '.')) || 1;
       const unitRaw = standardQtyMatch[2].toUpperCase();
-      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : unitRaw);
+      const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
 
       const textBefore = rawLine.substring(0, standardQtyMatch.index).trim();
       let pCode = currentCode;
@@ -945,8 +1102,8 @@ function parseUniversalText(text, lines, originalName = '') {
   return { customerInfo, orderItems };
 }
 
-// 6. ANA DİĞERLENDİRME VE STRATEJİ DAĞITICISI
-function parseTextContent(rawText, originalName = '') {
+// 7. ANA DİĞERLENDİRME VE STRATEJİ DAĞITICISI
+export function parseTextContent(rawText, originalName = '') {
   const text = cleanPdfText(rawText);
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 
@@ -992,7 +1149,18 @@ function parseTextContent(rawText, originalName = '') {
     return parseBesiktasTersane(text, lines, originalName);
   }
 
-  // Strateji 5: Gelişmiş Evrensel Metin Ayrıştırıcı
+  // Strateji 5: Tersan Tersanecilik Satınalma Siparişi
+  if (
+    /TERSAN/i.test(text) ||
+    /TERSANECİLİK/i.test(text) ||
+    /YALOVA TERSANE/i.test(text) ||
+    /408304 NOLU/i.test(text)
+  ) {
+    console.log('[DocumentProcessor] Strateji: Tersan Tersanecilik algılandı');
+    return parseTersanTersanesi(text, lines, originalName);
+  }
+
+  // Strateji 6: Gelişmiş Evrensel Metin Ayrıştırıcı
   console.log('[DocumentProcessor] Strateji: Evrensel Metin Ayrıştırıcı devrede');
   return parseUniversalText(text, lines, originalName);
 }

@@ -29,9 +29,17 @@ import {
   Share2,
   Phone,
   ArrowLeft,
-  Trash2
+  Trash2,
+  Sparkles,
+  TrendingUp,
+  Award,
+  CheckCheck,
+  Activity,
+  CheckCircle2,
+  Clock3,
+  CalendarDays
 } from 'lucide-react';
-import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord } from '../types';
+import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, CustomerInsights } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { toTurkishErrorMessage } from '../utils/errorMessage';
 
@@ -41,6 +49,7 @@ interface OrderDetailPanelProps {
   documents: OrderDocument[];
   history: OrderStatusHistory[];
   dispatches?: DispatchRecord[];
+  customerInsights?: CustomerInsights | null;
   onRefresh: () => void;
   onUpdateOrder: (
     updatedItems: OrderItem[],
@@ -57,6 +66,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   documents,
   history,
   dispatches = [],
+  customerInsights,
   onRefresh,
   onUpdateOrder,
   onDeleteOrder,
@@ -605,6 +615,45 @@ ${itemsSummary}${moreText}
     return acc + total;
   }, 0);
 
+  // Dashboard Metrics & Calculations
+  const totalItemsCount = (items || []).length;
+  const totalQuantity = (items || []).reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
+  const totalShippedQuantity = (items || []).reduce((acc, it) => acc + (Number(it.shippedQuantity) || 0), 0);
+  const remainingQuantity = Math.max(0, totalQuantity - totalShippedQuantity);
+  const shippingProgressPercent = totalQuantity > 0 ? Math.min(100, Math.round((totalShippedQuantity / totalQuantity) * 100)) : 0;
+  const fullyShippedItemsCount = (items || []).filter(i => (Number(i.shippedQuantity) || 0) >= (Number(i.quantity) || 0) && (Number(i.quantity) || 0) > 0).length;
+  const partiallyShippedItemsCount = (items || []).filter(i => (Number(i.shippedQuantity) || 0) > 0 && (Number(i.shippedQuantity) || 0) < (Number(i.quantity) || 0)).length;
+  const unshippedItemsCount = (items || []).filter(i => (Number(i.shippedQuantity) || 0) === 0).length;
+
+  const getDeliveryStatusBadge = (dateStr?: string) => {
+    if (!dateStr) return { label: 'Tarih Belirtilmedi', bg: '#F1F5F9', color: '#64748B', border: '#CBD5E1' };
+    const target = new Date(dateStr).getTime();
+    if (isNaN(target)) return { label: 'Belirtilmedi', bg: '#F1F5F9', color: '#64748B', border: '#CBD5E1' };
+    const now = new Date().setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((target - now) / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) {
+      return { label: `⚠️ ${Math.abs(diffDays)} Gün Gecikti`, bg: '#FEF2F2', color: '#DC2626', border: '#FCA5A5' };
+    }
+    if (diffDays === 0) {
+      return { label: '⚡ Bugün Teslim', bg: '#FFFBEB', color: '#D97706', border: '#FCD34D' };
+    }
+    if (diffDays <= 3) {
+      return { label: `⏳ ${diffDays} Gün Kaldı (Kritik)`, bg: '#FEF3C7', color: '#B45309', border: '#FDE68A' };
+    }
+    return { label: `⏱️ ${diffDays} Gün Kaldı`, bg: '#ECFDF5', color: '#059669', border: '#A7F3D0' };
+  };
+
+  const formatFullDateTime = (dateStr?: string) => {
+    if (!dateStr) return 'Belirtilmedi';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return String(dateStr);
+    }
+  };
+
   return (
     <div className="detail-panel">
       {/* Mobile Sticky Back Bar */}
@@ -837,61 +886,570 @@ ${itemsSummary}${moreText}
 
       {/* Tab Contents */}
       <div style={{ padding: '1.5rem', flex: 1, overflowY: 'auto' }}>
-        {/* TAB 1: SUMMARY */}
+        {/* TAB 1: SUMMARY - EXECUTIVE ORDER DASHBOARD & AI CUSTOMER INTELLIGENCE */}
         {activeTab === 'summary' && (
-          <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#1E293B' }}>Sipariş Genel Süreç Hattı</h3>
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
-              {[
-                { status: 'NEW', label: '1. Yeni' },
-                { status: 'IN_PRODUCTION', label: '2. Üretimde' },
-                { status: 'COATING', label: '3. Kaplamada' },
-                { status: 'PAINTING', label: '4. Boyada' },
-                { status: 'PACKAGING', label: '5. Paketlemede' },
-                { status: 'PARTIAL_SHIPPING', label: '6. Kısmi Sevk' },
-                { status: 'COMPLETED', label: '7. Tamamlandı' }
-              ].map((st) => {
-                const isCurrent = order.status === st.status;
-                return (
-                  <button
-                    key={st.status}
-                    onClick={() => handleStatusStep(st.status)}
-                    style={{
-                      flex: 1,
-                      minWidth: '130px',
-                      padding: '0.75rem',
-                      borderRadius: '8px',
-                      border: isCurrent ? '1px solid var(--primary)' : '1px solid var(--border-color)',
-                      background: isCurrent ? 'var(--primary-glow)' : 'var(--bg-card)',
-                      color: isCurrent ? 'var(--primary)' : 'var(--text-secondary)',
-                      fontSize: '0.8rem',
-                      fontWeight: isCurrent ? 700 : 500,
-                      cursor: 'pointer',
-                      textAlign: 'center'
-                    }}
-                  >
-                    {st.label}
-                  </button>
-                );
-              })}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {/* 1. Sipariş Genel Süreç Hattı (Interactive Stepper) */}
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Activity size={16} color="var(--primary)" /> SİPARİŞ GENEL İŞ AKIŞI VE SÜREÇ HATTI
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                  Aşamalara tıklayarak durumu doğrudan güncelleyebilirsiniz
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                {[
+                  { status: 'NEW', label: '1. Yeni' },
+                  { status: 'IN_PRODUCTION', label: '2. Üretimde' },
+                  { status: 'COATING', label: '3. Kaplamada' },
+                  { status: 'PAINTING', label: '4. Boyada' },
+                  { status: 'PACKAGING', label: '5. Paketlemede' },
+                  { status: 'PARTIAL_SHIPPING', label: '6. Kısmi Sevk' },
+                  { status: 'COMPLETED', label: '7. Tamamlandı' }
+                ].map((st) => {
+                  const isCurrent = order.status === st.status;
+                  return (
+                    <button
+                      key={st.status}
+                      onClick={() => handleStatusStep(st.status)}
+                      style={{
+                        flex: 1,
+                        minWidth: '120px',
+                        padding: '0.65rem 0.5rem',
+                        borderRadius: '8px',
+                        border: isCurrent ? '2px solid var(--primary)' : '1px solid #E2E8F0',
+                        background: isCurrent ? 'rgba(67, 97, 238, 0.08)' : '#F8FAFC',
+                        color: isCurrent ? 'var(--primary)' : '#64748B',
+                        fontSize: '0.8rem',
+                        fontWeight: isCurrent ? 700 : 500,
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        boxShadow: isCurrent ? '0 0 0 1px var(--primary)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                    >
+                      {st.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-              <div style={{ background: 'var(--bg-card)', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ color: 'var(--primary)', marginBottom: '0.75rem', fontSize: '0.9rem' }}>Müşteri & Adres Detayları</h4>
-                <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}><strong>Unvan:</strong> {order.customer_name}</p>
-                <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}><strong>Vergi Dairesi / No:</strong> {order.customer_tax_number || 'Belirtilmedi'}</p>
-                <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}><strong>Teslimat Adresi:</strong> PERPA - ŞİŞLİ / İSTANBUL</p>
-                <p style={{ fontSize: '0.85rem' }}><strong>İletişim:</strong> 0505 008 25 62 | info@markaelektrik.com.tr</p>
+            {/* 2. Dörtlü Yönetici KPI Metrik Kartları */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '1rem' }}>
+              {/* Kart 1: Ekleyen Kullanıcı & Kayıt Zamanı */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Siparişi Ekleyen & Kayıt
+                  </span>
+                  <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <User size={15} color="#3B82F6" />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A' }}>
+                    {order.creator_name || 'Sistem / Yetkili'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                    <Clock size={12} /> {formatFullDateTime(order.created_at)}
+                  </div>
+                </div>
               </div>
 
-              <div style={{ background: 'var(--bg-card)', padding: '1.25rem', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ color: 'var(--primary)', marginBottom: '0.75rem', fontSize: '0.9rem' }}>İş Emri & Parçalı Sevk Özeti</h4>
-                <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}><strong>Toplam Kalem Sayısı:</strong> {(items || []).length} Kalem</p>
-                <p style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-                  <strong>Sevk Edilen Kalemler:</strong> {(items || []).filter(i => (i.shippedQuantity || 0) >= i.quantity).length} / {(items || []).length} Kalem Tamamlandı
-                </p>
-                <p style={{ fontSize: '0.85rem' }}><strong>Toplam İrsaliye Sayısı:</strong> {waybillGroups.length} Adet Sevkiyat İrsaliyesi</p>
+              {/* Kart 2: İstenen Teslim Tarihi & Kalan Süre */}
+              {(() => {
+                const badge = getDeliveryStatusBadge(order.requested_delivery_date);
+                return (
+                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        İstenen Teslim Tarihi
+                      </span>
+                      <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <CalendarDays size={15} color="#D97706" />
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A' }}>
+                        {formatDate(order.requested_delivery_date)}
+                      </div>
+                      <div style={{ marginTop: '4px' }}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '0.15rem 0.5rem',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          background: badge.bg,
+                          color: badge.color,
+                          border: `1px solid ${badge.border}`
+                        }}>
+                          {badge.label}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Kart 3: Kaplama Cinsi & Müşteri Projesi */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Kaplama Cinsi & Proje
+                  </span>
+                  <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Paintbrush size={15} color="#8B5CF6" />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: order.coating_type ? '#7C3AED' : '#64748B' }}>
+                    {order.coating_type || 'Belirtilmedi'}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
+                    {order.project_no ? `Proje: ${order.project_no}` : (order.customer_order_no ? `Müşteri Ref: ${order.customer_order_no}` : 'Özel Proje Tanımsız')}
+                  </div>
+                </div>
+              </div>
+
+              {/* Kart 4: Kalem Sayısı & Sipariş Tutarı */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Kalem & Sipariş Tutarı
+                  </span>
+                  <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Tag size={15} color="#10B981" />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#059669' }}>
+                    {totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
+                    {totalItemsCount} Kalem • Toplam {totalQuantity.toLocaleString('tr-TR')} Adet
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. "Kaçı Gitti, Kaçı Kaldı?" Sevkiyat ve Teslimat İlerleme Paneli */}
+            <div style={{
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: '12px',
+              padding: '1.25rem',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Truck size={18} color="#2563EB" />
+                  </div>
+                  <div>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                      Kaçı Gitti, Kaçı Kaldı? — Sevkiyat İlerleme ve Teslimat Takibi
+                    </h4>
+                    <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      Toplam {totalQuantity.toLocaleString('tr-TR')} birimlik siparişin parçalı sevk dağılımı
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '20px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    background: shippingProgressPercent === 100 ? '#ECFDF5' : (shippingProgressPercent > 0 ? '#EFF6FF' : '#F1F5F9'),
+                    color: shippingProgressPercent === 100 ? '#059669' : (shippingProgressPercent > 0 ? '#2563EB' : '#64748B'),
+                    border: `1px solid ${shippingProgressPercent === 100 ? '#A7F3D0' : (shippingProgressPercent > 0 ? '#BFDBFE' : '#CBD5E1')}`
+                  }}>
+                    %{shippingProgressPercent} Sevk Edildi
+                  </span>
+                </div>
+              </div>
+
+              {/* Büyük İlerleme Çubuğu */}
+              <div style={{ width: '100%', height: '14px', background: '#F1F5F9', borderRadius: '10px', overflow: 'hidden', marginBottom: '1rem', border: '1px solid #E2E8F0' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${shippingProgressPercent}%`,
+                  background: shippingProgressPercent === 100 ? '#10B981' : 'linear-gradient(90deg, #3B82F6 0%, #10B981 100%)',
+                  borderRadius: '10px',
+                  transition: 'width 0.4s ease'
+                }} />
+              </div>
+
+              {/* 3 Metrik Kutucuğu */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '0.85rem' }}>
+                <div style={{ background: '#F8FAFC', borderLeft: '4px solid #3B82F6', padding: '0.75rem 1rem', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 600, display: 'block' }}>TOPLAM SİPARİŞ MİKTARI</span>
+                  <strong style={{ fontSize: '1.05rem', color: '#0F172A' }}>{totalQuantity.toLocaleString('tr-TR')} Adet</strong>
+                  <span style={{ fontSize: '0.72rem', color: '#64748B', display: 'block', marginTop: '2px' }}>{totalItemsCount} farklı kalem</span>
+                </div>
+
+                <div style={{ background: '#ECFDF5', borderLeft: '4px solid #10B981', padding: '0.75rem 1rem', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#047857', fontWeight: 600, display: 'block' }}>SEVK EDİLEN (GİTTİ)</span>
+                  <strong style={{ fontSize: '1.05rem', color: '#059669' }}>{totalShippedQuantity.toLocaleString('tr-TR')} Adet</strong>
+                  <span style={{ fontSize: '0.72rem', color: '#047857', display: 'block', marginTop: '2px' }}>%{shippingProgressPercent} teslim edildi</span>
+                </div>
+
+                <div style={{ background: '#FFFBEB', borderLeft: '4px solid #F59E0B', padding: '0.75rem 1rem', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#B45309', fontWeight: 600, display: 'block' }}>KALAN MİKTAR (KALDI)</span>
+                  <strong style={{ fontSize: '1.05rem', color: '#D97706' }}>{remainingQuantity.toLocaleString('tr-TR')} Adet</strong>
+                  <span style={{ fontSize: '0.72rem', color: '#B45309', display: 'block', marginTop: '2px' }}>%{100 - shippingProgressPercent} üretimde / depoda</span>
+                </div>
+              </div>
+
+              {/* Kalem Durum Hapları */}
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', paddingTop: '0.5rem', borderTop: '1px solid #F1F5F9' }}>
+                <span style={{ fontSize: '0.75rem', color: '#059669', background: '#ECFDF5', border: '1px solid #A7F3D0', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 600 }}>
+                  ✓ {fullyShippedItemsCount} Kalem Tamamı Teslim Edildi
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#2563EB', background: '#EFF6FF', border: '1px solid #BFDBFE', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 600 }}>
+                  🚚 {partiallyShippedItemsCount} Kalem Kısmi Sevk Edildi
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#64748B', background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 600 }}>
+                  📦 {unshippedItemsCount} Kalem Sevk Bekliyor
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#7C3AED', background: '#F5F3FF', border: '1px solid #DDD6FE', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 600, marginLeft: 'auto' }}>
+                  📋 {waybillGroups.length} Adet Sevkiyat İrsaliyesi Kesildi
+                </span>
+              </div>
+            </div>
+
+            {/* 4. SİES AI MÜŞTERİ ANALİZ VE ZEKA KARTI */}
+            <div style={{
+              background: 'linear-gradient(135deg, #0F172A 0%, #1E1B4B 60%, #0F172A 100%)',
+              border: '1px solid rgba(129, 140, 248, 0.35)',
+              borderRadius: '14px',
+              padding: '1.35rem 1.5rem',
+              color: '#F8FAFC',
+              boxShadow: '0 10px 25px -5px rgba(99, 102, 241, 0.25)',
+              position: 'relative',
+              overflow: 'hidden'
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(251, 191, 36, 0.15)', border: '1px solid rgba(251, 191, 36, 0.3)', display: 'center', alignItems: 'center', justifyContent: 'center' }}>
+                    <Sparkles size={20} color="#FBBF24" />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FFFFFF', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      SİES AI • Müşteri Akıllı Analizi & Sipariş Davranışı
+                    </h3>
+                    <span style={{ fontSize: '0.78rem', color: '#94A3B8' }}>
+                      {order.customer_name} — Kurumsal Sipariş Örüntüleri ve Alım Alışkanlıkları
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{
+                    padding: '0.3rem 0.75rem',
+                    borderRadius: '20px',
+                    background: 'rgba(99, 102, 241, 0.2)',
+                    border: '1px solid rgba(165, 180, 252, 0.3)',
+                    color: '#C7D2FE',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', display: 'inline-block', boxShadow: '0 0 6px #10B981' }} />
+                    Canlı AI Zeka Motoru ({customerInsights?.year || 2026} Analizi)
+                  </div>
+                </div>
+              </div>
+
+              {/* 4'lü AI Metrik Kutuları */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: '0.85rem', marginBottom: '1rem' }}>
+                {/* Metrik 1: Yıl İçi Sipariş Sırası */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '0.9rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <Award size={15} color="#FBBF24" />
+                    <span style={{ fontSize: '0.7rem', color: '#CBD5E1', textTransform: 'uppercase', fontWeight: 600 }}>Yıl İçi Sırası</span>
+                  </div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#FBBF24' }}>
+                    {customerInsights?.orderRankThisYear ? `${customerInsights.orderRankThisYear}. Siparişi` : '1. Siparişi'}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
+                    {customerInsights?.year || 2026} yılı toplam {customerInsights?.totalOrdersThisYear || 1} sipariş (Tüm Zamanlar: {customerInsights?.totalOrdersAllTime || 1})
+                  </div>
+                </div>
+
+                {/* Metrik 2: Bu Siparişin Ciro Payı */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '0.9rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <TrendingUp size={15} color="#34D399" />
+                    <span style={{ fontSize: '0.7rem', color: '#CBD5E1', textTransform: 'uppercase', fontWeight: 600 }}>Bu Siparişin Ciro Payı</span>
+                  </div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#34D399' }}>
+                    %{customerInsights?.thisOrderRevenueSharePercent ?? 100}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
+                    Tutar: {(customerInsights?.thisOrderAmount || totalOrderAmount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                  </div>
+                </div>
+
+                {/* Metrik 3: Toplam Müşteri Sipariş Hacmi */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '0.9rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <Tag size={15} color="#60A5FA" />
+                    <span style={{ fontSize: '0.7rem', color: '#CBD5E1', textTransform: 'uppercase', fontWeight: 600 }}>Toplam Cari Hacim</span>
+                  </div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#60A5FA' }}>
+                    {(customerInsights?.totalCustomerRevenue || totalOrderAmount || 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
+                    Müşterinin sistemdeki kümülatif sipariş hacmi
+                  </div>
+                </div>
+
+                {/* Metrik 4: Favori Kaplama / Proses */}
+                <div style={{ background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '10px', padding: '0.9rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                    <Paintbrush size={15} color="#C084FC" />
+                    <span style={{ fontSize: '0.7rem', color: '#CBD5E1', textTransform: 'uppercase', fontWeight: 600 }}>Tercih Edilen Kaplama</span>
+                  </div>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#C084FC' }}>
+                    {customerInsights?.favoriteCoatings?.[0]?.name || order.coating_type || 'Paslanmaz / Standart'}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#94A3B8', marginTop: '2px' }}>
+                    {customerInsights?.favoriteCoatings?.[0] ? `${customerInsights.favoriteCoatings[0].count} siparişte seçildi` : 'Aktif sipariş kaplama türü'}
+                  </div>
+                </div>
+              </div>
+
+              {/* AI Sentez Yorumu & Favori Ürünler */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.07)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
+                borderRadius: '10px',
+                padding: '0.95rem 1.1rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                  <Sparkles size={18} color="#A78BFA" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#DDD6FE', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Yapay Zeka Sentez Özeti & Öngörü:
+                    </div>
+                    <div style={{ fontSize: '0.86rem', lineHeight: '1.45', color: '#E2E8F0' }}>
+                      {customerInsights?.aiSynthesisSummary || (
+                        `${order.customer_name} firması için bu sipariş ${new Date(order.created_at || Date.now()).getFullYear()} yılı içerisindeki siparişler arasındadır. Müşteri proses tercihlerinde ağırlıklı olarak "${order.coating_type || 'paslanmaz'}" işlemlerine odaklanmaktadır. Toplam ${totalItemsCount} kalem ve ${totalOrderAmount.toLocaleString('tr-TR')} TRY değerindedir.`
+                      )}
+                    </div>
+
+                    {/* Sık Alınan Ürünler Listesi */}
+                    {customerInsights?.favoriteProducts && customerInsights.favoriteProducts.length > 0 && (
+                      <div style={{ marginTop: '0.75rem', paddingTop: '0.65rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: '0.73rem', color: '#94A3B8', fontWeight: 600 }}>Sık Tercih Edilen Ürünler:</span>
+                        {customerInsights.favoriteProducts.slice(0, 4).map((p, pIdx) => (
+                          <span
+                            key={pIdx}
+                            style={{
+                              background: 'rgba(129, 140, 248, 0.2)',
+                              border: '1px solid rgba(165, 180, 252, 0.3)',
+                              color: '#E0E7FF',
+                              padding: '0.15rem 0.5rem',
+                              borderRadius: '6px',
+                              fontSize: '0.73rem',
+                              fontWeight: 600
+                            }}
+                          >
+                            {p.product_name} ({p.cnt} kez{p.total_qty ? ` • ${p.total_qty} ${p.unit || 'Adet'}` : ''})
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 5. İki Kolonlu Alt Panel: Belgeler ve Kullanıcı Denetim Tarihçesi */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+              {/* Sol Kolon: İlişkili Belgeler & Hızlı Erişim */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <FileText size={18} color="var(--primary)" />
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                      İlişkili Sipariş Belgeleri ({(documents || []).length})
+                    </h4>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('documents')}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Tümünü Gör →
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {/* Orijinal Belge */}
+                  {(() => {
+                    const origDoc = (documents || []).find(d => d.file_type === 'ORIGINAL_ORDER' || (d as any).document_type === 'ORIGINAL_ORDER');
+                    return (
+                      <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.65rem 0.85rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <FileText size={16} color="#DC2626" />
+                          <div>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1E293B' }}>
+                              {origDoc?.file_name || 'Orijinal Müşteri Sipariş Formu'}
+                            </div>
+                            <span style={{ fontSize: '0.7rem', color: '#64748B' }}>Orijinal Taranan PDF / Form</span>
+                          </div>
+                        </div>
+                        {origDoc ? (
+                          <a
+                            href={origDoc.file_path || `/api/documents/${origDoc.id}/view`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <ExternalLink size={13} /> Görüntüle
+                          </a>
+                        ) : (
+                          <span style={{ fontSize: '0.72rem', color: '#94A3B8' }}>Belge yok</span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* KDV Muafiyet Belgesi */}
+                  {(() => {
+                    const exemptionDoc = (documents || []).find(d => 
+                      d.file_type === 'KDV_EXEMPTION' || 
+                      (d as any).document_type === 'KDV_EXEMPTION' || 
+                      (d.file_name && d.file_name.toLowerCase().includes('muafiyet'))
+                    );
+                    return (
+                      <div style={{ background: exemptionDoc ? '#ECFDF5' : '#F8FAFC', border: exemptionDoc ? '1px solid #A7F3D0' : '1px solid #E2E8F0', padding: '0.65rem 0.85rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <ShieldCheck size={16} color={exemptionDoc ? '#059669' : '#94A3B8'} />
+                          <div>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600, color: exemptionDoc ? '#065F46' : '#64748B' }}>
+                              {exemptionDoc ? (exemptionDoc.file_name || 'KDV Muafiyet Belgesi') : 'KDV Muafiyet Belgesi Yok'}
+                            </div>
+                            <span style={{ fontSize: '0.7rem', color: exemptionDoc ? '#047857' : '#94A3B8' }}>
+                              {exemptionDoc ? 'KDV İstisna Yazısı Ekli' : 'İhracat / KDV Muafiyeti girilmedi (Opsiyonel)'}
+                            </span>
+                          </div>
+                        </div>
+                        {exemptionDoc && (
+                          <a
+                            href={exemptionDoc.file_path || `/api/documents/${exemptionDoc.id}/view`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: '0.75rem', color: '#059669', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          >
+                            <ExternalLink size={13} /> İncele
+                          </a>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Son İrsaliye Belgeleri */}
+                  {waybillGroups.slice(0, 2).map((wb, wbIdx) => (
+                    <div key={wbIdx} style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.65rem 0.85rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Truck size={16} color="#3B82F6" />
+                        <div>
+                          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1E293B' }}>
+                            İrsaliye: {wb.waybill_number}
+                          </div>
+                          <span style={{ fontSize: '0.7rem', color: '#64748B' }}>
+                            {wb.vehicle_plate} • {wb.driver_name} • {formatDate(wb.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setActiveTab('shipping')}
+                        style={{ background: 'transparent', border: 'none', color: '#3B82F6', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Detay →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sağ Kolon: Kullanıcı İşlem Tarihçesi & Denetim İzi */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <History size={18} color="var(--primary)" />
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                      Kullanıcı İşlemleri & Denetim İzi
+                    </h4>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab('history')}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    Tümünü Gör →
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  {/* Sipariş Kayıt Tarihçesi */}
+                  <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                      <CheckCircle size={13} color="#2563EB" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1E293B' }}>
+                        Sipariş Oluşturuldu
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                        <strong>{order.creator_name || 'Yetkili Kullanıcı'}</strong> tarafından sisteme aktarıldı • {formatFullDateTime(order.created_at)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Son Durum Hareketleri */}
+                  {(history || []).slice(0, 3).map((h, hIdx) => (
+                    <div key={hIdx} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#F1F5F9', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                        <RefreshCw size={12} color="#64748B" />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1E293B' }}>
+                          Durum: {h.status_to || (h as any).new_status || 'Güncellendi'}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                          <strong>{(h as any).user_name || (h as any).created_by_name || 'Kullanıcı'}</strong>: {h.notes || 'Durum değişikliği'} • {formatFullDateTime(h.created_at)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Son Sevkiyat Kaydı */}
+                  {(dispatches || []).slice(0, 1).map((d, dIdx) => (
+                    <div key={dIdx} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                      <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                        <Truck size={12} color="#059669" />
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#065F46' }}>
+                          Sevkiyat İrsaliyesi: {d.waybill_number}
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                          <strong>{d.created_by_name || 'Sevkiyat Sorumlusu'}</strong> • Araç: {d.license_plate || '-'} • {formatFullDateTime(d.created_at)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

@@ -305,12 +305,118 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       ORDER BY d.created_at DESC
     `, [orderId]);
 
+    const orderData = orderRes.rows[0];
+
+    // Compute Customer Insights (Yapay Zeka Müşteri Zeka & Analitik Özeti)
+    let customerInsights = {
+      customerName: orderData.customer_name,
+      year: new Date(orderData.order_date || orderData.created_at || Date.now()).getFullYear(),
+      orderRankThisYear: 1,
+      totalOrdersThisYear: 1,
+      totalOrdersAllTime: 1,
+      totalCustomerRevenue: 0,
+      thisOrderAmount: items.reduce((sum, it) => sum + (it.lineTotal || 0), 0),
+      thisOrderRevenueSharePercent: 100,
+      favoriteCoatings: [],
+      favoriteProducts: [],
+      aiSynthesisSummary: ''
+    };
+
+    try {
+      // Find all orders for this customer (by customer_id or matching name)
+      const allCustOrdersRes = await query(`
+        SELECT o.id, o.order_no, o.order_date, o.created_at, o.status, o.coating_type,
+               (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = o.id) as order_total
+        FROM orders o
+        WHERE o.customer_id = ? OR o.customer_id IN (SELECT id FROM customers WHERE name = ?)
+        ORDER BY o.created_at ASC, o.id ASC
+      `, [orderData.customer_id, orderData.customer_name]);
+
+      const allOrders = allCustOrdersRes.rows || [];
+      if (allOrders.length > 0) {
+        const orderYear = customerInsights.year;
+        const thisYearOrders = allOrders.filter(o => {
+          const dStr = o.order_date || o.created_at;
+          return dStr && new Date(dStr).getFullYear() === orderYear;
+        });
+
+        const currentOrderIdx = thisYearOrders.findIndex(o => String(o.id) === String(orderId));
+        customerInsights.orderRankThisYear = currentOrderIdx !== -1 ? currentOrderIdx + 1 : thisYearOrders.length || 1;
+        customerInsights.totalOrdersThisYear = Math.max(thisYearOrders.length, 1);
+        customerInsights.totalOrdersAllTime = Math.max(allOrders.length, 1);
+
+        const totalRev = allOrders.reduce((sum, o) => sum + (parseFloat(o.order_total) || 0), 0);
+        customerInsights.totalCustomerRevenue = totalRev > 0 ? totalRev : customerInsights.thisOrderAmount;
+        if (customerInsights.totalCustomerRevenue > 0) {
+          customerInsights.thisOrderRevenueSharePercent = Math.min(
+            100,
+            Math.round((customerInsights.thisOrderAmount / customerInsights.totalCustomerRevenue) * 1000) / 10
+          );
+        }
+
+        const coatingCounts = {};
+        allOrders.forEach(o => {
+          if (o.coating_type) {
+            coatingCounts[o.coating_type] = (coatingCounts[o.coating_type] || 0) + 1;
+          }
+        });
+        customerInsights.favoriteCoatings = Object.entries(coatingCounts)
+          .sort((a, b) => b[1] - a[1])
+          .map(([name, count]) => ({ name, count }));
+
+        const allCustItemsRes = await query(`
+          SELECT oi.product_name, oi.customer_product_code, COUNT(*) as cnt, SUM(oi.quantity) as total_qty, oi.unit
+          FROM order_items oi
+          JOIN orders o ON oi.order_id = o.id
+          WHERE o.customer_id = ? OR o.customer_id IN (SELECT id FROM customers WHERE name = ?)
+          GROUP BY oi.product_name
+          ORDER BY cnt DESC
+          LIMIT 5
+        `, [orderData.customer_id, orderData.customer_name]);
+
+        customerInsights.favoriteProducts = allCustItemsRes.rows || [];
+      }
+
+      const cName = orderData.customer_name;
+      const rank = customerInsights.orderRankThisYear;
+      const year = customerInsights.year;
+      const amtFormatted = customerInsights.thisOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRY';
+      const totalRevFormatted = customerInsights.totalCustomerRevenue.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' TRY';
+      const share = customerInsights.thisOrderRevenueSharePercent;
+
+      const topCoatingsStr = customerInsights.favoriteCoatings.length > 0
+        ? customerInsights.favoriteCoatings.slice(0, 2).map(c => c.name).join(', ')
+        : (orderData.coating_type || 'Standart Galvaniz');
+
+      const topProductsStr = customerInsights.favoriteProducts.length > 0
+        ? customerInsights.favoriteProducts.slice(0, 2).map(p => p.product_name).join(', ')
+        : (items[0]?.productName || 'Kablo Taşıma Sistemleri');
+
+      let delivNote = '';
+      if (orderData.requested_delivery_date) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const deliv = new Date(orderData.requested_delivery_date);
+        const diffDays = Math.ceil((deliv.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffDays > 0) delivNote = `İstenen teslim tarihine ${diffDays} gün kalmıştır.`;
+        else if (diffDays === 0) delivNote = 'Siparişin teslim tarihi BUGÜNDÜR.';
+        else delivNote = `Sipariş teslim tarihi ${Math.abs(diffDays)} gün gecikmededir.`;
+      }
+
+      customerInsights.aiSynthesisSummary =
+        `🤖 SİES AI Müşteri Analizi: ${cName}, ${year} yılı içerisinde sistemimize kayıtlı ${rank}. siparişini vermektedir. Firma genel satın alma profilinde çoğunlukla ${topCoatingsStr} kaplama türünü ve ${topProductsStr} kalemlerini tercih etmektedir. Bu sipariş (${amtFormatted}), firmanın toplam kayıtlı ${totalRevFormatted}'lik hacminin %${share}'lik payını oluşturmaktadır.${delivNote ? ' ' + delivNote : ''}`;
+
+    } catch (e) {
+      console.warn('Customer insights calculation error:', e.message);
+    }
+
     res.json({
-      order: orderRes.rows[0],
+      order: orderData,
       items: items,
       documents: docsRes.rows,
       history: historyRes.rows,
-      dispatches: dispatchesRes.rows
+      dispatches: dispatchesRes.rows,
+      customerInsights: customerInsights
     });
   } catch (err) {
     res.status(500).json({ error: formatErrorMessage(err) });
