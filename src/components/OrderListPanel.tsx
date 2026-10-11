@@ -13,9 +13,11 @@ import {
   ChevronDown,
   ChevronUp,
   LayoutList,
-  FolderTree
+  FolderTree,
+  PackageCheck
 } from 'lucide-react';
-import { Order, OrderStatus } from '../types';
+import { Order, OrderItem, OrderStatus } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface OrderListPanelProps {
   orders: Order[];
@@ -46,17 +48,52 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   onPageChange,
   totalCount
 }) => {
+  const { token } = useAuth();
+
   // Grouping Mode State: Default to Customer Grouping (true)
   const [groupByCustomer, setGroupByCustomer] = useState<boolean>(true);
 
   // Expanded/Collapsed Customer Groups State (empty map = all expanded by default)
   const [collapsedCustomers, setCollapsedCustomers] = useState<{ [custName: string]: boolean }>({});
 
+  // Expanded Order Accordion State & Loaded Items Cache
+  const [expandedOrders, setExpandedOrders] = useState<{ [orderId: number]: boolean }>({});
+  const [itemsByOrder, setItemsByOrder] = useState<{ [orderId: number]: OrderItem[] }>({});
+  const [loadingItems, setLoadingItems] = useState<{ [orderId: number]: boolean }>({});
+
   const toggleCustomerGroup = (custName: string) => {
     setCollapsedCustomers(prev => ({
       ...prev,
       [custName]: !prev[custName]
     }));
+  };
+
+  const toggleOrderExpand = async (orderId: number) => {
+    const isCurrentlyExpanded = !!expandedOrders[orderId];
+    const nextState = !isCurrentlyExpanded;
+
+    setExpandedOrders(prev => ({
+      ...prev,
+      [orderId]: nextState
+    }));
+
+    // Fetch order items if expanding and not already cached
+    if (nextState && !itemsByOrder[orderId] && !loadingItems[orderId]) {
+      setLoadingItems(prev => ({ ...prev, [orderId]: true }));
+      try {
+        const res = await fetch(`/api/orders/${orderId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (data && data.items) {
+          setItemsByOrder(prev => ({ ...prev, [orderId]: data.items }));
+        }
+      } catch (err) {
+        console.error('Order items fetch error:', err);
+      } finally {
+        setLoadingItems(prev => ({ ...prev, [orderId]: false }));
+      }
+    }
   };
 
   const getStatusBadge = (status: OrderStatus) => {
@@ -99,51 +136,196 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
 
   const renderOrderCard = (order: Order) => {
     const isSelected = selectedOrderId === order.id;
+    const isExpanded = !!expandedOrders[order.id];
+    const items = itemsByOrder[order.id];
+    const isLoadingItems = !!loadingItems[order.id];
+
     return (
       <div
         key={order.id}
-        onClick={() => onSelectOrder(order)}
         style={{
-          padding: '10px 12px',
           borderRadius: '10px',
-          marginBottom: '6px',
+          marginBottom: '8px',
           background: isSelected ? '#EFF6FF' : '#FFFFFF',
-          border: isSelected ? '1px solid #3B82F6' : '1px solid #E2E8F0',
+          border: isSelected ? '1.5px solid #3B82F6' : '1px solid #E2E8F0',
           boxShadow: isSelected ? '0 2px 6px rgba(59, 130, 246, 0.12)' : '0 1px 2px rgba(0,0,0,0.03)',
-          cursor: 'pointer',
-          transition: 'all 0.15s ease',
-          position: 'relative'
+          overflow: 'hidden',
+          transition: 'all 0.15s ease'
         }}
       >
-        {/* Header row */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-          <span style={{ fontWeight: 600, fontSize: '13px', color: '#1A202C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
-            {order.customer_name}
-          </span>
-          {getStatusBadge(order.status)}
-        </div>
-
-        {/* Sub details */}
-        <div style={{ fontSize: '11.5px', color: '#4A5568', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
-          <span>Sip: <strong style={{ color: '#3B82F6' }}>{order.order_no}</strong></span>
-          {order.customer_order_no && <span>Müş: {order.customer_order_no}</span>}
-        </div>
-
-        {/* Card footer */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#718096' }}>
-          <span>Tarih: {order.order_date ? new Date(order.order_date).toLocaleDateString('tr-TR') : '-'}</span>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ background: '#F1F5F9', color: '#4A5568', padding: '1px 6px', borderRadius: '8px', fontWeight: 600 }}>
-              {order.total_items || 0} Kalem
+        {/* Main Card Summary (Clickable) */}
+        <div
+          onClick={() => {
+            onSelectOrder(order);
+            toggleOrderExpand(order.id);
+          }}
+          style={{
+            padding: '10px 12px',
+            cursor: 'pointer',
+            userSelect: 'none'
+          }}
+        >
+          {/* Header row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+            <span style={{ fontWeight: 600, fontSize: '13px', color: '#1A202C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+              {order.customer_name}
             </span>
-            {(order.total_docs || 0) > 0 && (
-              <span title="Orijinal Belge Ekli" style={{ color: '#3B82F6', display: 'flex', alignItems: 'center' }}>
-                <Paperclip size={12} />
-              </span>
-            )}
+            {getStatusBadge(order.status)}
+          </div>
+
+          {/* Sub details */}
+          <div style={{ fontSize: '11.5px', color: '#4A5568', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+            <span>Sip: <strong style={{ color: '#3B82F6' }}>{order.order_no}</strong></span>
+            {order.customer_order_no && <span>Müş: {order.customer_order_no}</span>}
+          </div>
+
+          {/* Card footer */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#718096' }}>
+            <span>Tarih: {order.order_date ? new Date(order.order_date).toLocaleDateString('tr-TR') : '-'}</span>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {(order.total_docs || 0) > 0 && (
+                <span title="Orijinal Belge Ekli" style={{ color: '#3B82F6', display: 'flex', alignItems: 'center' }}>
+                  <Paperclip size={12} />
+                </span>
+              )}
+
+              {/* Accordion Chevron Button (Aşağı / Yukarı Tırnak) */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectOrder(order);
+                  toggleOrderExpand(order.id);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  background: isExpanded ? '#DBEAFE' : '#F1F5F9',
+                  color: isExpanded ? '#1D4ED8' : '#475569',
+                  border: 'none',
+                  padding: '3px 9px',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                }}
+              >
+                <span>{order.total_items || 0} Kalem</span>
+                {isExpanded ? <ChevronUp size={14} color="#1D4ED8" /> : <ChevronDown size={14} color="#475569" />}
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Expanded Order Items Accordion Content (Aşağı Tırnakla Açılan Kalemler) */}
+        {isExpanded && (
+          <div style={{
+            borderTop: '1px solid #DBEAFE',
+            background: '#F8FAFC',
+            padding: '10px'
+          }}>
+            <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#1E293B', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <PackageCheck size={14} color="#3B82F6" />
+                Sipariş Kalemleri
+              </span>
+              <span style={{ fontSize: '10.5px', color: '#64748B', fontWeight: 600, background: '#E2E8F0', padding: '1px 6px', borderRadius: '10px' }}>
+                {items ? `${items.length} Kalem` : '...'}
+              </span>
+            </div>
+
+            {isLoadingItems ? (
+              <div style={{ padding: '12px', textAlign: 'center', color: '#64748B', fontSize: '11.5px' }}>
+                <Clock size={14} style={{ display: 'inline', marginRight: '5px', animation: 'spin 1s linear infinite' }} />
+                Sipariş kalemleri yükleniyor...
+              </div>
+            ) : !items || items.length === 0 ? (
+              <div style={{ padding: '8px', textAlign: 'center', color: '#94A3B8', fontSize: '11.5px' }}>
+                Bu siparişe ait kayıtlı kalem bulunamadı.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {items.map((item, index) => {
+                  const lineNo = item.lineNo || item.line_no || index + 1;
+                  const code = item.customerProductCode || item.customer_product_code || item.internalProductCode || item.internal_product_code;
+                  const name = item.productName || item.product_name || 'Ürün Tanımsız';
+                  const qty = item.quantity || 0;
+                  const unit = item.unit || 'AD';
+                  const price = item.unitPrice || item.unit_price || 0;
+                  const total = item.lineTotal || item.line_total || (qty * price);
+                  const currency = item.currency || '₺';
+
+                  return (
+                    <div
+                      key={item.id || index}
+                      style={{
+                        background: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: '8px',
+                        padding: '8px 10px',
+                        fontSize: '11.5px',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                      }}
+                    >
+                      {/* Item Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
+                          <span style={{ background: '#3B82F6', color: '#FFFFFF', borderRadius: '4px', padding: '1px 5px', fontSize: '10px', fontWeight: 700, flexShrink: 0 }}>
+                            #{lineNo}
+                          </span>
+                          {code && (
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563EB', fontSize: '11.5px' }}>
+                              {code}
+                            </span>
+                          )}
+                        </div>
+                        <span style={{ fontWeight: 700, color: '#0F172A', fontSize: '12px', flexShrink: 0, background: '#F1F5F9', padding: '2px 6px', borderRadius: '6px' }}>
+                          {qty.toLocaleString('tr-TR')} {unit}
+                        </span>
+                      </div>
+
+                      {/* Product Name */}
+                      <div style={{ fontWeight: 600, color: '#1E293B', marginBottom: '4px', wordBreak: 'break-word', lineHeight: '1.3' }}>
+                        {name}
+                      </div>
+
+                      {/* Technical Spec details if available */}
+                      {(item.widthMm || item.heightMm || item.lengthMm || item.thicknessMm || item.surfaceCoating || item.material) && (
+                        <div style={{ fontSize: '10.5px', color: '#64748B', marginBottom: '4px', display: 'flex', flexWrap: 'wrap', gap: '6px', background: '#F8FAFC', padding: '3px 6px', borderRadius: '4px' }}>
+                          {(item.widthMm || item.heightMm || item.lengthMm || item.thicknessMm) && (
+                            <span>
+                              Ölçü: {[
+                                item.thicknessMm ? `t:${item.thicknessMm}` : null,
+                                item.widthMm ? `w:${item.widthMm}` : null,
+                                item.heightMm ? `h:${item.heightMm}` : null,
+                                item.lengthMm ? `L:${item.lengthMm}` : null
+                              ].filter(Boolean).join('x')} mm
+                            </span>
+                          )}
+                          {item.material && <span>Malzeme: {item.material}</span>}
+                          {item.surfaceCoating && <span>Kaplama: {item.surfaceCoating}</span>}
+                        </div>
+                      )}
+
+                      {/* Price summary row */}
+                      {price > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#475569', paddingTop: '4px', borderTop: '1px dashed #E2E8F0', marginTop: '4px' }}>
+                          <span>Birim Fiyat: {price.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currency}</span>
+                          <span style={{ fontWeight: 700, color: '#059669' }}>
+                            Toplam: {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currency}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };
