@@ -54,10 +54,10 @@ function formatErrorMessage(err) {
   if (/duplicate key|unique constraint|already exists/i.test(trimmed)) {
     return 'Bu kayıt veya referans numarası sistemde zaten mevcut!';
   }
-  if (/violates foreign key constraint/i.test(trimmed)) {
+  if (/violates foreign key constraint|foreign key constraint failed/i.test(trimmed)) {
     return 'Bu kayıt başka verilerle ilişkili olduğu için silinemez veya değiştirilemez.';
   }
-  if (/violates not-null constraint|null value in column/i.test(trimmed)) {
+  if (/violates not-null constraint|null value in column|not null constraint failed/i.test(trimmed)) {
     return 'Zorunlu bir alan boş bırakıldı. Lütfen gerekli tüm alanları doldurunuz.';
   }
   if (/numeric field overflow|invalid input syntax for type numeric|invalid input syntax for integer/i.test(trimmed)) {
@@ -338,7 +338,7 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     } else {
       const newCust = await query(
         'INSERT INTO customers (name, tax_office, tax_number, address, phone, email) VALUES (?, ?, ?, ?, ?, ?)',
-        [cName, customerInfo.taxOffice || customerInfo.tax_office || '', cTax, customerInfo.address || '', customerInfo.phone || '', customerInfo.email || '']
+        [cName, customerInfo.taxOffice || customerInfo.tax_office || '', cTax || null, customerInfo.address || '', customerInfo.phone || '', customerInfo.email || '']
       );
       customerId = newCust.lastID || newCust.rows?.[0]?.id;
     }
@@ -768,7 +768,9 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
     // Replace items if provided
     if (items && Array.isArray(items)) {
       await query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
-      for (const item of items) {
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
+        const lineNo = item.line_no || item.lineNo || (idx + 1);
         await query(
           `INSERT INTO order_items (
             order_id, line_no, customer_product_code, internal_product_code, product_name, product_description,
@@ -776,9 +778,9 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
             quantity, unit, unit_price, currency, line_total, status
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            orderId, item.line_no || item.lineNo, item.customer_product_code || '', item.internal_product_code || '', item.product_name || 'Ürün', item.product_description || '',
+            orderId, lineNo, item.customer_product_code || '', item.internal_product_code || '', item.product_name || 'Ürün', item.product_description || '',
             item.width_mm || null, item.height_mm || null, item.length_mm || null, item.thickness_mm || null, item.material || '', item.surface_coating || '', item.color || '',
-            item.quantity || 1, item.unit || 'Adet', item.unit_price || 0, item.currency || 'TRY', item.line_total || 0, item.status || 'APPROVED'
+            parseFloat(item.quantity) || 1, item.unit || 'Adet', parseFloat(item.unit_price ?? item.unitPrice) || 0, item.currency || 'TRY', parseFloat(item.line_total ?? item.lineTotal) || 0, item.status || 'APPROVED'
           ]
         );
       }
@@ -1030,7 +1032,7 @@ app.post('/api/customers', authenticateToken, async (req, res) => {
 
     const newCust = await query(
       'INSERT INTO customers (name, tax_office, tax_number, address, phone, email) VALUES (?, ?, ?, ?, ?, ?)',
-      [name.trim(), taxOffice || '', taxNumber || '', address || '', phone || '', email || '']
+      [name.trim(), taxOffice || '', (taxNumber && taxNumber.trim()) ? taxNumber.trim() : null, address || '', phone || '', email || '']
     );
 
     res.json({ success: true, id: newCust.lastID || newCust.rows?.[0]?.id });
