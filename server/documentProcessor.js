@@ -77,15 +77,21 @@ export async function processUploadedDocument(filePath, originalName, mimeType) 
       }
     } else if (ext === '.xlsx' || ext === '.xls') {
       const workbook = xlsx.readFile(filePath);
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+      let bestJsonData = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+      
+      // Çok sayfalı Excel dosyalarında sipariş tablosunun olduğu en dolu sayfayı seç
+      for (const sName of workbook.SheetNames) {
+        const sData = xlsx.utils.sheet_to_json(workbook.Sheets[sName], { header: 1 });
+        if (sData.length > bestJsonData.length) {
+          bestJsonData = sData;
+        }
+      }
 
-      const parsed = parseExcelRows(jsonData, originalName);
+      const parsed = parseExcelRows(bestJsonData, originalName);
       customerInfo = parsed.customerInfo;
       orderItems = parsed.orderItems;
 
-      await generatePdfFromExcel(jsonData, pdfPath, originalName);
+      await generatePdfFromExcel(bestJsonData, pdfPath, originalName);
     } else if (ext === '.docx' || ext === '.doc') {
       const result = await mammoth.extractRawText({ path: filePath });
       const text = result.value || '';
@@ -798,6 +804,11 @@ export function determineOrderCoatingType(items = [], fullDocText = '') {
 
 // 5. STRATEGY: TERSAN TERSANECİLİK SATINALMA SİPARİŞİ
 function parseTersanTersanesi(text, lines, originalName) {
+  // Para birimi tespiti: Faturada USD geçiyor mu? (Örn: "T. Tutar - USD", "NET TUTAR: 2.561,00 USD")
+  const isUsd = (/\bUSD\b|T\.?\s*Tutar\s*-\s*USD|\bDOLAR\b/i.test(text));
+  const isEur = (/\bEUR\b|\bEURO\b|€/i.test(text));
+  const orderCurrency = isUsd ? 'USD' : (isEur ? 'EUR' : 'TRY');
+
   let customerInfo = {
     name: 'TERSAN TERSANECİLİK SAN. VE TİC. A.Ş.',
     taxOffice: 'Yalova',
@@ -808,6 +819,7 @@ function parseTersanTersanesi(text, lines, originalName) {
     orderNo: '',
     projectNo: '',
     coatingType: '',
+    currency: orderCurrency,
     orderDate: '',
     deliveryDate: ''
   };
@@ -819,10 +831,19 @@ function parseTersanTersanesi(text, lines, originalName) {
   if (orderNoMatch) customerInfo.orderNo = orderNoMatch[1].trim();
   else customerInfo.orderNo = '405148';
 
-  // Proje No: "NB1099C" veya "Proje: NB1102" veya "Proje No: ..." veya "Gemi:"
-  const projMatch = text.match(/\b(NB[0-9A-Z]+)\b/i) ||
-                    text.match(/(?:Proje\s*(?:No|Adı)?|Gemi\s*No|Hull\s*No)\s*:?\s*([A-Z0-9\-\/]{2,20})/i);
-  if (projMatch) customerInfo.projectNo = projMatch[1].trim().toUpperCase();
+  // Proje No: Kesin eşleşme (NB1099C vb.) - Asla dipnottaki "projelerle" kelimesini ("LERLE") alma!
+  const nbMatch = text.match(/(?:890000|881000|201025|\d{6})?(NB\d{3,5}[A-Z0-9]*)\b/i);
+  if (nbMatch) {
+    customerInfo.projectNo = nbMatch[1].toUpperCase();
+  } else {
+    const explicitProj = text.match(/(?:Proje\s*(?:No|Adı|Kodu)|Gemi\s*(?:No|Adı)|Hull\s*No)\s*[:=]\s*([A-Z0-9\-\/]{2,20})/i);
+    if (explicitProj && !/^(lerle|ilgili|kapsam|talep)/i.test(explicitProj[1])) {
+      customerInfo.projectNo = explicitProj[1].trim().toUpperCase();
+    }
+  }
+  if (customerInfo.projectNo && /^(LERLE|İLGİLİ|TALEP)/i.test(customerInfo.projectNo)) {
+    customerInfo.projectNo = '';
+  }
 
   // Sipariş & Teslim Tarihi
   const dateMatch = text.match(/(?:Sipariş\s*Tarihi|Tarih|Sip\.\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i) ||
@@ -849,7 +870,7 @@ function parseTersanTersanesi(text, lines, originalName) {
     }
 
     // Tablo altlığı veya sipariş sonu tespiti
-    if (tableStarted && (rawLine.includes('Yukarıda belirtilen') || rawLine.includes('KDV hariç') || rawLine.includes('TOPLAM TUTAR') || rawLine.includes('LÜTFEN TEYİT'))) {
+    if (tableStarted && (rawLine.includes('Yukarıda belirtilen') || rawLine.includes('KDV hariç') || rawLine.includes('TOPLAM TUTAR') || rawLine.includes('NET TUTAR') || rawLine.includes('LÜTFEN TEYİT'))) {
       break;
     }
 
@@ -866,7 +887,7 @@ function parseTersanTersanesi(text, lines, originalName) {
   for (let i = 0; i < tableLines.length; i++) {
     const line = tableLines[i];
     const snMatch = line.match(/^([1-9]\d{0,2})\s+(.*)/);
-    const codeMatch = line.match(/^(S\d{4,8})\b/i);
+    const codeMatch = line.match(/^(?:S\d{4,8}|\d{6,8})\b/i);
 
     const isNextSn = snMatch && parseInt(snMatch[1], 10) === expectedSn;
 
@@ -893,14 +914,18 @@ function parseTersanTersanesi(text, lines, originalName) {
   for (const chunkLines of chunks) {
     const combined = chunkLines.join(' ');
 
-    // 1. Ürün Kodunu Çıkar (Örn: S78806, S99382)
-    const codeMatch = combined.match(/\b(S\d{4,8})\b/i);
-    const code = codeMatch ? codeMatch[1].toUpperCase() : `S${lineNo}`;
+    // 1. Ürün Kodunu Çıkar (M.No: 578806, 583715, 5838975, S578806 vb.)
+    const codeMatch = combined.match(/\b([1-9]\d{0,2})\s+(\d{5,8})\b/) ||
+                      combined.match(/\b(S\d{4,8})\b/i) ||
+                      combined.match(/\b(\d{6,8})\b/);
+    const code = codeMatch ? (codeMatch[2] || codeMatch[1]).toUpperCase() : `S${lineNo}`;
 
     // 2. Proje Numarasını Çıkar (Örn: NB1099C)
-    const rowProjMatch = combined.match(/\b(NB[0-9A-Z]+)\b/i);
-    const rowProj = rowProjMatch ? rowProjMatch[1].toUpperCase() : customerInfo.projectNo;
-    if (rowProj && !customerInfo.projectNo) customerInfo.projectNo = rowProj;
+    const rowProjMatch = combined.match(/(?:890000|881000|201025|\d{6})?(NB\d{3,5}[A-Z0-9]*)\b/i);
+    const rowProj = rowProjMatch ? rowProjMatch[1].toUpperCase() : (customerInfo.projectNo || '');
+    if (rowProj && (!customerInfo.projectNo || customerInfo.projectNo === 'LERLE')) {
+      customerInfo.projectNo = rowProj;
+    }
 
     // 3. Miktar, Birim, Birim Fiyat ve Tutar Çıkar
     const qtyPriceMatch = combined.match(/(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)/i);
@@ -930,20 +955,33 @@ function parseTersanTersanesi(text, lines, originalName) {
     for (let cIdx = 0; cIdx < chunkLines.length; cIdx++) {
       let cleanL = chunkLines[cIdx];
       // SADECE ilk satırın başındaki sıra numarasını temizle: "1 AYAK..." -> "AYAK..."
-      // Asla ikinci veya alt satırlardaki 304, 316 gibi kalite/boyut numaralarını silme!
       if (cIdx === 0) {
         cleanL = cleanL.replace(new RegExp(`^${lineNo}\\s+`), '').replace(/^[1-9]\d{0,2}\s+/, '');
       }
-      // Ürün kodunu temizle
-      if (code) cleanL = cleanL.replace(new RegExp(`\\b${code}\\b`, 'gi'), '');
-      // SFI kodlarını temizle (890000, 881000, 201025 vb.)
+      // Ürün kodunu temizle (satır başında veya kelime olarak)
+      if (code) {
+        cleanL = cleanL.replace(new RegExp(`^${code}\\s*`, 'i'), '').replace(new RegExp(`\\b${code}\\b`, 'gi'), '');
+      }
+
+      // Yapışık gelen fiyatları temizle (Örn: "1.6300AYAK" -> "AYAK", "2.3200AYAK" -> "AYAK", "1.2400KABLO" -> "KABLO")
+      cleanL = cleanL.replace(/^\d+(?:[\.,]\d{2,4})\s*/, '');
+      cleanL = cleanL.replace(/^\d+(?:[\.,]\d{2,4})([A-Za-zÇŞĞÜÖİçşğüöı])/i, '$1');
+
+      // Yapışık SFI ve Proje kodlarını temizle (Örn: "890000NB1099C", "881000NB1099C", "201025NB1099C")
+      cleanL = cleanL.replace(/\b\d{5,7}\s*NB[0-9A-Z]+\b/gi, '');
+      cleanL = cleanL.replace(/\d{5,7}NB[0-9A-Z]+/gi, '');
       cleanL = cleanL.replace(/\b(890000|881000|201025|\d{6})\b/g, '');
-      // Proje kodunu temizle (NB1099C vb.)
-      if (rowProj) cleanL = cleanL.replace(new RegExp(`\\b${rowProj}\\b`, 'gi'), '');
+      if (rowProj) {
+        cleanL = cleanL.replace(new RegExp(`\\b${rowProj}\\b`, 'gi'), '');
+      }
+      cleanL = cleanL.replace(/\bNB\d{3,5}[A-Z0-9]*\b/gi, '');
+
       // Eşleşen miktar/birim/fiyat bloğunu temizle
       if (qtyPriceMatch) cleanL = cleanL.replace(qtyPriceMatch[0], '');
-      // Tekil tablo miktar sayılarını temizle (ör: 100,00 veya 150,00)
-      cleanL = cleanL.replace(/\b\d{1,4}[,\.]00\b/g, '');
+      cleanL = cleanL.replace(/\b\d{1,4}[,\.]00\s*(?:pcs|m|adet|mt)?\b/gi, '');
+
+      // Satır sonundaki fiyat sayılarını temizle
+      cleanL = cleanL.replace(/(?:\b\d+(?:[\.,]\d{2,4})\b\s*){1,3}$/, '');
       cleanL = cleanL.replace(/\s+/g, ' ').trim();
       if (cleanL && cleanL.length > 1) {
         descParts.push(cleanL);
@@ -969,7 +1007,7 @@ function parseTersanTersanesi(text, lines, originalName) {
       quantity: qty,
       unit: unit,
       unitPrice: unitPrice,
-      currency: 'EUR',
+      currency: orderCurrency,
       lineTotal: lineTotal || Math.round(qty * unitPrice * 100) / 100,
       confidenceScore: 0.99,
       status: 'OK'
@@ -1369,6 +1407,11 @@ export function parseTextContent(rawText, originalName = '') {
 
 
 function parseExcelRows(rows, originalName = '') {
+  const fullSheetText = rows.map(r => (r || []).map(c => fixTurkishEncoding(String(c || ''))).join(' ')).join('\n');
+  let sheetCurrency = 'TRY';
+  if (/\bUSD\b|\bDOLAR\b|\$/i.test(fullSheetText)) sheetCurrency = 'USD';
+  else if (/\bEUR\b|\bEURO\b|€/i.test(fullSheetText)) sheetCurrency = 'EUR';
+
   let customerInfo = {
     name: '',
     taxOffice: '',
@@ -1377,6 +1420,9 @@ function parseExcelRows(rows, originalName = '') {
     phone: '',
     email: '',
     orderNo: '',
+    projectNo: '',
+    coatingType: '',
+    currency: sheetCurrency,
     orderDate: new Date().toISOString().split('T')[0],
     deliveryDate: ''
   };
@@ -1393,58 +1439,150 @@ function parseExcelRows(rows, originalName = '') {
       const val = fixTurkishEncoding(String(row[c] || '')).trim();
       const upper = val.toUpperCase();
 
-      // Müşteri unvanı
-      if (upper === 'MÜŞTERİ BİLGİLERİ' || upper === 'MUSTERI BILGILERI') {
-        for (let rOffset = 1; rOffset <= 3; rOffset++) {
-          const nextRow = rows[i + rOffset];
-          if (nextRow) {
-            for (let cOffset = c; cOffset < nextRow.length; cOffset++) {
-              const targetVal = fixTurkishEncoding(String(nextRow[cOffset] || '')).trim();
-              const tu = targetVal.toUpperCase();
-              if (targetVal && tu !== 'UNVAN' && !tu.includes('SIES') && !tu.includes('ELEKTRİK') && !tu.includes('ELEKTRIK') && targetVal.length > 2) {
-                customerInfo.name = targetVal;
+      // Müşteri unvanı tespiti (ALICI, MÜŞTERİ, MÜŞTERİ BİLGİLERİ, UNVAN, FİRMA)
+      if (!customerInfo.name) {
+        if (upper === 'ALICI' || upper === 'ALICI:' || upper === 'MÜŞTERİ' || upper === 'MUSTERI' || upper === 'MÜŞTERİ UNVANI' || upper === 'UNVAN' || upper === 'FİRMA') {
+          for (let cOffset = c + 1; cOffset < Math.min(row.length, c + 4); cOffset++) {
+            const targetVal = fixTurkishEncoding(String(row[cOffset] || '')).trim();
+            const tu = targetVal.toUpperCase();
+            if (targetVal && tu !== 'UNVAN' && !tu.includes('SIES') && !tu.includes('ELEKTRİK') && !tu.includes('ELEKTRIK') && targetVal.length >= 2) {
+              customerInfo.name = targetVal;
+              break;
+            }
+          }
+          if (!customerInfo.name && rows[i + 1]) {
+            const belowVal = fixTurkishEncoding(String(rows[i + 1][c] || '')).trim();
+            const bu = belowVal.toUpperCase();
+            if (belowVal && !bu.includes('SIES') && !bu.includes('ELEKTRİK') && !bu.includes('ELEKTRIK') && belowVal.length >= 2) {
+              customerInfo.name = belowVal;
+            }
+          }
+        } else if (upper.startsWith('ALICI:') || upper.startsWith('MÜŞTERİ:') || upper.startsWith('MUSTERI:')) {
+          const afterColon = fixTurkishEncoding(val.replace(/^(?:ALICI|MÜŞTERİ|MUSTERI)\s*:\s*/i, '')).trim();
+          if (afterColon && !afterColon.toUpperCase().includes('SIES') && afterColon.length >= 2) {
+            customerInfo.name = afterColon;
+          }
+        } else if (upper === 'MÜŞTERİ BİLGİLERİ' || upper === 'MUSTERI BILGILERI') {
+          for (let rOffset = 1; rOffset <= 3; rOffset++) {
+            const nextRow = rows[i + rOffset];
+            if (nextRow) {
+              for (let cOffset = c; cOffset < nextRow.length; cOffset++) {
+                const targetVal = fixTurkishEncoding(String(nextRow[cOffset] || '')).trim();
+                const tu = targetVal.toUpperCase();
+                if (targetVal && tu !== 'UNVAN' && !tu.includes('SIES') && !tu.includes('ELEKTRİK') && !tu.includes('ELEKTRIK') && targetVal.length > 2) {
+                  customerInfo.name = targetVal;
+                  break;
+                }
+              }
+              if (customerInfo.name) break;
+            }
+          }
+        }
+      }
+
+      // Kaplama Cinsi / Malzeme Cinsi (Örn: MALZEME CİNSİ: 304 KALİTE PASLANMAZ)
+      if (!customerInfo.coatingType) {
+        if (upper.includes('MALZEME CİNSİ') || upper.includes('MALZEME CINSI') || upper.includes('KAPLAMA CİNSİ') || upper.includes('KAPLAMA CINSI') || upper === 'KAPLAMA') {
+          if (val.includes(':')) {
+            const afterCol = fixTurkishEncoding(val.split(':')[1] || '').trim();
+            if (afterCol && afterCol.length > 2 && !afterCol.toUpperCase().includes('MALZEME')) {
+              customerInfo.coatingType = afterCol;
+            }
+          }
+          if (!customerInfo.coatingType) {
+            for (let cOffset = c + 1; cOffset < Math.min(row.length, c + 4); cOffset++) {
+              const cand = fixTurkishEncoding(String(row[cOffset] || '')).trim();
+              if (cand && cand.length > 2 && !cand.toUpperCase().includes('MALZEME')) {
+                customerInfo.coatingType = cand;
                 break;
               }
             }
-            if (customerInfo.name) break;
+          }
+          if (!customerInfo.coatingType && rows[i + 1]) {
+            const belowVal = fixTurkishEncoding(String(rows[i + 1][c] || '')).trim();
+            if (belowVal && belowVal.length > 2) {
+              customerInfo.coatingType = belowVal;
+            }
           }
         }
       }
 
-      if (!customerInfo.name && (upper === 'UNVAN' || upper === 'FİRMA' || upper === 'MÜŞTERİ' || upper === 'MÜŞTERİ FİRMA')) {
-        const rightVal = fixTurkishEncoding(String(row[c+1] || row[c+2] || '')).trim();
-        const ru = rightVal.toUpperCase();
-        if (rightVal && !ru.includes('SIES') && !ru.includes('ELEKTRİK') && !ru.includes('ELEKTRIK') && rightVal.length > 2) {
-          customerInfo.name = rightVal;
-        }
-      }
-
-      // Order No
+      // Order No (TEKLİF NO, SİPARİŞ NO, SİPARİŞ REF)
       if (!customerInfo.orderNo) {
-        if (upper.includes('TEKLİF NO') || upper.includes('SİPARİŞ NO') || upper.includes('SİPARİŞ REF')) {
-          const rightVal = String(row[c+1] || '').trim();
-          const belowVal = rows[i+1] ? String(rows[i+1][c] || '').trim() : '';
-          const candidate = (rightVal && rightVal.length >= 4 && !rightVal.toUpperCase().includes('TEKLİF')) ? rightVal : belowVal;
-          if (candidate && candidate.length >= 4 && !candidate.toUpperCase().includes('TEKLİF')) {
-            customerInfo.orderNo = candidate;
+        if (upper.includes('TEKLİF NO') || upper.includes('TEKLIF NO') || upper.includes('SİPARİŞ NO') || upper.includes('SIPARIS NO') || upper.includes('SİPARİŞ REF')) {
+          if (val.includes(':')) {
+            const afterCol = String(val.split(':')[1] || '').trim();
+            if (afterCol && afterCol.length >= 3 && !afterCol.toUpperCase().includes('TEKLİF') && !afterCol.toUpperCase().includes('SİPARİŞ')) {
+              customerInfo.orderNo = afterCol;
+            }
+          }
+          if (!customerInfo.orderNo) {
+            for (let cOffset = c + 1; cOffset < Math.min(row.length, c + 4); cOffset++) {
+              const cand = String(row[cOffset] || '').trim();
+              if (cand && cand.length >= 3 && !cand.toUpperCase().includes('TEKLİF') && !cand.toUpperCase().includes('SİPARİŞ')) {
+                customerInfo.orderNo = cand;
+                break;
+              }
+            }
+          }
+          if (!customerInfo.orderNo && rows[i + 1]) {
+            const belowVal = String(rows[i + 1][c] || '').trim();
+            if (belowVal && belowVal.length >= 3 && !belowVal.toUpperCase().includes('TEKLİF')) {
+              customerInfo.orderNo = belowVal;
+            }
           }
         }
       }
 
-      // Order Date
+      // Proje No (PROJE NO, PROJE, GEMİ NO, PROJECT)
+      if (!customerInfo.projectNo) {
+        if (upper.includes('PROJE NO') || upper.includes('PROJE ADI') || upper.includes('GEMİ NO') || upper === 'PROJE' || upper === 'PROJECT') {
+          if (val.includes(':')) {
+            const afterCol = String(val.split(':')[1] || '').trim();
+            if (afterCol && afterCol.length >= 2 && !afterCol.toUpperCase().includes('PROJE')) {
+              customerInfo.projectNo = afterCol;
+            }
+          }
+          if (!customerInfo.projectNo) {
+            for (let cOffset = c + 1; cOffset < Math.min(row.length, c + 4); cOffset++) {
+              const cand = String(row[cOffset] || '').trim();
+              if (cand && cand.length >= 2 && !cand.toUpperCase().includes('PROJE')) {
+                customerInfo.projectNo = cand;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // Order Date (TARİH, TEKLİF TARİHİ, SİPARİŞ TARİHİ)
       if (!customerInfo.orderDate || customerInfo.orderDate === new Date().toISOString().split('T')[0]) {
-        if (upper.includes('TEKLİF TARİHİ') || upper.includes('SİPARİŞ TARİHİ') || upper === 'TARİH') {
-          const belowVal = rows[i+1] ? rows[i+1][c] : null;
-          const rightVal = row[c+1];
-          const rawDate = belowVal || rightVal;
+        if (upper.includes('TEKLİF TARİHİ') || upper.includes('SİPARİŞ TARİHİ') || upper.includes('TARİH') || upper.includes('TARIH') || upper === 'DATE') {
+          let rawDate = null;
+          if (val.includes(':')) {
+            rawDate = val.split(':')[1]?.trim();
+          }
+          if (!rawDate) {
+            for (let cOffset = c + 1; cOffset < Math.min(row.length, c + 4); cOffset++) {
+              if (row[cOffset] !== undefined && row[cOffset] !== '') {
+                rawDate = row[cOffset];
+                break;
+              }
+            }
+          }
+          if (!rawDate && rows[i + 1]) {
+            rawDate = rows[i + 1][c];
+          }
+
           if (typeof rawDate === 'number' && rawDate > 30000 && rawDate < 60000) {
             const dateObj = new Date((rawDate - 25569) * 86400 * 1000);
             const dd = String(dateObj.getDate()).padStart(2, '0');
             const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
             const yyyy = dateObj.getFullYear();
-            customerInfo.orderDate = `${dd}.${mm}.${yyyy}`;
-          } else if (typeof rawDate === 'string' && /\d{2}\.\d{2}\.\d{4}/.test(rawDate)) {
-            customerInfo.orderDate = rawDate;
+            customerInfo.orderDate = `${yyyy}-${mm}-${dd}`;
+          } else if (typeof rawDate === 'string' && rawDate.trim()) {
+            const iso = normalizeDateToISO(rawDate);
+            if (iso) customerInfo.orderDate = iso;
           }
         }
       }
@@ -1478,21 +1616,83 @@ function parseExcelRows(rows, originalName = '') {
     const row = rows[i];
     if (!row || row.length === 0) continue;
 
-    const rowStrArr = row.map(c => fixTurkishEncoding(String(c || '')).toUpperCase());
+    const rowStrArr = row.map(c => fixTurkishEncoding(String(c || '')).toUpperCase().trim());
 
-    const hasCode = rowStrArr.some(s => s.includes('KOD') || s.includes('SİPARİŞ KODU'));
-    const hasName = rowStrArr.some(s => s.includes('AÇIKLAMA') || s.includes('TANIM') || s.includes('ÜRÜN AÇIKLAMASI'));
-    const hasQty = rowStrArr.some(s => s.includes('MİKTAR') || s.includes('QTY'));
+    const hasCode = rowStrArr.some(s => 
+      s.includes('KOD') || s.includes('SİPARİŞ KODU') || s.includes('SIPARIS KODU') ||
+      s.includes('ÜRÜN KODU') || s.includes('URUN KODU') || s.includes('MALZEME KODU') ||
+      s.includes('STOK KODU') || s.includes('PART NO') || s.includes('ITEM CODE')
+    );
+
+    const hasName = rowStrArr.some(s => 
+      s.includes('MALZEME LISTESI') || s.includes('MALZEME LİSTESİ') || s.includes('MALZEME TANIMI') ||
+      s.includes('MALZEME ADI') || s.includes('MALZEMELER') || s.includes('MALZEME') ||
+      s.includes('AÇIKLAMA') || s.includes('ACIKLAMA') || s.includes('TANIM') || s.includes('TANIMI') ||
+      s.includes('ÜRÜN AÇIKLAMASI') || s.includes('URUN ACIKLAMASI') || s.includes('ÜRÜN TANIMI') ||
+      s.includes('ÜRÜN ADI') || s.includes('URUN ADI') || s.includes('ÜRÜN') || s.includes('URUN') ||
+      s.includes('DESCRIPTION') || s.includes('ITEM DESCRIPTION')
+    );
+
+    const hasQty = rowStrArr.some(s => 
+      s.includes('MİKTAR') || s.includes('MIKTAR') || s.includes('SİP. MİKTARI') ||
+      s.includes('SIP. MIKTARI') || s.includes('QTY') || s.includes('QUANTITY') || s.includes('ADET')
+    );
 
     if ((hasCode || hasName) && hasQty) {
       headerRowIndex = i;
       rowStrArr.forEach((cellText, colIdx) => {
-        if (cellText.includes('KOD')) codeCol = colIdx;
-        else if (cellText.includes('AÇIKLAMA') || cellText.includes('TANIM')) nameCol = colIdx;
-        else if (cellText.includes('MİKTAR')) qtyCol = colIdx;
-        else if (cellText.includes('BİRİM FİYAT') || cellText.includes('FİYAT')) priceCol = colIdx;
-        else if (cellText.includes('BİRİM') && !cellText.includes('FİYAT')) unitCol = colIdx;
-        else if (cellText.includes('TOPLAM')) totalCol = colIdx;
+        // 1. Code Col
+        if (
+          cellText.includes('SİPARİŞ KODU') || cellText.includes('SIPARIS KODU') ||
+          cellText.includes('ÜRÜN KODU') || cellText.includes('URUN KODU') ||
+          cellText.includes('MALZEME KODU') || cellText.includes('STOK KODU') ||
+          cellText === 'KOD' || cellText === 'KODU' || cellText.includes('PART NO')
+        ) {
+          codeCol = colIdx;
+        }
+        // 2. Name Col (MALZEME LISTESI, AÇIKLAMA, TANIM vb.)
+        else if (
+          cellText.includes('MALZEME LISTESI') || cellText.includes('MALZEME LİSTESİ') ||
+          cellText.includes('MALZEME TANIMI') || cellText.includes('MALZEME ADI') ||
+          cellText.includes('AÇIKLAMA') || cellText.includes('ACIKLAMA') ||
+          cellText.includes('TANIM') || cellText.includes('ÜRÜN AÇIKLAMASI') ||
+          cellText.includes('URUN ACIKLAMASI') || cellText.includes('ÜRÜN ADI') ||
+          cellText.includes('URUN ADI') || cellText.includes('DESCRIPTION') ||
+          (cellText.includes('MALZEME') && !cellText.includes('KOD'))
+        ) {
+          nameCol = colIdx;
+        }
+        // 3. Qty Col
+        else if (
+          cellText.includes('MİKTAR') || cellText.includes('MIKTAR') ||
+          cellText.includes('SİP. MİKTARI') || cellText.includes('SIP. MIKTARI') ||
+          cellText === 'QTY' || cellText === 'QUANTITY'
+        ) {
+          qtyCol = colIdx;
+        }
+        // 4. Price Col
+        else if (
+          cellText.includes('BİRİM FİYAT') || cellText.includes('BIRIM FIYAT') ||
+          cellText.includes('B.FİYAT') || cellText.includes('B.FIYAT') ||
+          cellText.includes('FİYAT') || cellText.includes('FIYAT') ||
+          cellText.includes('PRICE')
+        ) {
+          priceCol = colIdx;
+        }
+        // 5. Unit Col
+        else if (
+          (cellText.includes('BİRİM') || cellText.includes('BIRIM') || cellText === 'UNIT' || cellText === 'UOM') &&
+          !cellText.includes('FİYAT') && !cellText.includes('FIYAT')
+        ) {
+          unitCol = colIdx;
+        }
+        // 6. Total Col
+        else if (
+          cellText.includes('TOPLAM') || cellText.includes('TUTAR') ||
+          cellText === 'TOTAL' || cellText === 'AMOUNT'
+        ) {
+          totalCol = colIdx;
+        }
       });
       break;
     }
@@ -1520,20 +1720,25 @@ function parseExcelRows(rows, originalName = '') {
       const priceVal = priceCol !== -1 ? parseFloat(String(row[priceCol] || '0').replace(',', '.')) : 0;
 
       if ((codeVal || nameVal) && !isNaN(qtyVal) && qtyVal > 0) {
-        const pCode = codeVal || `KALEM-${lineNo}`;
-        const pName = nameVal || pCode;
-        const unit = (unitVal === 'M' || unitVal === 'MT') ? 'Metre' : ((unitVal === 'AD' || unitVal === 'ADET') ? 'Adet' : unitVal);
+        const pCode = codeVal || (nameVal ? '' : `KALEM-${lineNo}`);
+        const pName = nameVal || codeVal || `Ürün-${lineNo}`;
+        const unit = (unitVal === 'M' || unitVal === 'MT') ? 'Metre' : ((unitVal === 'AD' || unitVal === 'ADET') ? 'Adet' : ((unitVal === 'SET' || unitVal === 'TK') ? 'Set' : unitVal));
+
+        // Malzeme & Kaplama Tespiti
+        const { material, coating } = detectMaterialAndCoating(pName, (customerInfo.coatingType ? `${customerInfo.coatingType} ${fullSheetText}` : fullSheetText));
 
         orderItems.push({
           lineNo: lineNo++,
           customerProductCode: pCode,
-          internalProductCode: `SIES-${pCode.replace(/\s+/g, '-')}`,
+          internalProductCode: pCode ? `SIES-${pCode.replace(/\s+/g, '-')}` : `SIES-KALEM-${lineNo}`,
           productName: pName,
-          productDescription: `${pName} (${pCode})`,
+          productDescription: pName,
+          material: material,
+          surfaceCoating: coating,
           quantity: qtyVal,
           unit: unit,
           unitPrice: isNaN(priceVal) ? 0 : priceVal,
-          currency: 'TRY',
+          currency: sheetCurrency,
           lineTotal: qtyVal * (isNaN(priceVal) ? 0 : priceVal),
           confidenceScore: 0.99,
           status: 'OK'
@@ -1548,16 +1753,20 @@ function parseExcelRows(rows, originalName = '') {
         if (pCode && pName && !isNaN(qtyVal) && qtyVal > 0) {
           const price = parseFloat(String(row[3] || '0').replace(',', '.')) || 0;
           const unit = fixTurkishEncoding(String(row[4] || 'Adet')).trim();
+          const { material, coating } = detectMaterialAndCoating(pName, (customerInfo.coatingType ? `${customerInfo.coatingType} ${fullSheetText}` : fullSheetText));
+
           orderItems.push({
             lineNo: lineNo++,
             customerProductCode: pCode,
             internalProductCode: `SIES-${pCode}`,
             productName: pName,
-            productDescription: `${pName} (${pCode})`,
+            productDescription: pName,
+            material: material,
+            surfaceCoating: coating,
             quantity: qtyVal,
             unit: unit,
             unitPrice: price,
-            currency: 'TRY',
+            currency: sheetCurrency,
             lineTotal: qtyVal * price,
             confidenceScore: 0.98,
             status: 'OK'
@@ -1565,6 +1774,11 @@ function parseExcelRows(rows, originalName = '') {
         }
       }
     }
+  }
+
+  // Siparişin Genel Kaplama Cinsi
+  if (!customerInfo.coatingType) {
+    customerInfo.coatingType = determineOrderCoatingType(orderItems, fullSheetText);
   }
 
   return { customerInfo, orderItems };

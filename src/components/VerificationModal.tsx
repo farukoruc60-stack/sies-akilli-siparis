@@ -340,6 +340,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
     }
   };
 
+  const orderCurrency = orderItems[0]?.currency || (customerInfo as any)?.currency || 'TRY';
   const totalAmount = orderItems.reduce((acc, it) => acc + (it.lineTotal || 0), 0);
 
   const formatDateToISO = (dStr?: string) => {
@@ -393,7 +394,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                   fontWeight: 600,
                   border: '1px solid #334155'
                 }}>
-                  {orderItems.length} Kalem • {totalAmount.toLocaleString('tr-TR')} TRY
+                  {orderItems.length} Kalem • {totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {orderCurrency}
                 </span>
               </div>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
@@ -685,7 +686,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
                 <h3 style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 600 }}>
-                  2. Çıkarılan Sipariş Kalemleri ({orderItems.length} Kalem - Toplam {totalAmount.toLocaleString('tr-TR')} TRY)
+                  2. Çıkarılan Sipariş Kalemleri ({orderItems.length} Kalem - Toplam {totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {orderCurrency})
                 </h3>
                 <button onClick={handleAddRow} className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
                   <Plus size={14} /> Satır Ekle
@@ -788,7 +789,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                             />
                           </td>
                           <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                            {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                            {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.currency || orderCurrency}
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: '0.3rem' }}>
