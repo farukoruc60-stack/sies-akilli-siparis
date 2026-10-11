@@ -44,7 +44,7 @@ interface OrderDetailPanelProps {
   onRefresh: () => void;
   onUpdateOrder: (
     updatedItems: OrderItem[],
-    updatedFields?: { customerOrderNo?: string; requestedDeliveryDate?: string }
+    updatedFields?: { customerOrderNo?: string; projectNo?: string; coatingType?: string; requestedDeliveryDate?: string }
   ) => Promise<void>;
   onDeleteOrder: (orderId: number) => Promise<boolean | void>;
   onStatusChange: (newStatus: string, notes: string) => Promise<void>;
@@ -67,6 +67,8 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [editingItems, setEditingItems] = useState<OrderItem[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editCustomerOrderNo, setEditCustomerOrderNo] = useState('');
+  const [editProjectNo, setEditProjectNo] = useState('');
+  const [editCoatingType, setEditCoatingType] = useState('');
   const [editRequestedDeliveryDate, setEditRequestedDeliveryDate] = useState('');
   const [saving, setSaving] = useState(false);
   const [statusNote, setStatusNote] = useState('');
@@ -294,6 +296,8 @@ ${itemsSummary}${moreText}
   const handleStartEdit = () => {
     setEditingItems(JSON.parse(JSON.stringify(items)));
     setEditCustomerOrderNo(order.customer_order_no || '');
+    setEditProjectNo(order.project_no || '');
+    setEditCoatingType(order.coating_type || '');
 
     // Format requested delivery date as YYYY-MM-DD for HTML input[type="date"]
     let initDate = '';
@@ -315,6 +319,8 @@ ${itemsSummary}${moreText}
     try {
       await onUpdateOrder(editingItems, {
         customerOrderNo: editCustomerOrderNo.trim() || undefined,
+        projectNo: editProjectNo.trim() || undefined,
+        coatingType: editCoatingType.trim() || undefined,
         requestedDeliveryDate: editRequestedDeliveryDate.trim() || undefined
       });
       setIsEditing(false);
@@ -712,13 +718,36 @@ ${itemsSummary}${moreText}
 
         {/* Quick Meta Stats / Edit Controls Bar */}
         {isEditing ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.85rem', background: '#F8FAFC', padding: '0.85rem', borderRadius: '8px', border: '1px solid #CBD5E1' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', background: '#F8FAFC', padding: '0.85rem', borderRadius: '8px', border: '1px solid #CBD5E1' }}>
             <div>
               <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Müşteri Sipariş Ref / No:</label>
               <input
                 type="text"
+                placeholder="Örn: MŞ-2026/044"
                 value={editCustomerOrderNo}
                 onChange={(e) => setEditCustomerOrderNo(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid #94A3B8', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', background: '#FFFFFF' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Müşteri Proje No / Adı:</label>
+              <input
+                type="text"
+                placeholder="Örn: PRJ-İST-KÖPRÜ-24"
+                value={editProjectNo}
+                onChange={(e) => setEditProjectNo(e.target.value)}
+                style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid #94A3B8', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', background: '#FFFFFF' }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Kaplama Cinsi:</label>
+              <input
+                type="text"
+                placeholder="Örn: Sıcak Daldırma Galvaniz, Eloksal..."
+                value={editCoatingType}
+                onChange={(e) => setEditCoatingType(e.target.value)}
                 style={{ width: '100%', padding: '0.4rem 0.6rem', border: '1px solid #94A3B8', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600, color: '#0F172A', background: '#FFFFFF' }}
               />
             </div>
@@ -741,7 +770,7 @@ ${itemsSummary}${moreText}
             </div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>SİPARİŞ TARİHİ</span>
               <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.order_date)}</strong>
@@ -751,12 +780,20 @@ ${itemsSummary}${moreText}
               <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.requested_delivery_date)}</strong>
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>KAPLAMA CİNSİ</span>
+              <strong style={{ color: order.coating_type ? '#0284C7' : 'var(--text-muted)' }}>{order.coating_type || 'Belirtilmedi'}</strong>
+            </div>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>PROJE NO</span>
+              <strong style={{ color: 'var(--text-primary)' }}>{order.project_no || 'Belirtilmedi'}</strong>
+            </div>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TOPLAM KALEM / TUTAR</span>
               <strong style={{ color: 'var(--primary)' }}>{(items || []).length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)</strong>
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>OLUŞTURAN</span>
-              <strong style={{ color: 'var(--text-primary)' }}>{order.creator_name || 'Sistem'}</strong>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>DURUM</span>
+              <strong style={{ color: '#059669' }}>{order.status}</strong>
             </div>
           </div>
         )}
@@ -803,15 +840,16 @@ ${itemsSummary}${moreText}
         {/* TAB 1: SUMMARY */}
         {activeTab === 'summary' && (
           <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#fff' }}>Sipariş Genel Süreç Hattı</h3>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#1E293B' }}>Sipariş Genel Süreç Hattı</h3>
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '2rem', flexWrap: 'wrap' }}>
               {[
-                { status: 'REVIEW_PENDING', label: '1. Kontrol Bekliyor' },
-                { status: 'APPROVED', label: '2. Onaylandı' },
-                { status: 'IN_PRODUCTION', label: '3. Üretimde' },
-                { status: 'COATING_PENDING', label: '4. Kaplama / Boyada' },
-                { status: 'SHIPPING_PENDING', label: '5. Sevkiyatta' },
-                { status: 'COMPLETED', label: '6. Tamamlandı' }
+                { status: 'NEW', label: '1. Yeni' },
+                { status: 'IN_PRODUCTION', label: '2. Üretimde' },
+                { status: 'COATING', label: '3. Kaplamada' },
+                { status: 'PAINTING', label: '4. Boyada' },
+                { status: 'PACKAGING', label: '5. Paketlemede' },
+                { status: 'PARTIAL_SHIPPING', label: '6. Kısmi Sevk' },
+                { status: 'COMPLETED', label: '7. Tamamlandı' }
               ].map((st) => {
                 const isCurrent = order.status === st.status;
                 return (
@@ -1102,13 +1140,14 @@ ${itemsSummary}${moreText}
                   const docType = doc.fileType || doc.file_type || '.pdf';
                   const docHash = doc.sha256Hash || doc.sha256_hash || '-';
                   const isProductionForm = docName.toLowerCase().includes('üretim') || docName.toLowerCase().includes('uretim');
+                  const isExemptionDoc = docName.toLowerCase().includes('muafiyet');
 
                   return (
                     <div
                       key={doc.id}
                       style={{
                         background: '#FFFFFF',
-                        border: isProductionForm ? '2px solid #0284C7' : '1px solid #E2E8F0',
+                        border: isExemptionDoc ? '2px solid #F59E0B' : isProductionForm ? '2px solid #0284C7' : '1px solid #E2E8F0',
                         padding: '1.25rem',
                         borderRadius: '10px',
                         display: 'flex',
@@ -1118,19 +1157,34 @@ ${itemsSummary}${moreText}
                       }}
                     >
                       <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-                          <FileText size={20} color={isProductionForm ? '#0284C7' : 'var(--primary)'} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
+                          <FileText size={20} color={isExemptionDoc ? '#D97706' : isProductionForm ? '#0284C7' : 'var(--primary)'} />
                           <strong style={{ fontSize: '1rem', color: '#0F172A' }}>{docName}</strong>
-                          <span
-                            className="badge badge-new"
-                            style={{
-                              fontSize: '0.7rem',
-                              background: isProductionForm ? '#E0F2FE' : undefined,
-                              color: isProductionForm ? '#0369A1' : undefined
-                            }}
-                          >
-                            {isProductionForm ? 'RESMİ ÜRETİM FORMU' : docType}
-                          </span>
+                          {isExemptionDoc ? (
+                            <span
+                              className="badge"
+                              style={{
+                                fontSize: '0.72rem',
+                                background: '#FEF3C7',
+                                color: '#B45309',
+                                border: '1px solid #FDE68A',
+                                fontWeight: 700
+                              }}
+                            >
+                              KDV MUAFİYET BELGESİ
+                            </span>
+                          ) : (
+                            <span
+                              className="badge badge-new"
+                              style={{
+                                fontSize: '0.7rem',
+                                background: isProductionForm ? '#E0F2FE' : undefined,
+                                color: isProductionForm ? '#0369A1' : undefined
+                              }}
+                            >
+                              {isProductionForm ? 'RESMİ ÜRETİM FORMU' : docType}
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '0.4rem' }}>
                           SHA-256 Özeti: <code style={{ color: '#0284C7', background: '#F1F5F9', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>{docHash}</code>
@@ -1145,7 +1199,7 @@ ${itemsSummary}${moreText}
                           className="btn btn-secondary"
                           style={{ textDecoration: 'none', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
                         >
-                          <ExternalLink size={14} /> PDF Önizle / Yazdır
+                          <ExternalLink size={14} /> Görüntüle / Yazdır
                         </a>
                         <a
                           href={`/api/documents/${doc.id}/download?token=${token}`}

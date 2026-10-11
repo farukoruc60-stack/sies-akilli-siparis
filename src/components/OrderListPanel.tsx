@@ -99,21 +99,40 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   const getStatusBadge = (status: OrderStatus) => {
     switch (status) {
       case 'NEW':
-        return <span className="badge badge-new"><Clock size={11} /> YENİ</span>;
       case 'REVIEW_PENDING':
-        return <span className="badge badge-pending"><AlertCircle size={11} /> KONTROL BEKLİYOR</span>;
-      case 'APPROVED':
-        return <span className="badge badge-approved"><CheckCircle2 size={11} /> ONAYLANDI</span>;
+        return <span className="badge badge-new" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}><Clock size={11} /> Yeni</span>;
       case 'IN_PRODUCTION':
-        return <span className="badge badge-production">ÜRETİMDE</span>;
+      case 'APPROVED':
+        return <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>Üretimde</span>;
+      case 'COATING':
       case 'COATING_PENDING':
-        return <span className="badge badge-pending">KAPLAMADA</span>;
+        return <span className="badge" style={{ background: '#F3E8FF', color: '#7E22CE', border: '1px solid #E9D5FF' }}>Kaplamada</span>;
+      case 'PAINTING':
+        return <span className="badge" style={{ background: '#FCE7F3', color: '#BE185D', border: '1px solid #FBCFE8' }}>Boyada</span>;
+      case 'PACKAGING':
+        return <span className="badge" style={{ background: '#E0F2FE', color: '#0369A1', border: '1px solid #BAE6FD' }}>Paketlemede</span>;
+      case 'PARTIAL_SHIPPING':
       case 'SHIPPING_PENDING':
-        return <span className="badge badge-pending">SEVKİYATTA</span>;
+        return <span className="badge" style={{ background: '#FFEDD5', color: '#C2410C', border: '1px solid #FED7AA' }}>Kısmi Sevk</span>;
       case 'COMPLETED':
-        return <span className="badge badge-completed">TAMAMLANDI</span>;
+        return <span className="badge" style={{ background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0' }}><CheckCircle2 size={11} /> Tamamlandı</span>;
+      case 'CANCELLED':
+        return <span className="badge" style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }}>İptal</span>;
       default:
         return <span className="badge badge-new">{status}</span>;
+    }
+  };
+
+  const formatCardDate = (d?: string) => {
+    if (!d) return '-';
+    try {
+      const parts = d.split('T')[0].split('-');
+      if (parts.length === 3) {
+        return `${parts[2]}.${parts[1]}.${parts[0]}`;
+      }
+      return new Date(d).toLocaleDateString('tr-TR');
+    } catch {
+      return d;
     }
   };
 
@@ -165,32 +184,54 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
             userSelect: 'none'
           }}
         >
-          {/* Header row */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-            <span style={{ fontWeight: 600, fontSize: '13px', color: '#1A202C', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+          {/* Satır 1: Müşteri Adı + Durum Rozeti */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+            <span style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '190px' }}>
               {order.customer_name}
             </span>
             {getStatusBadge(order.status)}
           </div>
 
-          {/* Sub details */}
-          <div style={{ fontSize: '11.5px', color: '#4A5568', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
-            <span>Sip: <strong style={{ color: '#3B82F6' }}>{order.order_no}</strong></span>
-            {order.customer_order_no && <span>Müş: {order.customer_order_no}</span>}
+          {/* Satır 2: Müşteri Sipariş No (varsa) & Sistem Sipariş No */}
+          <div style={{ fontSize: '11.5px', color: '#334155', marginBottom: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
+            <span>
+              {order.customer_order_no ? (
+                <span>Müş. Sip No: <strong style={{ color: '#0F172A' }}>{order.customer_order_no}</strong></span>
+              ) : (
+                <span>Sip No: <strong style={{ color: '#3B82F6' }}>{order.order_no}</strong></span>
+              )}
+            </span>
+            {order.project_no && (
+              <span style={{ fontSize: '10.5px', color: '#64748B', background: '#F1F5F9', padding: '1px 5px', borderRadius: '4px' }}>
+                Prj: {order.project_no}
+              </span>
+            )}
           </div>
 
-          {/* Card footer */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#718096' }}>
-            <span>Tarih: {order.order_date ? new Date(order.order_date).toLocaleDateString('tr-TR') : '-'}</span>
+          {/* Satır 3: Kaplama Cinsi (varsa) */}
+          {order.coating_type && (
+            <div style={{ fontSize: '11px', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ color: '#94A3B8', fontSize: '10px' }}>Kaplama:</span>
+              <span style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, color: '#334155' }}>
+                {order.coating_type}
+              </span>
+            </div>
+          )}
+
+          {/* Satır 4: Teslim Tarihi & Kaç Kalem Siparişi Var (Aşağı Tırnak Butonu) */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+            <span>
+              Teslim: <strong style={{ color: '#1E293B' }}>{formatCardDate(order.requested_delivery_date || order.order_date)}</strong>
+            </span>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               {(order.total_docs || 0) > 0 && (
                 <span title="Orijinal Belge Ekli" style={{ color: '#3B82F6', display: 'flex', alignItems: 'center' }}>
                   <Paperclip size={12} />
                 </span>
               )}
 
-              {/* Accordion Chevron Button (Aşağı / Yukarı Tırnak) */}
+              {/* Accordion Chevron Button (Aşağı / Yukarı Tırnak ile Kalem Sayısı) */}
               <button
                 type="button"
                 onClick={(e) => {
@@ -205,7 +246,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                   background: isExpanded ? '#DBEAFE' : '#F1F5F9',
                   color: isExpanded ? '#1D4ED8' : '#475569',
                   border: 'none',
-                  padding: '3px 9px',
+                  padding: '3px 8px',
                   borderRadius: '12px',
                   fontSize: '11px',
                   fontWeight: 600,
@@ -439,15 +480,16 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
         </div>
 
         {/* Status Filter Pills */}
-        <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', paddingBottom: '2px' }}>
+        <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', paddingBottom: '4px' }}>
           {[
-            { id: 'ALL', label: 'Tümü' },
-            { id: 'REVIEW_PENDING', label: 'Kontrol' },
-            { id: 'APPROVED', label: 'Onaylı' },
-            { id: 'IN_PRODUCTION', label: 'Üretim' },
-            { id: 'COATING_PENDING', label: 'Kaplama' },
-            { id: 'SHIPPING_PENDING', label: 'Sevkiyat' },
-            { id: 'COMPLETED', label: 'Tamam' }
+            { id: 'ALL', label: 'Tümü (Aktifler)' },
+            { id: 'NEW', label: 'Yeni' },
+            { id: 'IN_PRODUCTION', label: 'Üretimde' },
+            { id: 'COATING', label: 'Kaplamada' },
+            { id: 'PAINTING', label: 'Boyada' },
+            { id: 'PACKAGING', label: 'Paketlemede' },
+            { id: 'PARTIAL_SHIPPING', label: 'Kısmi Sevk' },
+            { id: 'COMPLETED', label: 'Tamamlandı' }
           ].map((f) => (
             <button
               key={f.id}

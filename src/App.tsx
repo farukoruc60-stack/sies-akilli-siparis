@@ -197,7 +197,12 @@ export default function App() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ customerInfo, orderItems, documentId })
+      body: JSON.stringify({
+        customerInfo,
+        orderItems,
+        documentId,
+        exemptionDocId: customerInfo.exemptionDocId
+      })
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Sipariş oluşturulamadı');
@@ -226,7 +231,7 @@ export default function App() {
   // Update Order with Optimistic Locking
   const handleUpdateOrder = async (
     updatedItems: OrderItem[],
-    updatedFields?: { customerOrderNo?: string; requestedDeliveryDate?: string }
+    updatedFields?: { customerOrderNo?: string; projectNo?: string; coatingType?: string; requestedDeliveryDate?: string }
   ) => {
     if (!selectedOrder) return;
 
@@ -243,6 +248,8 @@ export default function App() {
       body: JSON.stringify({
         version: selectedOrder.version,
         customerOrderNo: updatedFields?.customerOrderNo !== undefined ? (updatedFields.customerOrderNo.trim() || null) : selectedOrder.customer_order_no,
+        projectNo: updatedFields?.projectNo !== undefined ? (updatedFields.projectNo.trim() || null) : selectedOrder.project_no,
+        coatingType: updatedFields?.coatingType !== undefined ? (updatedFields.coatingType.trim() || null) : selectedOrder.coating_type,
         requestedDeliveryDate: deliveryDateToSend,
         items: updatedItems
       })

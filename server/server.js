@@ -220,12 +220,15 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
     if (status && status !== 'ALL') {
       sql += ' AND o.status = ?';
       params.push(status);
+    } else {
+      // Tamamlanan siparişler ana havuzda kalabalık etmesin; sadece 'COMPLETED' sekmesinde listelensin
+      sql += " AND o.status != 'COMPLETED'";
     }
 
     if (search) {
-      sql += ' AND (o.order_no LIKE ? OR c.name LIKE ? OR o.customer_order_no LIKE ?)';
+      sql += ' AND (o.order_no LIKE ? OR c.name LIKE ? OR o.customer_order_no LIKE ? OR o.project_no LIKE ? OR o.coating_type LIKE ?)';
       const term = `%${search}%`;
-      params.push(term, term, term);
+      params.push(term, term, term, term, term);
     }
 
     sql += ' ORDER BY o.updated_at DESC, o.id DESC';
@@ -317,7 +320,7 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
 // CREATE ORDER FROM VERIFICATION SCREEN
 app.post('/api/orders', authenticateToken, async (req, res) => {
   try {
-    const { customerInfo, orderItems, documentId } = req.body;
+    const { customerInfo, orderItems, documentId, exemptionDocId } = req.body;
 
     // 1. Customer Check or Create
     const cName = (customerInfo.companyName || customerInfo.name || 'Bilinmeyen Müşteri').trim();
@@ -351,9 +354,21 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
     const parsedDeliveryDate = normalizeDateToISO(customerInfo.deliveryDate || customerInfo.requestedDeliveryDate || customerInfo.requested_delivery_date);
 
     const newOrderRes = await query(
-      `INSERT INTO orders (order_no, customer_id, customer_order_no, order_date, requested_delivery_date, status, created_by, updated_by, version)
-       VALUES (?, ?, ?, ?, ?, 'APPROVED', ?, ?, 1)`,
-      [orderNo, customerId, customerInfo.orderNo || orderNo, parsedOrderDate, parsedDeliveryDate, req.user.id, req.user.id]
+      `INSERT INTO orders (
+        order_no, customer_id, customer_order_no, project_no, coating_type,
+        order_date, requested_delivery_date, status, created_by, updated_by, version
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW', ?, ?, 1)`,
+      [
+        orderNo,
+        customerId,
+        customerInfo.orderNo || orderNo,
+        customerInfo.projectNo || null,
+        customerInfo.coatingType || null,
+        parsedOrderDate,
+        parsedDeliveryDate,
+        req.user.id,
+        req.user.id
+      ]
     );
 
     const orderId = newOrderRes.lastID || newOrderRes.rows?.[0]?.id;
@@ -379,21 +394,24 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
             orderId, item.lineNo || item.line_no || 1, pCode, pIntCode, pName, pDesc,
             item.widthMm || item.width_mm || null, item.heightMm || item.height_mm || null, item.lengthMm || item.length_mm || null, item.thicknessMm || item.thickness_mm || null,
             item.material || '', item.surfaceCoating || item.surface_coating || '', item.color || '',
-            qty, item.unit || 'Adet', unitPrice, item.currency || 'TRY', lineTotal, 'APPROVED', item.confidenceScore || 1.0
+            qty, item.unit || 'Adet', unitPrice, item.currency || 'TRY', lineTotal, 'NEW', item.confidenceScore || 1.0
           ]
         );
       }
     }
 
-    // 4. Link Document if uploaded
+    // 4. Link Document(s) if uploaded
     if (documentId) {
       await query('UPDATE documents SET order_id = ? WHERE id = ?', [orderId, documentId]);
+    }
+    if (exemptionDocId) {
+      await query("UPDATE documents SET order_id = ?, original_name = COALESCE(original_name, 'KDV_Muafiyet_Belgesi.pdf') WHERE id = ?", [orderId, exemptionDocId]);
     }
 
     // 5. History Log
     await query(
       'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
-      [orderId, 'NEW', 'APPROVED', req.user.id, 'Sipariş kontrol ekranından onaylandı ve havuza eklendi.']
+      [orderId, null, 'NEW', req.user.id, 'Sipariş kontrol ekranından onaylandı ve yeni sipariş havuzuna eklendi.']
     );
 
     // 6. Audit Log
@@ -743,7 +761,7 @@ app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
 app.put('/api/orders/:id', authenticateToken, async (req, res) => {
   try {
     const orderId = req.params.id;
-    const { version, customerOrderNo, requestedDeliveryDate, items } = req.body;
+    const { version, customerOrderNo, projectNo, coatingType, requestedDeliveryDate, items } = req.body;
 
     if (version === undefined || version === null) {
       return res.status(400).json({ error: 'Versiyon bilgisi (version) zorunludur!' });
@@ -754,9 +772,9 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
     // Optimistic locking query: WHERE id = ? AND version = ?
     const updateRes = await query(
       `UPDATE orders 
-       SET customer_order_no = ?, requested_delivery_date = ?, version = version + 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+       SET customer_order_no = ?, project_no = ?, coating_type = ?, requested_delivery_date = ?, version = version + 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND version = ?`,
-      [customerOrderNo || null, parsedDeliveryDate, req.user.id, orderId, version]
+      [customerOrderNo || null, projectNo || null, coatingType || null, parsedDeliveryDate, req.user.id, orderId, version]
     );
 
     if (updateRes.rowCount === 0) {
@@ -915,6 +933,48 @@ app.post('/api/documents/upload', authenticateToken, upload.single('file'), asyn
       pdfUrl: `/api/documents/${docId}/pdf`,
       customerInfo: processed.customerInfo,
       orderItems: processed.orderItems
+    });
+  } catch (err) {
+    res.status(500).json({ error: formatErrorMessage(err) });
+  }
+});
+
+// UPLOAD TAX EXEMPTION DOCUMENT (KDV MUAFİYET BELGESİ)
+app.post('/api/documents/upload-exemption', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Lütfen bir muafiyet belgesi dosyası seçin!' });
+    }
+
+    const filePath = req.file.path;
+    const originalName = req.file.originalname;
+    const mimeType = req.file.mimetype;
+    const fileSize = req.file.size;
+    const ext = path.extname(originalName).toLowerCase();
+    const sha256 = calculateSHA256(filePath);
+
+    // Save document record to DB
+    const docRes = await query(
+      `INSERT INTO documents (
+        original_name, file_type, mime_type, file_size, sha256_hash, original_path, pdf_path, uploaded_by, archive_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+      [`[KDV Muafiyet] ${originalName}`, ext, mimeType, fileSize, sha256, filePath, filePath, req.user.id]
+    );
+
+    const docId = docRes.lastID || docRes.rows?.[0]?.id;
+
+    // Trigger Yandex Disk background upload attempt
+    uploadToYandexDisk(filePath, 'MuafiyetBelgeleri', `${docId}_${originalName}`).then(async (yRes) => {
+      if (yRes.success) {
+        await query('UPDATE documents SET archive_status = ?, yandex_path = ? WHERE id = ?', ['ARCHIVED', yRes.yandexPath, docId]);
+      }
+    });
+
+    res.json({
+      success: true,
+      documentId: docId,
+      originalName,
+      fileSize
     });
   } catch (err) {
     res.status(500).json({ error: formatErrorMessage(err) });

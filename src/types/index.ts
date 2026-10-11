@@ -19,14 +19,18 @@ export interface Customer {
 
 export type OrderStatus =
   | 'NEW'
+  | 'IN_PRODUCTION'
+  | 'COATING'
+  | 'PAINTING'
+  | 'PACKAGING'
+  | 'PARTIAL_SHIPPING'
+  | 'COMPLETED'
+  | 'CANCELLED'
   | 'PROCESSING'
   | 'REVIEW_PENDING'
   | 'APPROVED'
-  | 'IN_PRODUCTION'
   | 'COATING_PENDING'
-  | 'SHIPPING_PENDING'
-  | 'COMPLETED'
-  | 'CANCELLED';
+  | 'SHIPPING_PENDING';
 
 export interface OrderItem {
   id?: number;
@@ -108,6 +112,8 @@ export interface Order {
   customer_name: string;
   customer_tax_number?: string;
   customer_order_no?: string;
+  project_no?: string;
+  coating_type?: string;
   order_date: string;
   requested_delivery_date?: string;
   status: OrderStatus;
@@ -128,6 +134,10 @@ export interface ExtractedCustomerInfo {
   phone?: string;
   email?: string;
   orderNo?: string;
+  projectNo?: string;
+  coatingType?: string;
   orderDate?: string;
   deliveryDate?: string;
+  requestedDeliveryDate?: string;
+  exemptionDocId?: number;
 }

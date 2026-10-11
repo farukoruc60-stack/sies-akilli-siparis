@@ -24,9 +24,11 @@ export async function initDatabase() {
     const client = await pgPool.connect();
     console.log('PostgreSQL veritabanı bağlantısı başarılı!');
 
-    // Ensure shipped_quantity column and dispatches table exist in PostgreSQL
+    // Ensure shipped_quantity column, coating_type, project_no and dispatches table exist in PostgreSQL
     await client.query(`
       ALTER TABLE order_items ADD COLUMN IF NOT EXISTS shipped_quantity NUMERIC(12, 2) DEFAULT 0;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS coating_type VARCHAR(100);
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS project_no VARCHAR(100);
       CREATE TABLE IF NOT EXISTS dispatches (
           id SERIAL PRIMARY KEY,
           order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
@@ -40,7 +42,7 @@ export async function initDatabase() {
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    console.log('✓ PostgreSQL sevkiyat & parçalı sevk tabloları güncellendi.');
+    console.log('✓ PostgreSQL sevkiyat, kaplama ve proje tabloları güncellendi.');
 
     client.release();
     return 'PG';
@@ -234,12 +236,16 @@ async function runSqliteMigrations() {
 
   // Ensure shipped_quantity column exists on order_items table in SQLite
   try {
-    await new Promise((res) => {
-      sqliteDb.run("ALTER TABLE order_items ADD COLUMN shipped_quantity REAL DEFAULT 0", () => res(true));
-    });
-  } catch (e) {
-    // Column already exists
-  }
+    await new Promise((res) => sqliteDb.run("ALTER TABLE order_items ADD COLUMN shipped_quantity REAL DEFAULT 0", () => res(true)));
+  } catch (e) {}
+
+  // Ensure coating_type & project_no columns exist on orders table in SQLite
+  try {
+    await new Promise((res) => sqliteDb.run("ALTER TABLE orders ADD COLUMN coating_type TEXT", () => res(true)));
+  } catch (e) {}
+  try {
+    await new Promise((res) => sqliteDb.run("ALTER TABLE orders ADD COLUMN project_no TEXT", () => res(true)));
+  } catch (e) {}
 }
 
 export async function query(sql, params = []) {
