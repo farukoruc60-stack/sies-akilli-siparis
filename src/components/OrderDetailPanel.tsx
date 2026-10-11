@@ -71,6 +71,8 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [saving, setSaving] = useState(false);
   const [statusNote, setStatusNote] = useState('');
   const [conflictError, setConflictError] = useState<string | null>(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Partial shipping & item selection state
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
@@ -288,9 +290,6 @@ ${itemsSummary}${moreText}
       </div>
     );
   }
-
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleStartEdit = () => {
     setEditingItems(JSON.parse(JSON.stringify(items)));
