@@ -28,10 +28,12 @@ import {
   MessageSquare,
   Share2,
   Phone,
-  ArrowLeft
+  ArrowLeft,
+  Trash2
 } from 'lucide-react';
 import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { toTurkishErrorMessage } from '../utils/errorMessage';
 
 interface OrderDetailPanelProps {
   order: Order | null;
@@ -44,6 +46,7 @@ interface OrderDetailPanelProps {
     updatedItems: OrderItem[],
     updatedFields?: { customerOrderNo?: string; requestedDeliveryDate?: string }
   ) => Promise<void>;
+  onDeleteOrder: (orderId: number) => Promise<boolean | void>;
   onStatusChange: (newStatus: string, notes: string) => Promise<void>;
   onBackToList?: () => void;
 }
@@ -56,6 +59,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   dispatches = [],
   onRefresh,
   onUpdateOrder,
+  onDeleteOrder,
   onStatusChange,
   onBackToList
 }) => {
@@ -285,10 +289,22 @@ ${itemsSummary}${moreText}
     );
   }
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const handleStartEdit = () => {
     setEditingItems(JSON.parse(JSON.stringify(items)));
     setEditCustomerOrderNo(order.customer_order_no || '');
-    setEditRequestedDeliveryDate(order.requested_delivery_date || '');
+
+    // Format requested delivery date as YYYY-MM-DD for HTML input[type="date"]
+    let initDate = '';
+    if (order.requested_delivery_date) {
+      const d = String(order.requested_delivery_date).split('T')[0].trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        initDate = d;
+      }
+    }
+    setEditRequestedDeliveryDate(initDate);
     setIsEditing(true);
     setConflictError(null);
     setActiveTab('items');
@@ -299,14 +315,28 @@ ${itemsSummary}${moreText}
     setConflictError(null);
     try {
       await onUpdateOrder(editingItems, {
-        customerOrderNo: editCustomerOrderNo,
-        requestedDeliveryDate: editRequestedDeliveryDate
+        customerOrderNo: editCustomerOrderNo.trim() || undefined,
+        requestedDeliveryDate: editRequestedDeliveryDate.trim() || undefined
       });
       setIsEditing(false);
     } catch (err: any) {
-      setConflictError(err.message || 'Güncelleme hatası oluştu!');
+      setConflictError(toTurkishErrorMessage(err.message || 'Güncelleme hatası oluştu!'));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!order) return;
+    setIsDeleting(true);
+    setConflictError(null);
+    try {
+      await onDeleteOrder(order.id);
+      setShowDeleteModal(false);
+    } catch (err: any) {
+      setConflictError(toTurkishErrorMessage(err.message || 'Sipariş silinirken hata oluştu!'));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -636,6 +666,30 @@ ${itemsSummary}${moreText}
                 <Edit3 size={16} /> Düzenle
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              disabled={isDeleting}
+              style={{
+                background: '#FEF2F2',
+                color: '#DC2626',
+                border: '1px solid #FECACA',
+                padding: '0.45rem 0.75rem',
+                borderRadius: '6px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                cursor: isDeleting ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              title="Bu siparişi kalıcı olarak sil"
+            >
+              <Trash2 size={15} color="#DC2626" />
+              <span>Siparişi Sil</span>
+            </button>
           </div>
         </div>
 
@@ -1687,6 +1741,133 @@ ${itemsSummary}${moreText}
 
               <button onClick={handleSendWhatsApp} className="btn btn-whatsapp" style={{ padding: '0.6rem 1.25rem', fontSize: '0.88rem' }}>
                 <MessageSquare size={18} /> WhatsApp'ta Aç ve Gönder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(3px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '480px',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
+            overflow: 'hidden',
+            border: '1px solid #FCA5A5'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.25rem',
+              background: '#FEF2F2',
+              borderBottom: '1px solid #FEE2E2',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem'
+            }}>
+              <div style={{
+                background: '#FEE2E2',
+                border: '1px solid #FCA5A5',
+                borderRadius: '10px',
+                width: '42px',
+                height: '42px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Trash2 size={22} color="#DC2626" />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#991B1B', margin: 0 }}>
+                  Siparişi Kalıcı Olarak Sil
+                </h3>
+                <span style={{ fontSize: '0.8rem', color: '#B91C1C' }}>
+                  Bu işlem geri alınamaz
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.25rem' }}>
+              <p style={{ fontSize: '0.9rem', color: '#334155', lineHeight: 1.5, margin: '0 0 1rem 0' }}>
+                <strong style={{ color: '#0F172A' }}>{order.customer_name}</strong> firmasına ait{' '}
+                <strong style={{ color: '#DC2626' }}>{order.order_no}</strong> numaralı siparişi ve bağlı tüm kalemleri silmek istediğinize emin misiniz?
+              </p>
+
+              <div style={{
+                background: '#FFFBEB',
+                border: '1px solid #FDE68A',
+                borderRadius: '8px',
+                padding: '0.75rem',
+                fontSize: '0.82rem',
+                color: '#92400E',
+                display: 'flex',
+                gap: '0.5rem',
+                alignItems: 'flex-start'
+              }}>
+                <AlertTriangle size={16} color="#D97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <span>
+                  Sipariş silindiğinde bu siparişe ait tüm sipariş kalemleri, işlem geçmişi ve sevkiyat kayıtları veritabanından kalıcı olarak kaldırılacaktır.
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '1rem 1.25rem',
+              background: '#F8FAFC',
+              borderTop: '1px solid #E2E8F0',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '0.75rem'
+            }}>
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeleting}
+                className="btn btn-secondary"
+              >
+                Vazgeç
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                style={{
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  padding: '0.55rem 1.25rem',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: isDeleting ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 1px 3px rgba(220, 38, 38, 0.4)'
+                }}
+              >
+                <Trash2 size={16} />
+                <span>{isDeleting ? 'Siliniyor...' : 'Evet, Siparişi Sil'}</span>
               </button>
             </div>
           </div>

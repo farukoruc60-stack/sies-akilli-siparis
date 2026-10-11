@@ -43,6 +43,35 @@ function normalizeDateToISO(dateStr) {
   return null;
 }
 
+function formatErrorMessage(err) {
+  if (!err) return 'Bilinmeyen bir hata oluştu!';
+  const msg = typeof err === 'string' ? err : (err.message || String(err));
+  const trimmed = msg.trim();
+
+  if (/invalid input syntax for type date/i.test(trimmed)) {
+    return 'Geçersiz veya boş tarih formatı! Lütfen geçerli bir tarih seçiniz veya alanı temizleyiniz.';
+  }
+  if (/duplicate key|unique constraint|already exists/i.test(trimmed)) {
+    return 'Bu kayıt veya referans numarası sistemde zaten mevcut!';
+  }
+  if (/violates foreign key constraint/i.test(trimmed)) {
+    return 'Bu kayıt başka verilerle ilişkili olduğu için silinemez veya değiştirilemez.';
+  }
+  if (/violates not-null constraint|null value in column/i.test(trimmed)) {
+    return 'Zorunlu bir alan boş bırakıldı. Lütfen gerekli tüm alanları doldurunuz.';
+  }
+  if (/numeric field overflow|invalid input syntax for type numeric|invalid input syntax for integer/i.test(trimmed)) {
+    return 'Sayısal alan formatı geçersiz! Lütfen geçerli bir sayı giriniz.';
+  }
+  if (/connection.*refused|econnrefused|etimedout|connection terminated/i.test(trimmed)) {
+    return 'Veritabanı bağlantı hatası oluştu. Lütfen biraz sonra tekrar deneyiniz.';
+  }
+  if (/conflict|çakışma|optimistic/i.test(trimmed)) {
+    return 'ÇAKIŞMA TESPİT EDİLDİ: Bu sipariş siz düzenlerken başka bir kullanıcı tarafından güncellendi. Lütfen sayfayı yenileyip tekrar deneyin.';
+  }
+  return trimmed;
+}
+
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
@@ -106,7 +135,7 @@ app.post('/api/auth/login', async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -215,7 +244,7 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
       totalPages: Math.ceil(totalCount / parseInt(limit))
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -281,7 +310,7 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       dispatches: dispatchesRes.rows
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -375,7 +404,7 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
 
     res.json({ success: true, orderId, orderNo });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -426,7 +455,7 @@ app.post('/api/orders/:id/items/status', authenticateToken, async (req, res) => 
 
     res.json({ success: true, updatedCount: itemIds.length, overallStatus });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -531,7 +560,7 @@ app.post('/api/orders/:id/production-form', authenticateToken, async (req, res) 
     });
   } catch (err) {
     console.error('Üretim Formu Oluşturma Hatası:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -618,7 +647,7 @@ app.post('/api/orders/:id/shipping-labels', authenticateToken, async (req, res) 
     });
   } catch (err) {
     console.error('Sevkiyat Etiketi Oluşturma Hatası:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -706,7 +735,7 @@ app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
 
     res.json({ success: true, updatedCount: dispatches.length, overallStatus });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -720,12 +749,14 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Versiyon bilgisi (version) zorunludur!' });
     }
 
+    const parsedDeliveryDate = normalizeDateToISO(requestedDeliveryDate);
+
     // Optimistic locking query: WHERE id = ? AND version = ?
     const updateRes = await query(
       `UPDATE orders 
        SET customer_order_no = ?, requested_delivery_date = ?, version = version + 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND version = ?`,
-      [customerOrderNo, requestedDeliveryDate, req.user.id, orderId, version]
+      [customerOrderNo || null, parsedDeliveryDate, req.user.id, orderId, version]
     );
 
     if (updateRes.rowCount === 0) {
@@ -761,7 +792,54 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
 
     res.json({ success: true, newVersion: version + 1 });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Sipariş güncelleme hatası:', err);
+    res.status(500).json({ error: formatErrorMessage(err) });
+  }
+});
+
+// DELETE ORDER ROUTE (SİPARİŞİ VE İLİŞKİLİ KAYITLARI KALICI SİLME)
+app.delete('/api/orders/:id', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+
+    const orderRes = await query('SELECT id, order_no FROM orders WHERE id = ?', [orderId]);
+    if (!orderRes.rows || orderRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Silinmek istenen sipariş bulunamadı!' });
+    }
+
+    const orderNo = orderRes.rows[0].order_no;
+
+    // 1. Delete associated dispatches
+    await query('DELETE FROM dispatches WHERE order_id = ?', [orderId]);
+
+    // 2. Delete item status history
+    await query(`
+      DELETE FROM order_item_status_history 
+      WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id = ?)
+    `, [orderId]);
+
+    // 3. Delete order items
+    await query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
+
+    // 4. Delete order status history
+    await query('DELETE FROM order_status_history WHERE order_id = ?', [orderId]);
+
+    // 5. Unlink documents from order
+    await query('UPDATE documents SET order_id = NULL WHERE order_id = ?', [orderId]);
+
+    // 6. Delete order itself
+    await query('DELETE FROM orders WHERE id = ?', [orderId]);
+
+    // 7. Audit log
+    await query(
+      'INSERT INTO audit_logs (user_id, action, entity_name, entity_id, details) VALUES (?, ?, ?, ?, ?)',
+      [req.user.id, 'DELETE_ORDER', 'orders', orderId, `"${orderNo}" numaralı sipariş silindi.`]
+    );
+
+    res.json({ success: true, message: `"${orderNo}" numaralı sipariş başarıyla silindi.` });
+  } catch (err) {
+    console.error('Sipariş silme hatası:', err);
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -789,7 +867,7 @@ app.post('/api/orders/:id/status', authenticateToken, async (req, res) => {
 
     res.json({ success: true, newStatus });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -837,7 +915,7 @@ app.post('/api/documents/upload', authenticateToken, upload.single('file'), asyn
       orderItems: processed.orderItems
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -901,7 +979,7 @@ app.get('/api/dashboard', authenticateToken, async (req, res) => {
       pendingArchive: extractCount(pendingArchiveRes)
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -921,7 +999,7 @@ app.post('/api/yandex/token', authenticateToken, requireAdmin, async (req, res) 
     const status = await getYandexStatus();
     res.json({ success: true, status });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -941,7 +1019,7 @@ app.get('/api/customers', authenticateToken, async (req, res) => {
     `);
     res.json(custsRes.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -957,7 +1035,7 @@ app.post('/api/customers', authenticateToken, async (req, res) => {
 
     res.json({ success: true, id: newCust.lastID || newCust.rows?.[0]?.id });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -976,7 +1054,7 @@ app.get('/api/products', authenticateToken, async (req, res) => {
     `);
     res.json(itemsRes.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -994,7 +1072,7 @@ app.get('/api/production', authenticateToken, async (req, res) => {
     `);
     res.json(itemsRes.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -1014,7 +1092,7 @@ app.get('/api/dispatches/all', authenticateToken, async (req, res) => {
     `);
     res.json(dispatchesRes.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 
@@ -1032,7 +1110,7 @@ app.get('/api/audit-logs', authenticateToken, requireAdmin, async (req, res) => 
     `);
     res.json(logsRes.rows);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 

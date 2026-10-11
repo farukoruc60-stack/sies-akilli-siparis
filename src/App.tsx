@@ -17,6 +17,7 @@ import { CoatingView } from './pages/CoatingView';
 import { ShippingView } from './pages/ShippingView';
 import { SettingsView } from './pages/SettingsView';
 import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, ExtractedCustomerInfo } from './types';
+import { toTurkishErrorMessage } from './utils/errorMessage';
 import { 
   Layers, 
   UploadCloud, 
@@ -229,6 +230,10 @@ export default function App() {
   ) => {
     if (!selectedOrder) return;
 
+    const deliveryDateToSend = (updatedFields?.requestedDeliveryDate && updatedFields.requestedDeliveryDate.trim() !== '')
+      ? updatedFields.requestedDeliveryDate.trim()
+      : null;
+
     const res = await fetch(`/api/orders/${selectedOrder.id}`, {
       method: 'PUT',
       headers: {
@@ -237,20 +242,55 @@ export default function App() {
       },
       body: JSON.stringify({
         version: selectedOrder.version,
-        customerOrderNo: updatedFields?.customerOrderNo !== undefined ? updatedFields.customerOrderNo : selectedOrder.customer_order_no,
-        requestedDeliveryDate: updatedFields?.requestedDeliveryDate !== undefined ? updatedFields.requestedDeliveryDate : selectedOrder.requested_delivery_date,
+        customerOrderNo: updatedFields?.customerOrderNo !== undefined ? (updatedFields.customerOrderNo.trim() || null) : selectedOrder.customer_order_no,
+        requestedDeliveryDate: deliveryDateToSend,
         items: updatedItems
       })
     });
 
     const data = await res.json();
     if (res.status === 409) {
-      throw new Error(data.error);
+      throw new Error(toTurkishErrorMessage(data.error));
     }
-    if (!res.ok) throw new Error(data.error || 'Güncelleme başarısız');
+    if (!res.ok) throw new Error(toTurkishErrorMessage(data.error || 'Güncelleme başarısız'));
 
     await fetchOrderDetail(selectedOrder.id);
     await fetchOrders();
+  };
+
+  // Delete Order
+  const handleDeleteOrder = async (orderId: number) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(toTurkishErrorMessage(data.error || 'Sipariş silinemedi!'));
+      }
+
+      // If deleted order was selected, clear selection
+      if (selectedOrder?.id === orderId) {
+        setSelectedOrder(null);
+        setOrderItems([]);
+        setOrderDocuments([]);
+        setOrderHistory([]);
+        setOrderDispatches([]);
+        if (isMobile) {
+          setMobileActiveView('list');
+        }
+      }
+      // Refresh orders list
+      await fetchOrders();
+      return true;
+    } catch (err: any) {
+      console.error('Sipariş silme hatası:', err);
+      throw new Error(toTurkishErrorMessage(err.message || 'Sipariş silinemedi!'));
+    }
   };
 
   // Status Step Change
@@ -266,7 +306,7 @@ export default function App() {
       body: JSON.stringify({ newStatus, notes })
     });
 
-    if (!res.ok) throw new Error('Durum değiştirilemedi');
+    if (!res.ok) throw new Error(toTurkishErrorMessage('Durum değiştirilemedi'));
 
     await fetchOrderDetail(selectedOrder.id);
     await fetchOrders();
@@ -337,6 +377,7 @@ export default function App() {
                 dispatches={orderDispatches}
                 onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
                 onUpdateOrder={handleUpdateOrder}
+                onDeleteOrder={handleDeleteOrder}
                 onStatusChange={handleStatusChange}
                 onBackToList={() => setMobileActiveView('list')}
               />
@@ -371,6 +412,7 @@ export default function App() {
                 dispatches={orderDispatches}
                 onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
                 onUpdateOrder={handleUpdateOrder}
+                onDeleteOrder={handleDeleteOrder}
                 onStatusChange={handleStatusChange}
               />
             </>
