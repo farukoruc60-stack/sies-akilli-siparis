@@ -531,6 +531,10 @@ function parseSirenaMarine(text, lines, originalName) {
       currentDescLines = [];
     } else if (currentCode) {
       currentDescLines.push(rawLine);
+    } else if (orderItems.length > 0 && !rawLine.includes('Toplam Fiyat') && !rawLine.includes('Genel Notlar') && !rawLine.includes('KDV hariç') && !rawLine.includes('satınalma siparişine') && (rawLine.startsWith('KANALI') || rawLine.startsWith('DELİKLİ') || rawLine.includes('RAL9001') || rawLine.includes('BOYALI'))) {
+      const lastItem = orderItems[orderItems.length - 1];
+      lastItem.productName = (lastItem.productName + ' ' + rawLine).trim();
+      lastItem.productDescription = (lastItem.productDescription + ' ' + rawLine).trim();
     }
   }
 
@@ -815,57 +819,72 @@ function parseTersanTersanesi(text, lines, originalName) {
   if (orderNoMatch) customerInfo.orderNo = orderNoMatch[1].trim();
   else customerInfo.orderNo = '405148';
 
-  // Proje No: "Proje: NB1102" veya "Proje No: ..." veya "Gemi:"
-  const projMatch = text.match(/(?:Proje\s*(?:No|Adı)?|Gemi\s*No|Hull\s*No|NB\s*\d+)\s*:?\s*([A-Z0-9\-\/]{2,20})/i);
-  if (projMatch) customerInfo.projectNo = projMatch[1].trim();
+  // Proje No: "NB1099C" veya "Proje: NB1102" veya "Proje No: ..." veya "Gemi:"
+  const projMatch = text.match(/\b(NB[0-9A-Z]+)\b/i) ||
+                    text.match(/(?:Proje\s*(?:No|Adı)?|Gemi\s*No|Hull\s*No)\s*:?\s*([A-Z0-9\-\/]{2,20})/i);
+  if (projMatch) customerInfo.projectNo = projMatch[1].trim().toUpperCase();
 
   // Sipariş & Teslim Tarihi
-  const dateMatch = text.match(/(?:Sipariş\s*Tarihi|Tarih|Sip\.\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
+  const dateMatch = text.match(/(?:Sipariş\s*Tarihi|Tarih|Sip\.\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i) ||
+                    text.match(/\b(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})\b/);
   if (dateMatch) customerInfo.orderDate = normalizeDateToISO(dateMatch[1]);
 
   const delivMatch = text.match(/(?:Teslim\s*Tarihi|İst\.?\s*Tes\.?\s*Tarihi|Termin\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
   if (delivMatch) customerInfo.deliveryDate = normalizeDateToISO(delivMatch[1]);
 
-  // ÇOK SATIRLI TABLO AYRIŞTIRICI (Row Chunking):
-  // Tersan siparişinde her kalem 'S\d{4,8}' ürün kodu veya sıra no ile başlar.
-  // Hücre içi alt satıra kayan açıklamalar ('KABLO KANALI...', 'E:1.5MM...', ölçüler) bir sonraki kaleme kadar toplanır.
-  const isRowStart = (line) => {
-    const trimmed = line.trim();
-    return /^(?:\d{1,3}\s+)?S\d{4,8}\b/i.test(trimmed);
-  };
-
-  const isTableFooter = (line) => {
-    const trimmed = line.trim();
-    return /^(TOPLAM|ARA TOPLAM|KDV|NOTLAR|GENEL|ÖDEME|TESLİM ŞEKLİ|LÜTFEN TEYİT|KİŞİSEL VERİLERİN)/i.test(trimmed);
-  };
-
-  const chunks = [];
-  let currentChunk = [];
+  // ÇOK SATIRLI EKSİKSİZ TABLO AYRIŞTIRICI (Dual-Anchor Row Chunking):
+  // Hem hücre içi üst satırlardaki açıklamalar (ör: 'AYAK L TİPİ DELİKLİ...', 'KABLO KONSOL...', 'KABLO MERDİVENİ DALDIRMA...')
+  // hem de alt satırlardaki açıklamalar ('SUK-20 (KERYE)...', 'SİMETRİK (Z KESİT)...') eksiksiz toplanır.
+  let tableStarted = false;
+  const tableLines = [];
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i].trim();
     if (!rawLine) continue;
 
-    if (isTableFooter(rawLine)) {
-      if (currentChunk.length > 0) {
-        chunks.push(currentChunk);
-        currentChunk = [];
-      }
+    // Tablo başlığı tespiti
+    if (rawLine.includes('S.N') && (rawLine.includes('Malzeme') || rawLine.includes('M.No') || rawLine.includes('Proje'))) {
+      tableStarted = true;
+      continue;
+    }
+
+    // Tablo altlığı veya sipariş sonu tespiti
+    if (tableStarted && (rawLine.includes('Yukarıda belirtilen') || rawLine.includes('KDV hariç') || rawLine.includes('TOPLAM TUTAR') || rawLine.includes('LÜTFEN TEYİT'))) {
       break;
     }
 
-    if (isRowStart(rawLine)) {
-      if (currentChunk.length > 0) {
-        chunks.push(currentChunk);
-      }
-      currentChunk = [rawLine];
-    } else if (currentChunk.length > 0) {
-      // Bir önceki kaleme ait alt satır / hücre devamı
-      currentChunk.push(rawLine);
+    if (tableStarted) {
+      tableLines.push(rawLine);
     }
   }
-  if (currentChunk.length > 0) {
-    chunks.push(currentChunk);
+
+  // Row boundaries: A row boundary starts when a line begins with sequential number (1, 2, 3...) or product code
+  const chunks = [];
+  let currentLines = [];
+  let expectedSn = 1;
+
+  for (let i = 0; i < tableLines.length; i++) {
+    const line = tableLines[i];
+    const snMatch = line.match(/^([1-9]\d{0,2})\s+(.*)/);
+    const codeMatch = line.match(/^(S\d{4,8})\b/i);
+
+    const isNextSn = snMatch && parseInt(snMatch[1], 10) === expectedSn;
+
+    if (isNextSn) {
+      if (currentLines.length > 0) chunks.push(currentLines);
+      currentLines = [line];
+      expectedSn++;
+    } else if (codeMatch && (!currentLines.length || !currentLines[0].match(/^[1-9]\d{0,2}\s+/))) {
+      if (currentLines.length > 0) chunks.push(currentLines);
+      currentLines = [line];
+    } else {
+      if (currentLines.length > 0) currentLines.push(line);
+      else currentLines.push(line);
+    }
+  }
+
+  if (currentLines.length > 0) {
+    chunks.push(currentLines);
   }
 
   const orderItems = [];
@@ -878,8 +897,12 @@ function parseTersanTersanesi(text, lines, originalName) {
     const codeMatch = combined.match(/\b(S\d{4,8})\b/i);
     const code = codeMatch ? codeMatch[1].toUpperCase() : `S${lineNo}`;
 
-    // 2. Miktar, Birim, Birim Fiyat ve Tutar Çıkar
-    // Tipik Tersan formatı: <Miktar> <Birim: PCS|ADET|AD|BOY|KG|METRE|M|MT> <Birim Fiyat> <Tutar>
+    // 2. Proje Numarasını Çıkar (Örn: NB1099C)
+    const rowProjMatch = combined.match(/\b(NB[0-9A-Z]+)\b/i);
+    const rowProj = rowProjMatch ? rowProjMatch[1].toUpperCase() : customerInfo.projectNo;
+    if (rowProj && !customerInfo.projectNo) customerInfo.projectNo = rowProj;
+
+    // 3. Miktar, Birim, Birim Fiyat ve Tutar Çıkar
     const qtyPriceMatch = combined.match(/(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)/i);
 
     let qty = 1;
@@ -894,7 +917,6 @@ function parseTersanTersanesi(text, lines, originalName) {
       unitPrice = parseFloat(qtyPriceMatch[3].replace(',', '.')) || 0;
       lineTotal = parseFloat(qtyPriceMatch[4].replace(',', '.')) || (qty * unitPrice);
     } else {
-      // Alternatif tekil miktar ve birim eşleşmesi
       const altQty = combined.match(/(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)/i);
       if (altQty) {
         qty = parseFloat(altQty[1].replace(',', '.')) || 1;
@@ -903,16 +925,25 @@ function parseTersanTersanesi(text, lines, originalName) {
       }
     }
 
-    // 3. Eksiksiz Çok Satırlı Ürün Açıklamasını Oluştur
-    // Kod ve miktar/fiyat parçalarını temizleyerek tüm alt satırları birleştir
+    // 4. Hücrenin TÜM Satırlarını (Üst Satır + Alt Satır) Birleştirerek Eksiksiz Açıklama Oluştur
     const descParts = [];
-    for (const line of chunkLines) {
-      let cleanL = line;
-      // Satır başındaki sıra numarasını temizle: "1 S78806" -> "S78806"
-      cleanL = cleanL.replace(/^\d{1,3}\s+S\d{4,8}/i, '').replace(new RegExp(`\\b${code}\\b`, 'gi'), '');
-      if (qtyPriceMatch) {
-        cleanL = cleanL.replace(qtyPriceMatch[0], '');
+    for (let cIdx = 0; cIdx < chunkLines.length; cIdx++) {
+      let cleanL = chunkLines[cIdx];
+      // SADECE ilk satırın başındaki sıra numarasını temizle: "1 AYAK..." -> "AYAK..."
+      // Asla ikinci veya alt satırlardaki 304, 316 gibi kalite/boyut numaralarını silme!
+      if (cIdx === 0) {
+        cleanL = cleanL.replace(new RegExp(`^${lineNo}\\s+`), '').replace(/^[1-9]\d{0,2}\s+/, '');
       }
+      // Ürün kodunu temizle
+      if (code) cleanL = cleanL.replace(new RegExp(`\\b${code}\\b`, 'gi'), '');
+      // SFI kodlarını temizle (890000, 881000, 201025 vb.)
+      cleanL = cleanL.replace(/\b(890000|881000|201025|\d{6})\b/g, '');
+      // Proje kodunu temizle (NB1099C vb.)
+      if (rowProj) cleanL = cleanL.replace(new RegExp(`\\b${rowProj}\\b`, 'gi'), '');
+      // Eşleşen miktar/birim/fiyat bloğunu temizle
+      if (qtyPriceMatch) cleanL = cleanL.replace(qtyPriceMatch[0], '');
+      // Tekil tablo miktar sayılarını temizle (ör: 100,00 veya 150,00)
+      cleanL = cleanL.replace(/\b\d{1,4}[,\.]00\b/g, '');
       cleanL = cleanL.replace(/\s+/g, ' ').trim();
       if (cleanL && cleanL.length > 1) {
         descParts.push(cleanL);
@@ -924,7 +955,7 @@ function parseTersanTersanesi(text, lines, originalName) {
       fullDesc = `Paslanmaz Taşıyıcı Kalem (${code})`;
     }
 
-    // 4. Malzeme ve Kaplama Türünü Tespit Et (304L, 316L, Sıcak Daldırma Galvaniz vb.)
+    // 5. Malzeme ve Kaplama Türünü Tespit Et (304L, 316L, Sıcak Daldırma Galvaniz vb.)
     const { material, coating } = detectMaterialAndCoating(fullDesc, text);
 
     orderItems.push({
@@ -1078,12 +1109,14 @@ function parseUniversalText(text, lines, originalName = '') {
         }
       }
 
+      const fullDesc = [...currentDescLines, desc].join(' ').trim() || desc;
+
       orderItems.push({
         lineNo: lineNo++,
         customerProductCode: code,
         internalProductCode: `SIES-${code.replace(/\s+/g, '-')}`,
-        productName: desc,
-        productDescription: desc,
+        productName: fullDesc,
+        productDescription: fullDesc,
         quantity: qty,
         unit: unit,
         unitPrice: unitPrice,
@@ -1114,12 +1147,14 @@ function parseUniversalText(text, lines, originalName = '') {
       const lineTotal = parseFloat(compositeLineMatch[8]?.replace(',', '.')) || (qty * unitPrice);
       const currency = compositeLineMatch[9] || 'TRY';
 
+      const fullDesc = [...currentDescLines, desc].join(' ').trim() || desc || code;
+
       orderItems.push({
         lineNo: lineNo++,
         customerProductCode: code,
         internalProductCode: `SIES-${code.replace(/\s+/g, '-')}`,
-        productName: desc || code,
-        productDescription: desc || code,
+        productName: fullDesc,
+        productDescription: fullDesc,
         quantity: qty,
         unit: unit,
         unitPrice: unitPrice,
@@ -1247,10 +1282,11 @@ function parseUniversalText(text, lines, originalName = '') {
     } else {
       if (currentCode && !rawLine.startsWith('Toplam') && !rawLine.startsWith('Ara Toplam') && !rawLine.startsWith('Sayfa')) {
         currentDescLines.push(rawLine);
-      } else if (orderItems.length > 0 && (rawLine.startsWith('KANALI') || rawLine.startsWith('DELİKLİ') || rawLine.includes('RAL9001'))) {
+      } else if (orderItems.length > 0 && !rawLine.match(/^(Toplam|Ara Toplam|Genel Toplam|KDV|İskonto|Sayfa|Ödeme|Vade|Banka|Tarih|İş bu|Satınalma|Tedarikçi|NOTLAR)/i)) {
+        // Alt satırdaki veya hücre içi devam eden açıklamayı eksiksiz ekle
         const lastItem = orderItems[orderItems.length - 1];
-        lastItem.productName += ' ' + rawLine;
-        lastItem.productDescription += ' ' + rawLine;
+        lastItem.productName = (lastItem.productName + ' ' + rawLine).trim();
+        lastItem.productDescription = (lastItem.productDescription + ' ' + rawLine).trim();
       }
     }
   }

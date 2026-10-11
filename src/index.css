@@ -206,6 +206,35 @@ table.custom-table tr:hover td {
   color: var(--text-primary);
 }
 
+/* Verification Fullscreen Modal */
+.modal-overlay-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  background: #0B111E;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+}
+.modal-content-fullscreen {
+  background-color: #FFFFFF;
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+  border: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
 /* WhatsApp Green Theme Utilities */
 .btn-whatsapp {
   background: #25D366 !important;

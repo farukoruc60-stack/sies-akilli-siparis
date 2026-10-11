@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, CheckCircle, RefreshCw, FileText, Plus, Trash2, Copy, AlertTriangle, ShieldCheck, UploadCloud, Loader2, Paperclip, ChevronDown } from 'lucide-react';
+import { X, CheckCircle, RefreshCw, FileText, Plus, Trash2, Copy, AlertTriangle, ShieldCheck, UploadCloud, Loader2, Paperclip, ChevronDown, Maximize2, Columns, ExternalLink } from 'lucide-react';
 import { ExtractedCustomerInfo, OrderItem } from '../types';
 
 const COATING_OPTIONS = [
@@ -212,6 +212,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
   const [uploadingExemption, setUploadingExemption] = useState(false);
   const [exemptionFile, setExemptionFile] = useState<{ id: number; name: string; size: number } | null>(null);
   const [exemptionError, setExemptionError] = useState<string | null>(null);
+  const [splitRatio, setSplitRatio] = useState<'50-50' | '60-40' | '40-60'>('50-50');
 
   useEffect(() => {
     // Fetch registered customers from database to populate customer dropdown
@@ -356,38 +357,146 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
+    <div className="modal-overlay-fullscreen">
+      <div className="modal-content-fullscreen">
         {/* Modal Header */}
         <div style={{
-          padding: '1rem 1.5rem',
+          padding: '0.85rem 1.5rem',
           background: '#060910',
           borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          alignItems: 'center',
+          flexShrink: 0
         }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{
+              background: 'rgba(59, 130, 246, 0.15)',
+              padding: '6px',
+              borderRadius: '8px',
+              display: 'flex',
+              alignItems: 'center'
+            }}>
               <ShieldCheck size={22} color="var(--primary)" />
-              <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#fff' }}>
-                Otomatik Belge Okuma Kontrol ve Onay Ekranı
-              </h2>
             </div>
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              Çıkarılan verileri sol tarafta inceleyip düzenleyin, sağ tarafta orijinal PDF'i kontrol edin.
-            </span>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#fff', margin: 0 }}>
+                  Otomatik Belge Okuma Kontrol ve Onay Ekranı
+                </h2>
+                <span style={{
+                  background: '#1E293B',
+                  color: '#93C5FD',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  border: '1px solid #334155'
+                }}>
+                  {orderItems.length} Kalem • {totalAmount.toLocaleString('tr-TR')} TRY
+                </span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Çıkarılan verileri sol tarafta inceleyip düzenleyin, sağ tarafta orijinal PDF'i kontrol edin.
+              </span>
+            </div>
           </div>
 
-          <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-            <X size={24} />
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {/* Split Ratio Controls */}
+            <div style={{
+              display: 'flex',
+              background: '#1E293B',
+              borderRadius: '6px',
+              padding: '2px',
+              border: '1px solid #334155'
+            }}>
+              <button
+                type="button"
+                onClick={() => setSplitRatio('60-40')}
+                title="Tablo Geniş (%60 Sol - %40 Sağ)"
+                style={{
+                  padding: '0.25rem 0.65rem',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: splitRatio === '60-40' ? 'var(--primary)' : 'transparent',
+                  color: splitRatio === '60-40' ? '#fff' : '#94A3B8',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                Tablo %60
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitRatio('50-50')}
+                title="Eşit Görünüm (%50 Sol - %50 Sağ)"
+                style={{
+                  padding: '0.25rem 0.65rem',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: splitRatio === '50-50' ? 'var(--primary)' : 'transparent',
+                  color: splitRatio === '50-50' ? '#fff' : '#94A3B8',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                50 / 50
+              </button>
+              <button
+                type="button"
+                onClick={() => setSplitRatio('40-60')}
+                title="PDF Geniş (%40 Sol - %60 Sağ)"
+                style={{
+                  padding: '0.25rem 0.65rem',
+                  borderRadius: '4px',
+                  border: 'none',
+                  background: splitRatio === '40-60' ? 'var(--primary)' : 'transparent',
+                  color: splitRatio === '40-60' ? '#fff' : '#94A3B8',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                PDF %60
+              </button>
+            </div>
+
+            <button
+              onClick={onClose}
+              title="Kapat"
+              style={{
+                background: '#1E293B',
+                border: '1px solid #334155',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                borderRadius: '6px',
+                padding: '5px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Modal Split Body */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Left Side: Extracted Metadata & Item Editor */}
-          <div style={{ width: '60%', borderRight: '1px solid var(--border-color)', overflowY: 'auto', padding: '1.25rem' }}>
+          <div style={{
+            width: splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '60%' : '40%',
+            borderRight: '1px solid var(--border-color)',
+            overflowY: 'auto',
+            padding: '1.25rem',
+            transition: 'width 0.2s ease'
+          }}>
             {/* Customer & Order Header Information Section */}
             <div style={{ background: 'var(--bg-card)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.25rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
@@ -611,19 +720,46 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               type="text"
                               value={item.customerProductCode || ''}
                               onChange={(e) => handleItemChange(idx, 'customerProductCode', e.target.value)}
-                              style={{ width: '90px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem 0.4rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}
                             />
                           </td>
-                          <td style={{ minWidth: '280px' }}>
-                            <input
-                              type="text"
-                              value={item.productName || ''}
+                          <td style={{ minWidth: '320px' }}>
+                            <textarea
+                              rows={2}
+                              value={item.productName || item.productDescription || ''}
+                              placeholder="Ürün açıklaması / teknik detayları..."
                               onChange={(e) => {
                                 handleItemChange(idx, 'productName', e.target.value);
                                 handleItemChange(idx, 'productDescription', e.target.value);
                               }}
-                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.25rem 0.4rem', borderRadius: '4px', fontSize: '0.8rem' }}
+                              style={{
+                                width: '100%',
+                                background: '#FFFFFF',
+                                border: '1px solid #CBD5E1',
+                                color: '#0F172A',
+                                padding: '0.35rem 0.5rem',
+                                borderRadius: '4px',
+                                fontSize: '0.8rem',
+                                lineHeight: '1.35',
+                                resize: 'vertical',
+                                fontFamily: 'inherit',
+                                display: 'block'
+                              }}
                             />
+                            {(item.material || item.surfaceCoating) && (
+                              <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
+                                {item.surfaceCoating && item.surfaceCoating !== 'Belirtilmedi' && (
+                                  <span style={{ background: '#EFF6FF', color: '#1D4ED8', padding: '1px 5px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: 600 }}>
+                                    {item.surfaceCoating}
+                                  </span>
+                                )}
+                                {item.material && item.material !== 'Çelik' && (
+                                  <span style={{ background: '#F1F5F9', color: '#475569', padding: '1px 5px', borderRadius: '3px', fontSize: '0.68rem' }}>
+                                    {item.material}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </td>
                           <td>
                             <input
@@ -631,7 +767,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               step="0.1"
                               value={qty}
                               onChange={(e) => handleItemChange(idx, 'quantity', parseFloat(e.target.value))}
-                              style={{ width: '70px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem' }}
                             />
                           </td>
                           <td>
@@ -639,7 +775,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               type="text"
                               value={item.unit || 'Adet'}
                               onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
-                              style={{ width: '50px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem' }}
                             />
                           </td>
                           <td>
@@ -648,7 +784,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               step="0.01"
                               value={uPrice}
                               onChange={(e) => handleItemChange(idx, 'unitPrice', parseFloat(e.target.value))}
-                              style={{ width: '75px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
+                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem' }}
                             />
                           </td>
                           <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -656,11 +792,11 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: '0.3rem' }}>
-                              <button onClick={() => handleCopyRow(idx)} title="Satırı Kopyala" style={{ background: 'none', border: 'none', color: '#60A5FA', cursor: 'pointer' }}>
-                                <Copy size={14} />
+                              <button onClick={() => handleCopyRow(idx)} title="Satırı Kopyala" style={{ background: 'none', border: 'none', color: '#60A5FA', cursor: 'pointer', padding: '2px' }}>
+                                <Copy size={15} />
                               </button>
-                              <button onClick={() => handleDeleteRow(idx)} title="Satırı Sil" style={{ background: 'none', border: 'none', color: '#F87171', cursor: 'pointer' }}>
-                                <Trash2 size={14} />
+                              <button onClick={() => handleDeleteRow(idx)} title="Satırı Sil" style={{ background: 'none', border: 'none', color: '#F87171', cursor: 'pointer', padding: '2px' }}>
+                                <Trash2 size={15} />
                               </button>
                             </div>
                           </td>
@@ -674,36 +810,75 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
           </div>
 
           {/* Right Side: PDF Document Preview Viewer */}
-          <div style={{ width: '40%', background: '#000', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '0.5rem 1rem', background: '#0E1524', borderBottom: '1px solid var(--border-color)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Orijinal Belge PDF Canlı Önizleme
+          <div style={{
+            width: splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '40%' : '60%',
+            background: '#0F172A',
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            transition: 'width 0.2s ease'
+          }}>
+            <div style={{
+              padding: '0.55rem 1rem',
+              background: '#0B111E',
+              borderBottom: '1px solid #1E293B',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              fontSize: '0.8rem',
+              color: '#94A3B8',
+              flexShrink: 0
+            }}>
+              <span style={{ fontWeight: 600, color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <FileText size={15} color="#3B82F6" /> Orijinal Belge PDF Canlı Önizleme
+              </span>
+              <a
+                href={pdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  color: '#60A5FA',
+                  fontSize: '0.75rem',
+                  textDecoration: 'none',
+                  background: 'rgba(59, 130, 246, 0.12)',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  border: '1px solid rgba(59, 130, 246, 0.3)'
+                }}
+              >
+                <ExternalLink size={12} /> Yeni Sekmede Aç
+              </a>
             </div>
             <iframe
               src={pdfUrl}
               title="PDF Preview"
-              style={{ width: '100%', height: '100%', border: 'none' }}
+              style={{ width: '100%', height: 'calc(100% - 38px)', border: 'none', flex: 1 }}
             />
           </div>
         </div>
 
         {/* Modal Footer */}
         <div style={{
-          padding: '1rem 1.5rem',
+          padding: '0.85rem 1.5rem',
           background: '#060910',
           borderTop: '1px solid var(--border-color)',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          alignItems: 'center',
+          flexShrink: 0
         }}>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            ✓ Kontrol Edildi. Onaylandıktan sonra sipariş ortak havuza alınacak.
+            ✓ Kontrol Edildi. Onaylandıktan sonra sipariş ortak havuza aktarılacak.
           </span>
 
           <div style={{ display: 'flex', gap: '0.75rem' }}>
             <button onClick={onClose} className="btn btn-secondary">
               İptal / Taslak Olarak Bırak
             </button>
-            <button onClick={handleSave} disabled={saving} className="btn btn-primary">
+            <button onClick={handleSave} disabled={saving} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <CheckCircle size={16} /> {saving ? 'Kaydediliyor...' : 'Onayla ve Havuza Aktar'}
             </button>
           </div>
