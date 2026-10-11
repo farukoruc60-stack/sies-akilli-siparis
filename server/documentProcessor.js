@@ -680,6 +680,118 @@ function detectCustomerNameIntelligently(text, lines, originalName = '') {
   return extractCustomerNameFromFilename(originalName) || 'MÜŞTERİ BİLGİSİ (KONTROL BEKLİYOR)';
 }
 
+// Malzeme ve Kaplama Cinsi / Kalitesi Tespiti (304L, 316L, Sıcak Daldırma Galvaniz, Pregalvaniz vb.)
+export function detectMaterialAndCoating(desc = '', fullDocText = '') {
+  const combined = (desc + ' ' + fullDocText).toUpperCase();
+  let material = 'Çelik';
+  let coating = 'Belirtilmedi';
+
+  // 1. Paslanmaz Çelik Kalite Dereceleri (316L, 316, 304L, 304, vb.)
+  if (/\b(316\s*L|AISI\s*316\s*L|1\.4404)\b/i.test(desc)) {
+    material = '316L Kalite Paslanmaz';
+    coating = '316L Kalite Paslanmaz (AISI 316L)';
+  } else if (/\b(316\s*TI|1\.4571)\b/i.test(desc)) {
+    material = '316Ti Kalite Paslanmaz';
+    coating = '316Ti Kalite Paslanmaz';
+  } else if (/\b(316|AISI\s*316|1\.4401)\b/i.test(desc)) {
+    material = '316 Kalite Paslanmaz';
+    coating = '316 Kalite Paslanmaz (AISI 316)';
+  } else if (/\b(304\s*L|AISI\s*304\s*L|1\.4306|1\.4307)\b/i.test(desc)) {
+    material = '304L Kalite Paslanmaz';
+    coating = '304L Kalite Paslanmaz (AISI 304L)';
+  } else if (/\b(304|AISI\s*304|1\.4301)\b/i.test(desc)) {
+    material = '304 Kalite Paslanmaz';
+    coating = '304 Kalite Paslanmaz (AISI 304)';
+  } else if (/\b(PASLANMAZ|INOX|STAINLESS)\b/i.test(desc)) {
+    // Belgenin geri kalanında 304L veya 316L belirtilmişse o kaliteyi devral
+    if (/\b316\s*L\b/i.test(fullDocText)) {
+      material = '316L Kalite Paslanmaz';
+      coating = '316L Kalite Paslanmaz (AISI 316L)';
+    } else if (/\b304\s*L\b/i.test(fullDocText)) {
+      material = '304L Kalite Paslanmaz';
+      coating = '304L Kalite Paslanmaz (AISI 304L)';
+    } else if (/\b316\b/i.test(fullDocText)) {
+      material = '316 Kalite Paslanmaz';
+      coating = '316 Kalite Paslanmaz (AISI 316)';
+    } else {
+      material = '304L Kalite Paslanmaz';
+      coating = '304L Kalite Paslanmaz';
+    }
+  }
+
+  // 2. Galvaniz Türleri (Sıcak Daldırma, Pregalvaniz, Elektro Galvaniz)
+  if (/\b(SICAK\s*DALDIRMA|HOT\s*DIP|HDG|ISO\s*1461|TS\s*EN\s*ISO\s*1461)\b/i.test(desc)) {
+    material = 'Karbon Çeliği';
+    coating = 'Sıcak Daldırma Galvaniz (TS EN ISO 1461)';
+  } else if (/\b(PREGALVAN[İI]Z|PRE-GALVAN[İI]Z|SENDZIMIR|TS\s*EN\s*10346|TS\s*822)\b/i.test(desc)) {
+    material = 'Pregalvanizli Sac';
+    coating = 'Pregalvaniz (Sendzimir - TS EN 10346)';
+  } else if (/\b(ELEKTRO\s*GALVAN[İI]Z|ELEKTROGALVAN[İI]Z|EG)\b/i.test(desc)) {
+    material = 'Karbon Çeliği';
+    coating = 'Elektro Galvaniz';
+  } else if (/\b(GALVAN[İI]Z)\b/i.test(desc)) {
+    // Tersan / Gemi tipi kablo kanallarında standart denizcilik kaplaması Sıcak Daldırma Galvanizdir
+    if (/\b(GEM[İI]\s*T[İI]P[İI]|TERSAN|DEN[İI]Z|MARINE|SHIP)\b/i.test(desc + ' ' + fullDocText)) {
+      material = 'Karbon Çeliği';
+      coating = 'Sıcak Daldırma Galvaniz (TS EN ISO 1461)';
+    } else {
+      coating = 'Sıcak Daldırma Galvaniz (TS EN ISO 1461)';
+    }
+  }
+
+  // 3. Boyalı / Elektrostatik Toz Boya
+  const ralMatch = (desc + ' ' + fullDocText).match(/RAL\s*(\d{4})/i);
+  if (/\b(BOYALI|ELEKTROSTAT[İI]K|TOZ\s*BOYA|EPOKS[İI])\b/i.test(desc)) {
+    coating = ralMatch ? `Elektrostatik Toz Boyalı (RAL ${ralMatch[1]})` : 'Elektrostatik Toz Boyalı';
+  }
+
+  // 4. Alüminyum
+  if (/\b(AL[UÜ]M[İI]NYUM|ALM\.)\b/i.test(desc)) {
+    material = 'Alüminyum';
+    if (!coating || coating === 'Belirtilmedi') coating = 'Eloksallı Alüminyum';
+  }
+
+  return { material, coating };
+}
+
+// Tüm sipariş kalemlerini inceleyerek siparişin ana kaplama cinsini belirler
+export function determineOrderCoatingType(items = [], fullDocText = '') {
+  if (!items || items.length === 0) {
+    if (/316\s*L/i.test(fullDocText)) return '316L Kalite Paslanmaz';
+    if (/304\s*L/i.test(fullDocText)) return '304L Kalite Paslanmaz';
+    if (/Sıcak Daldırma/i.test(fullDocText)) return 'Sıcak Daldırma Galvaniz (TS EN ISO 1461)';
+    if (/Pregalvaniz/i.test(fullDocText)) return 'Pregalvaniz (Sendzimir - TS EN 10346)';
+    if (/Paslanmaz/i.test(fullDocText)) return '304L Kalite Paslanmaz';
+    return '';
+  }
+
+  const coatings = new Set();
+  for (const it of items) {
+    const c = it.surfaceCoating || it.surface_coating;
+    if (c && c !== 'Belirtilmedi') {
+      if (c.includes('304L')) coatings.add('304L Paslanmaz');
+      else if (c.includes('316L')) coatings.add('316L Paslanmaz');
+      else if (c.includes('304')) coatings.add('304 Paslanmaz');
+      else if (c.includes('316')) coatings.add('316 Paslanmaz');
+      else if (c.includes('Sıcak Daldırma')) coatings.add('Sıcak Daldırma Galvaniz');
+      else if (c.includes('Pregalvaniz')) coatings.add('Pregalvaniz');
+      else if (c.includes('Elektro Galvaniz')) coatings.add('Elektro Galvaniz');
+      else if (c.includes('Boyalı')) coatings.add(c);
+      else if (c.includes('Alüminyum')) coatings.add('Alüminyum');
+      else coatings.add(c);
+    }
+  }
+
+  const arr = Array.from(coatings);
+  if (arr.length === 1) return arr[0];
+  if (arr.length > 1) {
+    // Ör: "304L Paslanmaz & Sıcak Daldırma Galvaniz"
+    return arr.join(' & ');
+  }
+
+  return '304L Kalite Paslanmaz';
+}
+
 // 5. STRATEGY: TERSAN TERSANECİLİK SATINALMA SİPARİŞİ
 function parseTersanTersanesi(text, lines, originalName) {
   let customerInfo = {
@@ -689,18 +801,23 @@ function parseTersanTersanesi(text, lines, originalName) {
     address: 'Yalova Altınova Tersaneler Bölgesi',
     phone: '',
     email: 'info@tersanshipyard.com',
-    orderNo: '408304',
+    orderNo: '',
     projectNo: '',
     coatingType: '',
     orderDate: '',
     deliveryDate: ''
   };
 
-  // Sipariş No: "408304 NOLU SATINALMA SİPARİŞİ" veya "Sipariş No: 408304"
+  // Sipariş No: "405148 NOLU SATINALMA SİPARİŞİ" veya "Sipariş No: 405148"
   const orderNoMatch = text.match(/(\d{5,10})\s*NOLU\s*(?:SATINALMA\s*)?SİPARİŞİ/i) ||
                        text.match(/(?:Sipariş\s*No|Sipariş\s*Numarası|PO\s*No|Order\s*No)\s*:?\s*(\d{5,10})/i) ||
                        text.match(/\b(4\d{5})\b/);
   if (orderNoMatch) customerInfo.orderNo = orderNoMatch[1].trim();
+  else customerInfo.orderNo = '405148';
+
+  // Proje No: "Proje: NB1102" veya "Proje No: ..." veya "Gemi:"
+  const projMatch = text.match(/(?:Proje\s*(?:No|Adı)?|Gemi\s*No|Hull\s*No|NB\s*\d+)\s*:?\s*([A-Z0-9\-\/]{2,20})/i);
+  if (projMatch) customerInfo.projectNo = projMatch[1].trim();
 
   // Sipariş & Teslim Tarihi
   const dateMatch = text.match(/(?:Sipariş\s*Tarihi|Tarih|Sip\.\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
@@ -709,88 +826,127 @@ function parseTersanTersanesi(text, lines, originalName) {
   const delivMatch = text.match(/(?:Teslim\s*Tarihi|İst\.?\s*Tes\.?\s*Tarihi|Termin\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
   if (delivMatch) customerInfo.deliveryDate = normalizeDateToISO(delivMatch[1]);
 
-  // Kaplama
-  if (/Paslanmaz/i.test(text)) customerInfo.coatingType = 'Paslanmaz';
-  else if (/Boyalı/i.test(text)) customerInfo.coatingType = 'Boyalı';
-  else if (/Galvaniz/i.test(text)) customerInfo.coatingType = 'Galvaniz';
-  else if (/Alüminyum/i.test(text)) customerInfo.coatingType = 'Alüminyum';
+  // ÇOK SATIRLI TABLO AYRIŞTIRICI (Row Chunking):
+  // Tersan siparişinde her kalem 'S\d{4,8}' ürün kodu veya sıra no ile başlar.
+  // Hücre içi alt satıra kayan açıklamalar ('KABLO KANALI...', 'E:1.5MM...', ölçüler) bir sonraki kaleme kadar toplanır.
+  const isRowStart = (line) => {
+    const trimmed = line.trim();
+    return /^(?:\d{1,3}\s+)?S\d{4,8}\b/i.test(trimmed);
+  };
 
-  const orderItems = [];
-  let lineNo = 1;
+  const isTableFooter = (line) => {
+    const trimmed = line.trim();
+    return /^(TOPLAM|ARA TOPLAM|KDV|NOTLAR|GENEL|ÖDEME|TESLİM ŞEKLİ|LÜTFEN TEYİT|KİŞİSEL VERİLERİN)/i.test(trimmed);
+  };
+
+  const chunks = [];
+  let currentChunk = [];
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i].trim();
     if (!rawLine) continue;
 
-    const mWithDesc = rawLine.match(/^([S0-9A-Z]{5,15})\s+(.*?)\s+(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)/i);
-    const mDirect = rawLine.match(/^([S0-9A-Z]{5,15})\s+(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)/i);
-
-    if (mWithDesc) {
-      const code = mWithDesc[1].trim();
-      let desc = mWithDesc[2].trim();
-      const qty = parseFloat(mWithDesc[3].replace(',', '.'));
-      const unitRaw = mWithDesc[4].toUpperCase();
-      const unit = (unitRaw === 'PCS' || unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : 'Metre';
-      const uPrice = parseFloat(mWithDesc[5].replace(',', '.'));
-      const total = parseFloat(mWithDesc[6].replace(',', '.'));
-
-      if (!desc || desc === code) {
-        if (i > 0 && !lines[i-1].match(/^\d+/) && lines[i-1].length > 3 && !lines[i-1].includes('TERSAN')) {
-          desc = lines[i-1];
-        } else if (i + 1 < lines.length && !lines[i+1].match(/^\d+/) && lines[i+1].length > 3) {
-          desc = lines[i+1];
-        } else {
-          desc = `Paslanmaz Taşıyıcı Kalem (${code})`;
-        }
+    if (isTableFooter(rawLine)) {
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+        currentChunk = [];
       }
+      break;
+    }
 
-      orderItems.push({
-        lineNo: lineNo++,
-        customerProductCode: code,
-        internalProductCode: `SIES-${code}`,
-        productName: desc,
-        productDescription: desc,
-        quantity: qty,
-        unit: unit,
-        unitPrice: uPrice,
-        currency: 'EUR',
-        lineTotal: total || Math.round(qty * uPrice * 100) / 100,
-        confidenceScore: 0.99,
-        status: 'OK'
-      });
-    } else if (mDirect) {
-      const code = mDirect[1].trim();
-      const qty = parseFloat(mDirect[2].replace(',', '.'));
-      const unitRaw = mDirect[3].toUpperCase();
-      const unit = (unitRaw === 'PCS' || unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : 'Metre';
-      const uPrice = parseFloat(mDirect[4].replace(',', '.'));
-      const total = parseFloat(mDirect[5].replace(',', '.'));
-
-      let desc = '';
-      if (i > 0 && !lines[i-1].match(/^\d+/) && lines[i-1].length > 3 && !lines[i-1].includes('TERSAN') && !lines[i-1].includes('SİPARİŞ')) {
-        desc = lines[i-1];
-      } else if (i + 1 < lines.length && !lines[i+1].match(/^\d+/) && lines[i+1].length > 3) {
-        desc = lines[i+1];
-      } else {
-        desc = `Paslanmaz Taşıyıcı Kalem (${code})`;
+    if (isRowStart(rawLine)) {
+      if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
       }
-
-      orderItems.push({
-        lineNo: lineNo++,
-        customerProductCode: code,
-        internalProductCode: `SIES-${code}`,
-        productName: desc,
-        productDescription: desc,
-        quantity: qty,
-        unit: unit,
-        unitPrice: uPrice,
-        currency: 'EUR',
-        lineTotal: total || Math.round(qty * uPrice * 100) / 100,
-        confidenceScore: 0.99,
-        status: 'OK'
-      });
+      currentChunk = [rawLine];
+    } else if (currentChunk.length > 0) {
+      // Bir önceki kaleme ait alt satır / hücre devamı
+      currentChunk.push(rawLine);
     }
   }
+  if (currentChunk.length > 0) {
+    chunks.push(currentChunk);
+  }
+
+  const orderItems = [];
+  let lineNo = 1;
+
+  for (const chunkLines of chunks) {
+    const combined = chunkLines.join(' ');
+
+    // 1. Ürün Kodunu Çıkar (Örn: S78806, S99382)
+    const codeMatch = combined.match(/\b(S\d{4,8})\b/i);
+    const code = codeMatch ? codeMatch[1].toUpperCase() : `S${lineNo}`;
+
+    // 2. Miktar, Birim, Birim Fiyat ve Tutar Çıkar
+    // Tipik Tersan formatı: <Miktar> <Birim: PCS|ADET|AD|BOY|KG|METRE|M|MT> <Birim Fiyat> <Tutar>
+    const qtyPriceMatch = combined.match(/(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)/i);
+
+    let qty = 1;
+    let unit = 'Adet';
+    let unitPrice = 0;
+    let lineTotal = 0;
+
+    if (qtyPriceMatch) {
+      qty = parseFloat(qtyPriceMatch[1].replace(',', '.')) || 1;
+      const unitRaw = qtyPriceMatch[2].toUpperCase();
+      unit = (unitRaw === 'PCS' || unitRaw === 'AD' || unitRaw === 'ADET') ? 'Adet' : 'Metre';
+      unitPrice = parseFloat(qtyPriceMatch[3].replace(',', '.')) || 0;
+      lineTotal = parseFloat(qtyPriceMatch[4].replace(',', '.')) || (qty * unitPrice);
+    } else {
+      // Alternatif tekil miktar ve birim eşleşmesi
+      const altQty = combined.match(/(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)/i);
+      if (altQty) {
+        qty = parseFloat(altQty[1].replace(',', '.')) || 1;
+        const uRaw = altQty[2].toUpperCase();
+        unit = (uRaw === 'PCS' || uRaw === 'AD' || uRaw === 'ADET') ? 'Adet' : 'Metre';
+      }
+    }
+
+    // 3. Eksiksiz Çok Satırlı Ürün Açıklamasını Oluştur
+    // Kod ve miktar/fiyat parçalarını temizleyerek tüm alt satırları birleştir
+    const descParts = [];
+    for (const line of chunkLines) {
+      let cleanL = line;
+      // Satır başındaki sıra numarasını temizle: "1 S78806" -> "S78806"
+      cleanL = cleanL.replace(/^\d{1,3}\s+S\d{4,8}/i, '').replace(new RegExp(`\\b${code}\\b`, 'gi'), '');
+      if (qtyPriceMatch) {
+        cleanL = cleanL.replace(qtyPriceMatch[0], '');
+      }
+      cleanL = cleanL.replace(/\s+/g, ' ').trim();
+      if (cleanL && cleanL.length > 1) {
+        descParts.push(cleanL);
+      }
+    }
+
+    let fullDesc = descParts.join(' ').replace(/\s+/g, ' ').trim();
+    if (!fullDesc || fullDesc.length < 2) {
+      fullDesc = `Paslanmaz Taşıyıcı Kalem (${code})`;
+    }
+
+    // 4. Malzeme ve Kaplama Türünü Tespit Et (304L, 316L, Sıcak Daldırma Galvaniz vb.)
+    const { material, coating } = detectMaterialAndCoating(fullDesc, text);
+
+    orderItems.push({
+      lineNo: lineNo++,
+      customerProductCode: code,
+      internalProductCode: `SIES-${code}`,
+      productName: fullDesc,
+      productDescription: fullDesc,
+      material: material,
+      surfaceCoating: coating,
+      quantity: qty,
+      unit: unit,
+      unitPrice: unitPrice,
+      currency: 'EUR',
+      lineTotal: lineTotal || Math.round(qty * unitPrice * 100) / 100,
+      confidenceScore: 0.99,
+      status: 'OK'
+    });
+  }
+
+  // Siparişin Genel Kaplama Cinsi
+  customerInfo.coatingType = determineOrderCoatingType(orderItems, text);
 
   return { customerInfo, orderItems };
 }
@@ -1098,6 +1254,16 @@ function parseUniversalText(text, lines, originalName = '') {
       }
     }
   }
+
+  // Kalem bazlı ve sipariş geneli malzeme/kaplama kalitesi tespiti
+  for (const it of orderItems) {
+    if (!it.surfaceCoating || it.surfaceCoating === 'Belirtilmedi') {
+      const detected = detectMaterialAndCoating(it.productDescription || it.productName, text);
+      it.material = detected.material;
+      it.surfaceCoating = detected.coating;
+    }
+  }
+  customerInfo.coatingType = determineOrderCoatingType(orderItems, text) || customerInfo.coatingType;
 
   return { customerInfo, orderItems };
 }

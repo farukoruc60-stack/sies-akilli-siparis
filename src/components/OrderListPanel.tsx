@@ -181,75 +181,80 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
       <div
         key={order.id}
         style={{
-          borderRadius: '10px',
-          marginBottom: '8px',
+          borderRadius: '6px',
+          marginBottom: '5px',
           background: isSelected ? '#EFF6FF' : '#FFFFFF',
           border: isSelected ? '1.5px solid #3B82F6' : '1px solid #E2E8F0',
-          boxShadow: isSelected ? '0 2px 6px rgba(59, 130, 246, 0.12)' : '0 1px 2px rgba(0,0,0,0.03)',
+          boxShadow: isSelected ? '0 1px 3px rgba(59, 130, 246, 0.15)' : 'none',
           overflow: 'hidden',
           transition: 'all 0.15s ease'
         }}
       >
-        {/* Main Card Summary (Clickable) */}
+        {/* Main Compact Card Summary */}
         <div
           onClick={() => {
             onSelectOrder(order);
             toggleOrderExpand(order.id);
           }}
           style={{
-            padding: '10px 12px',
+            padding: '7px 9px',
             cursor: 'pointer',
             userSelect: 'none'
           }}
         >
-          {/* Satır 1: Müşteri Adı + Durum Rozeti */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
-            <span style={{ fontWeight: 700, fontSize: '13px', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '190px' }}>
-              {fixTurkishEncoding(order.customer_name)}
-            </span>
-            {getStatusBadge(order.status)}
-          </div>
-
-          {/* Satır 2: Müşteri Sipariş No (varsa) & Sistem Sipariş No */}
-          <div style={{ fontSize: '11.5px', color: '#334155', marginBottom: '5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '4px' }}>
-            <span>
-              {order.customer_order_no ? (
-                <span>Müş. Sip No: <strong style={{ color: '#0F172A' }}>{fixTurkishEncoding(order.customer_order_no)}</strong></span>
+          {/* Satır 1: Başlık (Grupta Müş. Sip No, Düz Listede Firma Adı) + Durum Rozeti */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+            <span style={{ fontWeight: 700, fontSize: '12px', color: '#0F172A', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>
+              {groupByCustomer ? (
+                order.customer_order_no ? (
+                  <span>Müş. Sip: <strong style={{ color: '#2563EB' }}>{fixTurkishEncoding(order.customer_order_no)}</strong></span>
+                ) : (
+                  <span>Sip No: <strong style={{ color: '#2563EB' }}>{order.order_no}</strong></span>
+                )
               ) : (
-                <span>Sip No: <strong style={{ color: '#3B82F6' }}>{order.order_no}</strong></span>
+                fixTurkishEncoding(order.customer_name)
               )}
             </span>
-            {order.project_no && (
-              <span style={{ fontSize: '10.5px', color: '#64748B', background: '#F1F5F9', padding: '1px 5px', borderRadius: '4px' }}>
-                Prj: {fixTurkishEncoding(order.project_no)}
-              </span>
-            )}
+            <div style={{ transform: 'scale(0.9)', transformOrigin: 'right center' }}>
+              {getStatusBadge(order.status)}
+            </div>
           </div>
 
-          {/* Satır 3: Kaplama Cinsi (varsa) */}
+          {/* Düz Listede ise Müşteri Sipariş Numarası Satırı */}
+          {!groupByCustomer && (
+            <div style={{ fontSize: '11px', color: '#475569', marginBottom: '3px' }}>
+              {order.customer_order_no ? (
+                <span>Müş. Sip: <strong style={{ color: '#0F172A' }}>{fixTurkishEncoding(order.customer_order_no)}</strong></span>
+              ) : (
+                <span>Sip: {order.order_no}</span>
+              )}
+            </div>
+          )}
+
+          {/* Satır 2: Kaplama Cinsi (Kompakt Rozet) */}
           {order.coating_type && (
-            <div style={{ fontSize: '11px', color: '#475569', marginBottom: '5px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <span style={{ color: '#94A3B8', fontSize: '10px' }}>Kaplama:</span>
-              <span style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, color: '#334155' }}>
+            <div style={{ fontSize: '10px', color: '#475569', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ color: '#94A3B8' }}>Kaplama:</span>
+              <span style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '1px 5px', borderRadius: '3px', fontWeight: 600, color: '#334155', maxWidth: '190px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {fixTurkishEncoding(order.coating_type)}
               </span>
             </div>
           )}
 
-          {/* Satır 4: Teslim Tarihi & Kaç Kalem Siparişi Var (Aşağı Tırnak Butonu) */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '11px', color: '#64748B', marginTop: '2px' }}>
+          {/* Satır 3: Teslim Tarihi + Kalem Sayısı Açılır Tırnak Butonu */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#64748B' }}>
             <span>
               Teslim: <strong style={{ color: '#1E293B' }}>{formatCardDate(order.requested_delivery_date || order.order_date)}</strong>
             </span>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               {(order.total_docs || 0) > 0 && (
-                <span title="Orijinal Belge Ekli" style={{ color: '#3B82F6', display: 'flex', alignItems: 'center' }}>
-                  <Paperclip size={12} />
+                <span title="Belge Ekli" style={{ color: '#3B82F6', display: 'flex', alignItems: 'center' }}>
+                  <Paperclip size={11} />
                 </span>
               )}
 
-              {/* Accordion Chevron Button (Aşağı / Yukarı Tırnak ile Kalem Sayısı) */}
+              {/* Kompakt Kalem Butonu */}
               <button
                 type="button"
                 onClick={(e) => {
@@ -260,62 +265,58 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '4px',
+                  gap: '3px',
                   background: isExpanded ? '#DBEAFE' : '#F1F5F9',
                   color: isExpanded ? '#1D4ED8' : '#475569',
                   border: 'none',
-                  padding: '3px 8px',
-                  borderRadius: '12px',
-                  fontSize: '11px',
+                  padding: '2px 6px',
+                  borderRadius: '10px',
+                  fontSize: '10px',
                   fontWeight: 600,
-                  cursor: 'pointer',
-                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                  cursor: 'pointer'
                 }}
               >
                 <span>{order.total_items || 0} Kalem</span>
-                {isExpanded ? <ChevronUp size={14} color="#1D4ED8" /> : <ChevronDown size={14} color="#475569" />}
+                {isExpanded ? <ChevronUp size={12} color="#1D4ED8" /> : <ChevronDown size={12} color="#475569" />}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Expanded Order Items Accordion Content (Aşağı Tırnakla Açılan Kalemler) */}
+        {/* Kompakt Sipariş Kalemleri Akordiyon İçeriği */}
         {isExpanded && (
           <div style={{
-            borderTop: '1px solid #DBEAFE',
+            borderTop: '1px solid #E2E8F0',
             background: '#F8FAFC',
-            padding: '10px'
+            padding: '6px'
           }}>
-            <div style={{ fontSize: '11.5px', fontWeight: 700, color: '#1E293B', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <PackageCheck size={14} color="#3B82F6" />
-                Sipariş Kalemleri
+            <div style={{ fontSize: '10.5px', fontWeight: 700, color: '#475569', marginBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <PackageCheck size={12} color="#3B82F6" />
+                Kalemler
               </span>
-              <span style={{ fontSize: '10.5px', color: '#64748B', fontWeight: 600, background: '#E2E8F0', padding: '1px 6px', borderRadius: '10px' }}>
+              <span style={{ fontSize: '10px', color: '#64748B' }}>
                 {items ? `${items.length} Kalem` : '...'}
               </span>
             </div>
 
             {isLoadingItems ? (
-              <div style={{ padding: '12px', textAlign: 'center', color: '#64748B', fontSize: '11.5px' }}>
-                <Clock size={14} style={{ display: 'inline', marginRight: '5px', animation: 'spin 1s linear infinite' }} />
-                Sipariş kalemleri yükleniyor...
+              <div style={{ padding: '8px', textAlign: 'center', color: '#64748B', fontSize: '10.5px' }}>
+                <Clock size={12} style={{ display: 'inline', marginRight: '4px', animation: 'spin 1s linear infinite' }} />
+                Yükleniyor...
               </div>
             ) : !items || items.length === 0 ? (
-              <div style={{ padding: '8px', textAlign: 'center', color: '#94A3B8', fontSize: '11.5px' }}>
-                Bu siparişe ait kayıtlı kalem bulunamadı.
+              <div style={{ padding: '6px', textAlign: 'center', color: '#94A3B8', fontSize: '10.5px' }}>
+                Kayıtlı kalem bulunamadı.
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxHeight: '200px', overflowY: 'auto' }}>
                 {items.map((item, index) => {
                   const lineNo = item.lineNo || item.line_no || index + 1;
                   const code = item.customerProductCode || item.customer_product_code || item.internalProductCode || item.internal_product_code;
                   const name = item.productName || item.product_name || 'Ürün Tanımsız';
                   const qty = item.quantity || 0;
                   const unit = item.unit || 'AD';
-                  const price = item.unitPrice || item.unit_price || 0;
-                  const total = item.lineTotal || item.line_total || (qty * price);
-                  const currency = item.currency || '₺';
 
                   return (
                     <div
@@ -323,61 +324,24 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                       style={{
                         background: '#FFFFFF',
                         border: '1px solid #E2E8F0',
-                        borderRadius: '8px',
-                        padding: '8px 10px',
-                        fontSize: '11.5px',
-                        boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                        borderRadius: '4px',
+                        padding: '4px 6px',
+                        fontSize: '10.5px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '6px'
                       }}
                     >
-                      {/* Item Header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-                          <span style={{ background: '#3B82F6', color: '#FFFFFF', borderRadius: '4px', padding: '1px 5px', fontSize: '10px', fontWeight: 700, flexShrink: 0 }}>
-                            #{lineNo}
-                          </span>
-                          {code && (
-                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#2563EB', fontSize: '11.5px' }}>
-                              {code}
-                            </span>
-                          )}
-                        </div>
-                        <span style={{ fontWeight: 700, color: '#0F172A', fontSize: '12px', flexShrink: 0, background: '#F1F5F9', padding: '2px 6px', borderRadius: '6px' }}>
-                          {qty.toLocaleString('tr-TR')} {unit}
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                        <span style={{ fontWeight: 700, color: '#2563EB', marginRight: '4px' }}>
+                          #{lineNo} {code ? `[${code}]` : ''}
                         </span>
+                        <span style={{ color: '#1E293B' }}>{name}</span>
                       </div>
-
-                      {/* Product Name */}
-                      <div style={{ fontWeight: 600, color: '#1E293B', marginBottom: '4px', wordBreak: 'break-word', lineHeight: '1.3' }}>
-                        {name}
-                      </div>
-
-                      {/* Technical Spec details if available */}
-                      {(item.widthMm || item.heightMm || item.lengthMm || item.thicknessMm || item.surfaceCoating || item.material) && (
-                        <div style={{ fontSize: '10.5px', color: '#64748B', marginBottom: '4px', display: 'flex', flexWrap: 'wrap', gap: '6px', background: '#F8FAFC', padding: '3px 6px', borderRadius: '4px' }}>
-                          {(item.widthMm || item.heightMm || item.lengthMm || item.thicknessMm) && (
-                            <span>
-                              Ölçü: {[
-                                item.thicknessMm ? `t:${item.thicknessMm}` : null,
-                                item.widthMm ? `w:${item.widthMm}` : null,
-                                item.heightMm ? `h:${item.heightMm}` : null,
-                                item.lengthMm ? `L:${item.lengthMm}` : null
-                              ].filter(Boolean).join('x')} mm
-                            </span>
-                          )}
-                          {item.material && <span>Malzeme: {item.material}</span>}
-                          {item.surfaceCoating && <span>Kaplama: {item.surfaceCoating}</span>}
-                        </div>
-                      )}
-
-                      {/* Price summary row */}
-                      {price > 0 && (
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#475569', paddingTop: '4px', borderTop: '1px dashed #E2E8F0', marginTop: '4px' }}>
-                          <span>Birim Fiyat: {price.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currency}</span>
-                          <span style={{ fontWeight: 700, color: '#059669' }}>
-                            Toplam: {total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currency}
-                          </span>
-                        </div>
-                      )}
+                      <span style={{ fontWeight: 700, color: '#0F172A', flexShrink: 0, fontSize: '10.5px', background: '#F1F5F9', padding: '1px 5px', borderRadius: '3px' }}>
+                        {qty.toLocaleString('tr-TR')} {unit}
+                      </span>
                     </div>
                   );
                 })}
@@ -391,6 +355,10 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
 
   return (
     <div className="order-list-panel" style={{
+      width: '320px',
+      minWidth: '300px',
+      maxWidth: '340px',
+      flexShrink: 0,
       backgroundColor: '#FFFFFF',
       borderRight: '1px solid #E2E8F0',
       display: 'flex',

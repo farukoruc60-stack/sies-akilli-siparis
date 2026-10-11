@@ -621,6 +621,100 @@ export default function App() {
         </div>
       )}
 
+      {/* Animated AI Scanning & Document Analysis Overlay */}
+      {isUploading && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.75)',
+          backdropFilter: 'blur(6px)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            padding: '2rem 2.5rem',
+            maxWidth: '460px',
+            width: '90%',
+            textAlign: 'center',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid #E2E8F0',
+            position: 'relative',
+            overflow: 'hidden'
+          }}>
+            {/* Glowing Pulse Bar */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '4px',
+              background: 'linear-gradient(90deg, #3B82F6, #8B5CF6, #3B82F6)',
+              backgroundSize: '200% 100%'
+            }} />
+
+            <div style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '50%',
+              background: '#EFF6FF',
+              color: '#3B82F6',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 1.25rem',
+              boxShadow: '0 0 0 8px rgba(59, 130, 246, 0.1)'
+            }}>
+              <UploadCloud size={32} />
+            </div>
+
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', marginBottom: '0.5rem' }}>
+              Belge Taranıyor ve Analiz Ediliyor...
+            </h3>
+
+            <p style={{ fontSize: '0.82rem', color: '#64748B', lineHeight: '1.5', marginBottom: '1.5rem' }}>
+              Yapay zeka tablodaki çok satırlı ürün açıklamalarını, miktar, birim fiyat ve kaplama türlerini ayrıştırıyor. Lütfen bekleyin.
+            </p>
+
+            {/* Scanning Progress Bar */}
+            <div style={{
+              width: '100%',
+              height: '6px',
+              background: '#F1F5F9',
+              borderRadius: '999px',
+              overflow: 'hidden',
+              position: 'relative'
+            }}>
+              <div style={{
+                width: '75%',
+                height: '100%',
+                background: 'linear-gradient(90deg, #2563EB, #7C3AED)',
+                borderRadius: '999px'
+              }} />
+            </div>
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginTop: '0.75rem',
+              fontSize: '0.75rem',
+              color: '#94A3B8'
+            }}>
+              <span>Hücre & Tablo Ayrıştırma</span>
+              <span style={{ color: '#2563EB', fontWeight: 600 }}>Aktif İşleniyor</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Verification Modal for Newly Uploaded Documents */}
       {verificationModalOpen && verificationData && (
         <VerificationModal

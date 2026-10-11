@@ -1,6 +1,190 @@
-import React, { useState } from 'react';
-import { X, CheckCircle, RefreshCw, FileText, Plus, Trash2, Copy, AlertTriangle, ShieldCheck, UploadCloud, Loader2, Paperclip } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, CheckCircle, RefreshCw, FileText, Plus, Trash2, Copy, AlertTriangle, ShieldCheck, UploadCloud, Loader2, Paperclip, ChevronDown } from 'lucide-react';
 import { ExtractedCustomerInfo, OrderItem } from '../types';
+
+const COATING_OPTIONS = [
+  '304 Kalite Paslanmaz',
+  '304L Kalite Paslanmaz',
+  '316 Kalite Paslanmaz',
+  '316L Kalite Paslanmaz',
+  '304L Paslanmaz & Sıcak Daldırma Galvaniz',
+  'Sıcak Daldırma Galvaniz (TS EN ISO 1461)',
+  'Pregalvaniz (Sendzimir - TS EN 10346)',
+  'Elektro Galvaniz',
+  'Elektrostatik Toz Boyalı (RAL 9001)',
+  'Elektrostatik Toz Boyalı (RAL 7035)',
+  'Elektrostatik Toz Boyalı (RAL 9003)',
+  'Elektrostatik Toz Boyalı (RAL 9005)',
+  'Eloksallı Alüminyum',
+  'Ham Alüminyum',
+  'DKP Sac / Ham Siyah Sac'
+];
+
+const DEFAULT_CUSTOMERS = [
+  'TERSAN TERSANECİLİK SAN. VE TİC. A.Ş.',
+  'BEŞİKTAŞ TERSANE A.Ş.',
+  'ALIA YACHTS',
+  'SİRENA MARİNE DENİZCİLİK SAN. VE TİC. A.Ş.',
+  'GETA MARİN',
+  'MARKA GRUP ELK. MÜH. PROJE TAAH. SAN.',
+  'KOLUMAN LOJİSTİK VE SANAYİ A.Ş.',
+  'MORE ELEKTRONİK'
+];
+
+// Açılır ve Listede Yoksa Serbestçe Eklenebilir Seçici Bileşeni
+interface CreatableComboboxProps {
+  value: string;
+  onChange: (val: string) => void;
+  options: string[];
+  placeholder?: string;
+  required?: boolean;
+}
+
+const CreatableCombobox: React.FC<CreatableComboboxProps> = ({
+  value,
+  onChange,
+  options,
+  placeholder,
+  required
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const safeVal = value || '';
+  const filtered = options.filter(opt =>
+    opt.toLowerCase().includes(safeVal.toLowerCase())
+  );
+
+  const isExactMatch = options.some(opt => opt.toLowerCase() === safeVal.trim().toLowerCase());
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        <input
+          type="text"
+          value={safeVal}
+          placeholder={placeholder}
+          required={required}
+          onFocus={() => setIsOpen(true)}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setIsOpen(true);
+          }}
+          style={{
+            width: '100%',
+            padding: '0.45rem 2rem 0.45rem 0.6rem',
+            background: '#FFFFFF',
+            border: '1px solid #CBD5E1',
+            borderRadius: '4px',
+            color: '#0F172A',
+            fontSize: '0.82rem',
+            fontWeight: 600
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          style={{
+            position: 'absolute',
+            right: '6px',
+            background: 'none',
+            border: 'none',
+            color: '#64748B',
+            cursor: 'pointer',
+            padding: '4px',
+            display: 'flex',
+            alignItems: 'center'
+          }}
+        >
+          <ChevronDown size={15} />
+        </button>
+      </div>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          background: '#FFFFFF',
+          border: '1px solid #CBD5E1',
+          borderRadius: '6px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+          zIndex: 1000,
+          maxHeight: '210px',
+          overflowY: 'auto',
+          marginTop: '3px'
+        }}>
+          {filtered.length > 0 ? (
+            filtered.map((opt, i) => (
+              <div
+                key={i}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onChange(opt);
+                  setIsOpen(false);
+                }}
+                style={{
+                  padding: '7px 10px',
+                  fontSize: '0.8rem',
+                  color: opt === safeVal ? '#2563EB' : '#1E293B',
+                  background: opt === safeVal ? '#EFF6FF' : 'transparent',
+                  fontWeight: opt === safeVal ? 700 : 400,
+                  cursor: 'pointer',
+                  borderBottom: '1px solid #F1F5F9'
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.background = '#F8FAFC'}
+                onMouseLeave={(e) => e.currentTarget.style.background = opt === safeVal ? '#EFF6FF' : 'transparent'}
+              >
+                {opt}
+              </div>
+            ))
+          ) : (
+            <div style={{ padding: '8px 10px', fontSize: '0.78rem', color: '#94A3B8' }}>
+              Listede bu isimde hazır seçenek bulunamadı.
+            </div>
+          )}
+
+          {/* Listede yoksa girilen yeni değeri ekle/kullan */}
+          {!isExactMatch && safeVal.trim().length > 0 && (
+            <div
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(safeVal.trim());
+                setIsOpen(false);
+              }}
+              style={{
+                padding: '8px 10px',
+                fontSize: '0.8rem',
+                color: '#047857',
+                background: '#ECFDF5',
+                cursor: 'pointer',
+                fontWeight: 600,
+                borderTop: '1px solid #A7F3D0',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <span>➕ Özel Değer Olarak Kullan:</span>
+              <strong style={{ textDecoration: 'underline' }}>{safeVal}</strong>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface VerificationModalProps {
   isOpen: boolean;
@@ -23,10 +207,34 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
 }) => {
   const [customerInfo, setCustomerInfo] = useState<ExtractedCustomerInfo>(initialCustomerInfo);
   const [orderItems, setOrderItems] = useState<OrderItem[]>(initialOrderItems);
+  const [customerOptions, setCustomerOptions] = useState<string[]>(DEFAULT_CUSTOMERS);
   const [saving, setSaving] = useState(false);
   const [uploadingExemption, setUploadingExemption] = useState(false);
   const [exemptionFile, setExemptionFile] = useState<{ id: number; name: string; size: number } | null>(null);
   const [exemptionError, setExemptionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Fetch registered customers from database to populate customer dropdown
+    const fetchCustomers = async () => {
+      try {
+        const token = localStorage.getItem('sies_auth_token') || '';
+        const res = await fetch('/api/customers', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const dbCustNames = data.map((c: any) => c.name).filter(Boolean);
+            const combined = Array.from(new Set([...DEFAULT_CUSTOMERS, ...dbCustNames]));
+            setCustomerOptions(combined);
+          }
+        }
+      } catch (e) {
+        console.warn('Customer list fetch failed:', e);
+      }
+    };
+    fetchCustomers();
+  }, []);
 
   if (!isOpen) return null;
 
@@ -191,13 +399,13 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.8rem' }}>
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 600 }}>Müşteri Adı / Ticari Unvanı *</label>
-                  <input
-                    type="text"
+                  <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 600 }}>Müşteri Adı / Ticari Unvanı * (Seçin veya Yazın)</label>
+                  <CreatableCombobox
                     value={customerInfo.name || ''}
-                    placeholder="Örn: ABC İnşaat San. ve Tic. Ltd. Şti."
-                    onChange={(e) => handleCustomerChange('name', e.target.value)}
-                    style={{ width: '100%', padding: '0.45rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A', fontWeight: 600 }}
+                    placeholder="Müşteri unvanı seçin veya yeni firma adı yazın..."
+                    options={customerOptions}
+                    onChange={(val) => handleCustomerChange('name', val)}
+                    required
                   />
                 </div>
 
@@ -224,13 +432,12 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>Kaplama Cinsi</label>
-                  <input
-                    type="text"
-                    placeholder="Örn: Sıcak Daldırma Galvaniz, Eloksal, Boyalı..."
+                  <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>Kaplama Cinsi (Seçin veya Yazın)</label>
+                  <CreatableCombobox
                     value={customerInfo.coatingType || ''}
-                    onChange={(e) => handleCustomerChange('coatingType', e.target.value)}
-                    style={{ width: '100%', padding: '0.45rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A' }}
+                    placeholder="Kaplama cinsi seçin veya serbestçe yazın..."
+                    options={COATING_OPTIONS}
+                    onChange={(val) => handleCustomerChange('coatingType', val)}
                   />
                 </div>
 
@@ -407,12 +614,15 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                               style={{ width: '90px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
                             />
                           </td>
-                          <td>
+                          <td style={{ minWidth: '280px' }}>
                             <input
                               type="text"
                               value={item.productName || ''}
-                              onChange={(e) => handleItemChange(idx, 'productName', e.target.value)}
-                              style={{ width: '220px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.2rem', borderRadius: '4px' }}
+                              onChange={(e) => {
+                                handleItemChange(idx, 'productName', e.target.value);
+                                handleItemChange(idx, 'productDescription', e.target.value);
+                              }}
+                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.25rem 0.4rem', borderRadius: '4px', fontSize: '0.8rem' }}
                             />
                           </td>
                           <td>

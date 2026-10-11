@@ -72,6 +72,20 @@ body {
   position: relative;
 }
 
+/* Panel 2: Inbox Order List (Desktop Width Controlled) */
+.order-list-panel {
+  width: 320px;
+  min-width: 300px;
+  max-width: 340px;
+  flex-shrink: 0;
+  background-color: #FFFFFF;
+  border-right: 1px solid #E2E8F0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  z-index: 20;
+}
+
 /* Panel 3: Workspace Detail Area */
 .detail-panel {
   flex: 1;
