@@ -211,6 +211,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [uploadingExemption, setUploadingExemption] = useState(false);
   const [exemptionFile, setExemptionFile] = useState<{ id: number; name: string; size: number } | null>(null);
+  const [exemptionError, setExemptionError] = useState<string | null>(null);
   const [splitRatio, setSplitRatio] = useState<'50-50' | '60-40' | '40-60'>('50-50');
   const [mobileTab, setMobileTab] = useState<'items' | 'pdf'>('items');
   const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== 'undefined' && window.innerWidth <= 768);
