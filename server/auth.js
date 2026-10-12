@@ -5,29 +5,30 @@ import { query } from './db/database.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'sies_akilli_siparis_super_secret_jwt_key_2026';
 
 export async function seedInitialUsers() {
-  const existingUsers = await query('SELECT COUNT(*) as count FROM users');
-  const count = parseInt(existingUsers.rows[0]?.count || existingUsers.rows[0]?.['COUNT(*)'] || 0, 10);
+  const defaultUsers = [
+    { email: 'admin@sies.com.tr', name: 'SİES Sistem Yöneticisi', role: 'ADMIN', pass: 'Admin2026!' },
+    { email: 'hsert@sies.com.tr', name: 'Hasan SERT (Satış Uzmanı)', role: 'STANDARD', pass: 'Sies1234!' },
+    { email: 'isert@sies.com.tr', name: 'İbrahim SERT (Planlama Sorumlusu)', role: 'STANDARD', pass: 'Sies1234!' },
+    { email: 'faruk@sies.com.tr', name: 'Faruk ORUÇ (Kalite Müdürü)', role: 'ADMIN', pass: 'Admin2026!' },
+    { email: 'ibrahim@sies.com.tr', name: 'İbrahim Aydın (Sevkiyat Sorumlusu)', role: 'STANDARD', pass: 'Sies1234!' },
+    { email: 'muhasebe@sies.com.tr', name: 'Günay BAY (Muhasebe)', role: 'STANDARD', pass: 'Sies1234!' }
+  ];
 
-  if (count === 0) {
-    console.log('Varsayılan 6 kullanıcı hesabı veritabanına ekleniyor...');
-
-    const defaultUsers = [
-      { email: 'admin@sies.com.tr', name: 'SİES Sistem Yöneticisi', role: 'ADMIN', pass: 'Admin2026!' },
-      { email: 'sales@sies.com.tr', name: 'Ahmet Yılmaz (Satış Uzmanı)', role: 'STANDARD', pass: 'Sies1234!' },
-      { email: 'planning@sies.com.tr', name: 'Zeynep Kaya (Planlama Sorumlusu)', role: 'STANDARD', pass: 'Sies1234!' },
-      { email: 'quality@sies.com.tr', name: 'Hakan Şen (Kalite Müdürü)', role: 'STANDARD', pass: 'Sies1234!' },
-      { email: 'production@sies.com.tr', name: 'Mehmet Demir (Üretim Şefi)', role: 'STANDARD', pass: 'Sies1234!' },
-      { email: 'logistics@sies.com.tr', name: 'Serkan Can (Sevkiyat Sorumlusu)', role: 'STANDARD', pass: 'Sies1234!' }
-    ];
-
-    for (const u of defaultUsers) {
+  for (const u of defaultUsers) {
+    const existing = await query('SELECT id FROM users WHERE email = ?', [u.email]);
+    if (!existing.rows || existing.rows.length === 0) {
       const hash = await bcrypt.hash(u.pass, 10);
       await query(
         'INSERT INTO users (email, password_hash, full_name, role, is_active) VALUES (?, ?, ?, ?, true)',
         [u.email, hash, u.name, u.role]
       );
+      console.log(`✓ Sistem kullanıcısı eklendi: ${u.name} (${u.email})`);
+    } else {
+      await query(
+        'UPDATE users SET full_name = ?, role = ? WHERE email = ?',
+        [u.name, u.role, u.email]
+      );
     }
-    console.log('6 adet kullanıcı hesabı (1 Yönetici + 5 Personel) başarıyla oluşturuldu.');
   }
 }
 

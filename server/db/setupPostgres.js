@@ -49,28 +49,33 @@ async function setupPostgres() {
     const usersCountRes = await pool.query('SELECT COUNT(*) FROM users');
     const userCount = parseInt(usersCountRes.rows[0].count, 10);
 
-    if (userCount === 0) {
-      console.log('✓ Varsayılan 6 Kullanıcı Hesabı Oluşturuluyor...');
-      const defaultUsers = [
-        { email: 'admin@sies.com.tr', name: 'SİES Sistem Yöneticisi', role: 'ADMIN', pass: 'Admin2026!' },
-        { email: 'sales@sies.com.tr', name: 'Ahmet Yılmaz (Satış Uzmanı)', role: 'STANDARD', pass: 'Sies1234!' },
-        { email: 'planning@sies.com.tr', name: 'Zeynep Kaya (Planlama Sorumlusu)', role: 'STANDARD', pass: 'Sies1234!' },
-        { email: 'quality@sies.com.tr', name: 'Hakan Şen (Kalite Müdürü)', role: 'STANDARD', pass: 'Sies1234!' },
-        { email: 'production@sies.com.tr', name: 'Mehmet Demir (Üretim Şefi)', role: 'STANDARD', pass: 'Sies1234!' },
-        { email: 'logistics@sies.com.tr', name: 'Serkan Can (Sevkiyat Sorumlusu)', role: 'STANDARD', pass: 'Sies1234!' }
-      ];
+    console.log('✓ Sistem Kullanıcı Hesapları Kontrol Ediliyor...');
+    const defaultUsers = [
+      { email: 'admin@sies.com.tr', name: 'SİES Sistem Yöneticisi', role: 'ADMIN', pass: 'Admin2026!' },
+      { email: 'hsert@sies.com.tr', name: 'Hasan SERT (Satış Uzmanı)', role: 'STANDARD', pass: 'Sies1234!' },
+      { email: 'isert@sies.com.tr', name: 'İbrahim SERT (Planlama Sorumlusu)', role: 'STANDARD', pass: 'Sies1234!' },
+      { email: 'faruk@sies.com.tr', name: 'Faruk ORUÇ (Kalite Müdürü)', role: 'ADMIN', pass: 'Admin2026!' },
+      { email: 'ibrahim@sies.com.tr', name: 'İbrahim Aydın (Sevkiyat Sorumlusu)', role: 'STANDARD', pass: 'Sies1234!' },
+      { email: 'muhasebe@sies.com.tr', name: 'Günay BAY (Muhasebe)', role: 'STANDARD', pass: 'Sies1234!' }
+    ];
 
-      for (const u of defaultUsers) {
+    for (const u of defaultUsers) {
+      const existing = await pool.query('SELECT id FROM users WHERE email = $1', [u.email]);
+      if (existing.rows.length === 0) {
         const hash = await bcrypt.hash(u.pass, 10);
         await pool.query(
           'INSERT INTO users (email, password_hash, full_name, role, is_active) VALUES ($1, $2, $3, $4, TRUE)',
           [u.email, hash, u.name, u.role]
         );
+        console.log(`✓ Kullanıcı oluşturuldu: ${u.name} (${u.email})`);
+      } else {
+        await pool.query(
+          'UPDATE users SET full_name = $1, role = $2 WHERE email = $3',
+          [u.name, u.role, u.email]
+        );
       }
-      console.log('✓ 6 Adet Kullanıcı Hesabı Canlı PostgreSQL Veritabanına Oluşturuldu!');
-    } else {
-      console.log(`✓ Veritabanında zaten ${userCount} adet kayıtlı kullanıcı mevcut.`);
     }
+    console.log('✓ 6 Adet Kullanıcı Hesabı Canlı PostgreSQL Veritabanında Doğrulandı!');
 
     console.log('\n=======================================================');
     console.log(' POSTGRESQL KURULUMU VE İLK VERİLER BAŞARIYLA TAMAMLANDI!');
