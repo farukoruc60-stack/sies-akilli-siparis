@@ -552,6 +552,64 @@ ${itemsSummary}${moreText}
     }
   };
 
+  // Dedicated Tab 4 Production & Coating status updater
+  const handleUpdateItemProductionStatus = async (itemIds: number[], newStatus: string) => {
+    if (!itemIds || itemIds.length === 0) return;
+    setBatchUpdating(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/items/status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          itemIds,
+          newStatus,
+          notes: `İmalat & Kaplama panelinden kalem durumu "${newStatus}" yapıldı.`
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Kalem durumu güncellenemedi');
+      onRefresh();
+    } catch (err: any) {
+      alert(`Hata: ${err.message}`);
+    } finally {
+      setBatchUpdating(false);
+    }
+  };
+
+  // Generate production work order for all items
+  const handleGenerateFullProductionForm = async () => {
+    const allIds = items.map((it, idx) => it.id || idx + 1);
+    if (allIds.length === 0) return;
+    setSendProdSubmitting(true);
+    try {
+      const res = await fetch(`/api/orders/${order!.id}/production-form`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          itemIds: allIds,
+          notes: `Tüm sipariş kalemleri için Resmi Üretim İş Emri Formu oluşturuldu.`
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Üretim formu oluşturulamadı');
+
+      setCreatedDocId(data.documentId);
+      setCreatedDocName(data.originalName);
+      setProductionModalOpen(true);
+      onRefresh();
+    } catch (err: any) {
+      alert(`Hata: ${err.message}`);
+    } finally {
+      setSendProdSubmitting(false);
+    }
+  };
+
   const handleStatusStep = async (newStatus: string) => {
     const note = prompt(`Sipariş genel durumunu "${newStatus}" olarak güncellemek istediğinize emin misiniz? Açıklama ekleyebilirsiniz:`, statusNote || 'Durum ilerletildi');
     if (note !== null) {
@@ -650,6 +708,10 @@ ${itemsSummary}${moreText}
         return <span className="badge badge-production" style={{ fontSize: '0.7rem' }}>ÜRETİMDE</span>;
       case 'COATING':
         return <span className="badge badge-pending" style={{ fontSize: '0.7rem' }}>KAPLAMADA</span>;
+      case 'PAINTING':
+        return <span className="badge" style={{ fontSize: '0.7rem', background: '#FCE7F3', color: '#BE185D', border: '1px solid #FBCFE8' }}>BOYADA</span>;
+      case 'PACKAGING':
+        return <span className="badge" style={{ fontSize: '0.7rem', background: '#E0F2FE', color: '#0369A1', border: '1px solid #BAE6FD' }}>PAKETLEMEDE</span>;
       case 'SHIPPING':
       case 'PARTIALLY_SHIPPED':
         return <span className="badge badge-new" style={{ fontSize: '0.7rem', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>PARÇA PARÇA SEVK EDİLDİ</span>;
@@ -1744,21 +1806,550 @@ ${itemsSummary}${moreText}
           </div>
         )}
 
-        {/* TAB 4: PRODUCTION & COATING */}
-        {activeTab === 'production' && (
-          <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: '#fff' }}>Üretim ve Kaplama İş Emri Takibi</h3>
-            <div style={{ background: 'var(--bg-card)', padding: '1.5rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem' }}>
-                <Factory size={28} color="var(--primary)" />
-                <div>
-                  <h4 style={{ color: '#fff' }}>Sac İşleme & Roll-Forming Hattı</h4>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>SİES TS 822 Standartlarında İmalat Takibi</p>
+        {/* TAB 4: PRODUCTION & COATING (COMPREHENSIVE WORKSHOP CONTROL CENTER) */}
+        {activeTab === 'production' && (() => {
+          const prodItems = items || [];
+          const prodTotalQty = prodItems.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
+          const inProdCount = prodItems.filter(it => it.status === 'IN_PRODUCTION').length;
+          const coatingCount = prodItems.filter(it => it.status === 'COATING' || it.status === 'PAINTING').length;
+          const packagingCount = prodItems.filter(it => it.status === 'PACKAGING').length;
+          const completedCount = prodItems.filter(it => it.status === 'COMPLETED' || it.status === 'SHIPPED' || it.status === 'PARTIALLY_SHIPPED').length;
+
+          const coatingName = fixTurkishEncoding(order.coating_type) || 'Belirtilmedi';
+          const lowerCoating = coatingName.toLowerCase();
+          const isStainless = lowerCoating.includes('paslanmaz') || lowerCoating.includes('304') || lowerCoating.includes('316');
+          const isHotDip = lowerCoating.includes('sıcak daldırma') || lowerCoating.includes('sicak daldirma') || lowerCoating.includes('galvaniz');
+          const isElectrostatic = lowerCoating.includes('boya') || lowerCoating.includes('toz') || lowerCoating.includes('ral') || lowerCoating.includes('elektrostatik');
+          const isPregalv = lowerCoating.includes('pregalvaniz') || lowerCoating.includes('pre-galvaniz');
+
+          const existingProdDoc = (documents || []).find(d => 
+            d.file_type === 'PRODUCTION_FORM' || 
+            (d as any).document_type === 'PRODUCTION_FORM' ||
+            (d.original_name && (d.original_name.toLowerCase().includes('üretim') || d.original_name.toLowerCase().includes('uretim')))
+          );
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              {/* 1. Header & Quick Production Actions */}
+              <div style={{
+                background: '#FFFFFF',
+                border: '1px solid #E2E8F0',
+                borderRadius: '12px',
+                padding: isMobile ? '0.85rem' : '1.25rem',
+                display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                justifyContent: 'space-between',
+                alignItems: isMobile ? 'stretch' : 'center',
+                gap: '1rem',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                  <div style={{
+                    width: '46px',
+                    height: '46px',
+                    borderRadius: '10px',
+                    background: '#EFF6FF',
+                    border: '1px solid #BFDBFE',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0
+                  }}>
+                    <Factory size={24} color="#2563EB" />
+                  </div>
+                  <div>
+                    <h3 style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      Üretim & Yüzey Kaplama Kontrol Paneli
+                    </h3>
+                    <p style={{ fontSize: '0.8rem', color: '#64748B', margin: '3px 0 0 0' }}>
+                      SİES TS EN 61537 Kablo Taşıma ve TS EN ISO 1461 Galvanizleme Standartlarında İmalat Süreci
+                    </p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
+                  {existingProdDoc ? (
+                    <a
+                      href={`/api/documents/${existingProdDoc.id}/pdf?token=${token}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{
+                        flex: isMobile ? 1 : 'initial',
+                        fontSize: '0.82rem',
+                        padding: '0.5rem 0.85rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        textDecoration: 'none',
+                        color: '#1D4ED8',
+                        background: '#EFF6FF',
+                        border: '1px solid #93C5FD',
+                        fontWeight: 600
+                      }}
+                      title="Mevcut Resmi Üretim İş Emri Formunu Görüntüle"
+                    >
+                      <FileText size={15} color="#2563EB" />
+                      <span>İş Emri Formu (PDF)</span>
+                    </a>
+                  ) : null}
+
+                  <button
+                    onClick={handleGenerateFullProductionForm}
+                    disabled={sendProdSubmitting || prodItems.length === 0}
+                    className="btn btn-primary"
+                    style={{
+                      flex: isMobile ? 2 : 'initial',
+                      fontSize: '0.82rem',
+                      padding: '0.5rem 1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: '#2563EB'
+                    }}
+                  >
+                    <Printer size={15} />
+                    <span>{sendProdSubmitting ? 'Hazırlanıyor...' : existingProdDoc ? 'Formu Yeniden Bas' : '⚡ Resmi İş Emri Oluştur & Bas'}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setSelectedItemIds(prodItems.map((it, idx) => it.id || idx + 1));
+                      handleGenerateShippingLabels('100x100');
+                    }}
+                    disabled={labelSubmitting || prodItems.length === 0}
+                    className="btn btn-secondary"
+                    style={{
+                      flex: isMobile ? 1 : 'initial',
+                      fontSize: '0.82rem',
+                      padding: '0.5rem 0.85rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: '#FAF5FF',
+                      border: '1px solid #E9D5FF',
+                      color: '#7E22CE',
+                      fontWeight: 600
+                    }}
+                    title="Bu siparişin tüm kalemleri için 100x100mm etiket bas"
+                  >
+                    <Tag size={15} color="#9333EA" />
+                    <span>Palet Etiketi Bas</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* 2. Dörtlü KPI Metrikleri */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(220px, 1fr))',
+                gap: isMobile ? '0.5rem' : '1rem'
+              }}>
+                {/* KPI 1: Kaplama Cinsi & Teknik Şartname */}
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    KAPLAMA & YÜZEY İŞLEMİ
+                  </span>
+                  <div style={{ fontSize: isMobile ? '0.95rem' : '1.1rem', fontWeight: 800, color: '#0284C7', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {coatingName}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: 'auto' }}>
+                    {isStainless ? '🛡️ TS EN 10088 Pasivasyon & Asitleme' :
+                     isHotDip ? '🔥 TS EN ISO 1461 (450°C Çinko Min 55µm)' :
+                     isElectrostatic ? '🎨 200°C Fırın Boya / RAL Rengi' :
+                     isPregalv ? '⚡ TS EN 10346 Sürekli Galvaniz' :
+                     'Standart TS EN 61537 Kablo Taşıma'}
+                  </div>
+                </div>
+
+                {/* KPI 2: Toplam İmalat Kalemi & Miktarı */}
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    TOPLAM İMALAT HACMİ
+                  </span>
+                  <div style={{ fontSize: isMobile ? '0.95rem' : '1.1rem', fontWeight: 800, color: '#10B981' }}>
+                    {prodItems.length} Kalem <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#64748B' }}>({prodTotalQty.toLocaleString('tr-TR')} Adet/Boy)</span>
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: 'auto', display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    <span>Hazır: <strong style={{ color: '#059669' }}>{completedCount}</strong></span> •
+                    <span>İmalatta: <strong style={{ color: '#D97706' }}>{inProdCount}</strong></span> •
+                    <span>Kaplamada: <strong style={{ color: '#7C3AED' }}>{coatingCount}</strong></span>
+                  </div>
+                </div>
+
+                {/* KPI 3: Genel Sipariş Durumu */}
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    GÜNCEL SİPARİŞ AŞAMASI
+                  </span>
+                  <div style={{ fontSize: isMobile ? '0.95rem' : '1.1rem', fontWeight: 800, color: getStatusColor(order.status) }}>
+                    {getStatusTurkishLabel(order.status)}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: '#64748B', marginTop: 'auto' }}>
+                    Ref: <strong>{order.customer_order_no || order.order_no}</strong>
+                  </div>
+                </div>
+
+                {/* KPI 4: İmalat Teslim Tarihi & Termin */}
+                <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    İSTENEN TESLİM TERMİNİ
+                  </span>
+                  <div style={{ fontSize: isMobile ? '0.95rem' : '1.1rem', fontWeight: 800, color: '#334155' }}>
+                    {formatDate(order.requested_delivery_date || order.order_date)}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', marginTop: 'auto' }}>
+                    {(() => {
+                      const badge = getDeliveryStatusBadge(order.requested_delivery_date);
+                      return (
+                        <span style={{ color: badge.color, fontWeight: 700, background: badge.bg, border: `1px solid ${badge.border}`, padding: '1px 6px', borderRadius: '4px' }}>
+                          {badge.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. 4 Aşamalı İmalat Süreç Hattı (Visual Pipeline) */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1E293B', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Activity size={16} color="var(--primary)" /> 4 Aşamalı Fabrika İmalat Hattı
+                  </span>
+                  <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                    Toplu butonlarla tüm kalemleri bir sonraki aşamaya aktarabilirsiniz
+                  </span>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+                  gap: isMobile ? '0.5rem' : '0.75rem'
+                }}>
+                  {/* İstasyon 1: Kesim-Delme */}
+                  <div style={{
+                    background: inProdCount > 0 ? '#EFF6FF' : '#F8FAFC',
+                    border: inProdCount > 0 ? '1.5px solid #3B82F6' : '1px solid #E2E8F0',
+                    borderRadius: '8px',
+                    padding: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1E40AF' }}>1. MEKANİK İMALAT</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563EB', background: '#DBEAFE', padding: '1px 6px', borderRadius: '10px' }}>{inProdCount} Kalem</span>
+                    </div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0F172A' }}>Lazer / Punch & Büküm</div>
+                    <p style={{ fontSize: '0.68rem', color: '#64748B', margin: '2px 0 6px 0', lineHeight: 1.3 }}>
+                      Roll-forming, abkant pres büküm ve delik delme istasyonu
+                    </p>
+                    <button
+                      onClick={() => handleUpdateItemProductionStatus(prodItems.map((_, idx) => prodItems[idx].id || idx + 1), 'IN_PRODUCTION')}
+                      disabled={batchUpdating}
+                      style={{
+                        marginTop: 'auto',
+                        background: '#3B82F6',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ⚙️ Tümünü Üretime Al
+                    </button>
+                  </div>
+
+                  {/* İstasyon 2: Kaplama / Yüzey İşlemi */}
+                  <div style={{
+                    background: coatingCount > 0 ? '#FAF5FF' : '#F8FAFC',
+                    border: coatingCount > 0 ? '1.5px solid #8B5CF6' : '1px solid #E2E8F0',
+                    borderRadius: '8px',
+                    padding: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#6B21A8' }}>2. YÜZEY KAPLAMA</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#7E22CE', background: '#F3E8FF', padding: '1px 6px', borderRadius: '10px' }}>{coatingCount} Kalem</span>
+                    </div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0F172A' }}>Galvaniz / Boya / Asit</div>
+                    <p style={{ fontSize: '0.68rem', color: '#64748B', margin: '2px 0 6px 0', lineHeight: 1.3 }}>
+                      {coatingName} yüzey işlem tesisi ve fırınlama banyosu
+                    </p>
+                    <button
+                      onClick={() => handleUpdateItemProductionStatus(prodItems.map((_, idx) => prodItems[idx].id || idx + 1), 'COATING')}
+                      disabled={batchUpdating}
+                      style={{
+                        marginTop: 'auto',
+                        background: '#8B5CF6',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      🧪 Tümünü Kaplamaya Sevk
+                    </button>
+                  </div>
+
+                  {/* İstasyon 3: Paketleme & Etiketleme */}
+                  <div style={{
+                    background: packagingCount > 0 ? '#F0FDF4' : '#F8FAFC',
+                    border: packagingCount > 0 ? '1.5px solid #10B981' : '1px solid #E2E8F0',
+                    borderRadius: '8px',
+                    padding: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#065F46' }}>3. KALİTE & PAKET</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#047857', background: '#DCFCE7', padding: '1px 6px', borderRadius: '10px' }}>{packagingCount} Kalem</span>
+                    </div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0F172A' }}>Test, Paletleme & Çember</div>
+                    <p style={{ fontSize: '0.68rem', color: '#64748B', margin: '2px 0 6px 0', lineHeight: 1.3 }}>
+                      Kalite kontrol ölçümü, 100x100mm etiket basımı ve paletleme
+                    </p>
+                    <button
+                      onClick={() => handleUpdateItemProductionStatus(prodItems.map((_, idx) => prodItems[idx].id || idx + 1), 'PACKAGING')}
+                      disabled={batchUpdating}
+                      style={{
+                        marginTop: 'auto',
+                        background: '#059669',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      📦 Tümünü Paketlemeye Al
+                    </button>
+                  </div>
+
+                  {/* İstasyon 4: Tamamlandı / Sevkiyata Hazır */}
+                  <div style={{
+                    background: completedCount > 0 ? '#ECFDF5' : '#F8FAFC',
+                    border: completedCount > 0 ? '1.5px solid #059669' : '1px solid #E2E8F0',
+                    borderRadius: '8px',
+                    padding: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#065F46' }}>4. İMALAT TAMAMLANDI</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#059669', background: '#D1FAE5', padding: '1px 6px', borderRadius: '10px' }}>{completedCount} Kalem</span>
+                    </div>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0F172A' }}>Sevkiyata Hazır Ambar</div>
+                    <p style={{ fontSize: '0.68rem', color: '#64748B', margin: '2px 0 6px 0', lineHeight: 1.3 }}>
+                      İmalatı eksiksiz bitmiş, irsaliye kesimine hazır mamuller
+                    </p>
+                    <button
+                      onClick={() => handleUpdateItemProductionStatus(prodItems.map((_, idx) => prodItems[idx].id || idx + 1), 'COMPLETED')}
+                      disabled={batchUpdating}
+                      style={{
+                        marginTop: 'auto',
+                        background: '#10B981',
+                        color: '#FFFFFF',
+                        border: 'none',
+                        borderRadius: '6px',
+                        padding: '4px 8px',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ✓ Tümünü Tamamlandı Yap
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Kalem Bazlı İmalat & Kaplama Tablosu */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Layers size={16} color="var(--primary)" /> Sipariş İmalat ve Kaplama Kalemleri ({prodItems.length} Kalem)
+                    </h4>
+                    <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      Her bir kalemin üretim istasyonunu bağımsız olarak güncelleyebilir veya toplu işlem yapabilirsiniz.
+                    </span>
+                  </div>
+
+                  {selectedItemIds.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563EB', marginRight: '4px' }}>
+                        {selectedItemIds.length} Seçili:
+                      </span>
+                      <button onClick={() => handleUpdateItemProductionStatus(selectedItemIds, 'IN_PRODUCTION')} className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                        ⚙️ Üretime Al
+                      </button>
+                      <button onClick={() => handleUpdateItemProductionStatus(selectedItemIds, 'COATING')} className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', background: '#FAF5FF', color: '#7E22CE', border: '1px solid #E9D5FF' }}>
+                        🧪 Kaplamaya Al
+                      </button>
+                      <button onClick={() => handleUpdateItemProductionStatus(selectedItemIds, 'PACKAGING')} className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', background: '#F0FDF4', color: '#047857', border: '1px solid #BBF7D0' }}>
+                        📦 Paketlemeye Al
+                      </button>
+                      <button onClick={() => handleUpdateItemProductionStatus(selectedItemIds, 'COMPLETED')} className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem', background: '#ECFDF5', color: '#059669', border: '1px solid #A7F3D0' }}>
+                        ✓ Tamamlandı
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="table-container">
+                  <table className="custom-table" style={{ fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '32px' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedItemIds.length === prodItems.length && prodItems.length > 0}
+                            onChange={handleToggleSelectAll}
+                            title="Tümünü Seç / Seçimi Kaldır"
+                          />
+                        </th>
+                        <th style={{ width: '35px' }}>#</th>
+                        <th style={{ width: '130px' }}>Ürün Kodu</th>
+                        <th>Ürün Açıklaması & Teknik Detay</th>
+                        <th style={{ width: '110px' }}>İmalat Miktarı</th>
+                        <th style={{ width: '130px' }}>Kaplama / Malzeme</th>
+                        <th style={{ width: '130px' }}>İmalat İstasyonu</th>
+                        <th style={{ width: '170px', textAlign: 'center' }}>İstasyon Değiştir</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {prodItems.map((item, idx) => {
+                        const itemId = item.id || idx + 1;
+                        const isSelected = selectedItemIds.includes(itemId);
+                        const qty = parseFloat(String(item.quantity)) || 0;
+                        const unit = item.unit || 'Adet';
+                        const code = item.customerProductCode || item.customer_product_code || '-';
+                        const name = item.productName || item.product_name || 'Tanımsız Ürün';
+                        const mat = item.material || (isStainless ? 'Paslanmaz Çelik' : isHotDip ? 'Galvanizli Çelik' : 'Çelik');
+                        const coating = item.surfaceCoating || coatingName;
+
+                        return (
+                          <tr key={itemId} style={{ background: isSelected ? '#EFF6FF' : undefined }}>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectItem(itemId)}
+                              />
+                            </td>
+                            <td style={{ color: '#94A3B8', fontWeight: 600 }}>{item.lineNo || item.line_no || idx + 1}</td>
+                            <td>
+                              <strong style={{ color: '#0284C7', fontSize: '0.82rem' }}>{code}</strong>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: 600, color: '#1E293B', fontSize: '0.82rem' }}>{name}</div>
+                              <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
+                                {coating && coating !== 'Belirtilmedi' && (
+                                  <span style={{ background: '#EFF6FF', color: '#1D4ED8', padding: '1px 5px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: 600 }}>
+                                    {coating}
+                                  </span>
+                                )}
+                                {mat && mat !== 'Çelik' && (
+                                  <span style={{ background: '#F1F5F9', color: '#475569', padding: '1px 5px', borderRadius: '3px', fontSize: '0.68rem' }}>
+                                    {mat}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td>
+                              <strong style={{ color: '#0F172A', fontSize: '0.85rem' }}>{qty.toLocaleString('tr-TR')}</strong>
+                              <span style={{ color: '#64748B', fontSize: '0.75rem', marginLeft: '3px' }}>{unit}</span>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '0.78rem', color: '#334155', fontWeight: 600 }}>
+                                {coating || mat}
+                              </span>
+                            </td>
+                            <td>
+                              {getItemStatusBadge(item.status)}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '3px', justifyContent: 'center' }}>
+                                <button
+                                  onClick={() => handleUpdateItemProductionStatus([itemId], 'IN_PRODUCTION')}
+                                  title="Sac İşleme / Büküme Al"
+                                  style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1D4ED8', borderRadius: '4px', padding: '2px 5px', fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  ⚙️ Büküm
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateItemProductionStatus([itemId], 'COATING')}
+                                  title="Kaplama / Boyaya Sevk Et"
+                                  style={{ background: '#FAF5FF', border: '1px solid #E9D5FF', color: '#7E22CE', borderRadius: '4px', padding: '2px 5px', fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  🧪 Kaplama
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateItemProductionStatus([itemId], 'PACKAGING')}
+                                  title="Paketleme & Etiketlemeye Al"
+                                  style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#047857', borderRadius: '4px', padding: '2px 5px', fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  📦 Paket
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateItemProductionStatus([itemId], 'COMPLETED')}
+                                  title="İmalatı Tamamla"
+                                  style={{ background: '#ECFDF5', border: '1px solid #A7F3D0', color: '#059669', borderRadius: '4px', padding: '2px 5px', fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer' }}
+                                >
+                                  ✓ Hazır
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* 5. Kalite Güvence & Şartname Kartı */}
+              <div style={{
+                background: '#F8FAFC',
+                border: '1px solid #CBD5E1',
+                borderRadius: '10px',
+                padding: '0.85rem 1.25rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '0.75rem',
+                fontSize: '0.78rem',
+                color: '#475569'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck size={20} color="#059669" />
+                  <div>
+                    <span style={{ fontWeight: 700, color: '#0F172A' }}>SİES İmalat Kalite ve Standart Güvencesi:</span>
+                    <span style={{ marginLeft: '6px' }}>Kablo Kanalı: TS EN 61537 • Sıcak Daldırma: TS EN ISO 1461 • Paslanmaz: AISI 304/316</span>
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                  Onaylayan: <strong style={{ color: '#0F172A' }}>Faruk ORUÇ (Kalite Müdürü)</strong>
                 </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* TAB 5: SHIPPING LOG & DISPATCH HISTORY (GROUPED BY WAYBILL) */}
         {activeTab === 'shipping' && (
