@@ -211,8 +211,15 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [uploadingExemption, setUploadingExemption] = useState(false);
   const [exemptionFile, setExemptionFile] = useState<{ id: number; name: string; size: number } | null>(null);
-  const [exemptionError, setExemptionError] = useState<string | null>(null);
   const [splitRatio, setSplitRatio] = useState<'50-50' | '60-40' | '40-60'>('50-50');
+  const [mobileTab, setMobileTab] = useState<'items' | 'pdf'>('items');
+  const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== 'undefined' && window.innerWidth <= 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     // Fetch registered customers from database to populate customer dropdown
@@ -362,111 +369,170 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
       <div className="modal-content-fullscreen">
         {/* Modal Header */}
         <div style={{
-          padding: '0.85rem 1.5rem',
+          padding: isMobile ? '0.65rem 0.85rem' : '0.85rem 1.5rem',
           background: '#060910',
           borderBottom: '1px solid var(--border-color)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          flexShrink: 0
+          flexShrink: 0,
+          gap: '8px'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
             <div style={{
               background: 'rgba(59, 130, 246, 0.15)',
               padding: '6px',
               borderRadius: '8px',
               display: 'flex',
-              alignItems: 'center'
+              alignItems: 'center',
+              flexShrink: 0
             }}>
-              <ShieldCheck size={22} color="var(--primary)" />
+              <ShieldCheck size={isMobile ? 18 : 22} color="var(--primary)" />
             </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#fff', margin: 0 }}>
-                  Otomatik Belge Okuma Kontrol ve Onay Ekranı
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: isMobile ? '0.92rem' : '1.15rem', fontWeight: 700, color: '#fff', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {isMobile ? 'Belge Kontrol & Onay' : 'Otomatik Belge Okuma Kontrol ve Onay Ekranı'}
                 </h2>
                 <span style={{
                   background: '#1E293B',
                   color: '#93C5FD',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  fontSize: '0.72rem',
+                  padding: '1px 6px',
+                  borderRadius: '10px',
+                  fontSize: '0.7rem',
                   fontWeight: 600,
-                  border: '1px solid #334155'
+                  border: '1px solid #334155',
+                  whiteSpace: 'nowrap'
                 }}>
                   {orderItems.length} Kalem • {totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {orderCurrency}
                 </span>
               </div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Çıkarılan verileri sol tarafta inceleyip düzenleyin, sağ tarafta orijinal PDF'i kontrol edin.
-              </span>
+              {!isMobile && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Çıkarılan verileri sol tarafta inceleyip düzenleyin, sağ tarafta orijinal PDF'i kontrol edin.
+                </span>
+              )}
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {/* Split Ratio Controls */}
-            <div style={{
-              display: 'flex',
-              background: '#1E293B',
-              borderRadius: '6px',
-              padding: '2px',
-              border: '1px solid #334155'
-            }}>
-              <button
-                type="button"
-                onClick={() => setSplitRatio('60-40')}
-                title="Tablo Geniş (%60 Sol - %40 Sağ)"
-                style={{
-                  padding: '0.25rem 0.65rem',
-                  borderRadius: '4px',
-                  border: 'none',
-                  background: splitRatio === '60-40' ? 'var(--primary)' : 'transparent',
-                  color: splitRatio === '60-40' ? '#fff' : '#94A3B8',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                Tablo %60
-              </button>
-              <button
-                type="button"
-                onClick={() => setSplitRatio('50-50')}
-                title="Eşit Görünüm (%50 Sol - %50 Sağ)"
-                style={{
-                  padding: '0.25rem 0.65rem',
-                  borderRadius: '4px',
-                  border: 'none',
-                  background: splitRatio === '50-50' ? 'var(--primary)' : 'transparent',
-                  color: splitRatio === '50-50' ? '#fff' : '#94A3B8',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                50 / 50
-              </button>
-              <button
-                type="button"
-                onClick={() => setSplitRatio('40-60')}
-                title="PDF Geniş (%40 Sol - %60 Sağ)"
-                style={{
-                  padding: '0.25rem 0.65rem',
-                  borderRadius: '4px',
-                  border: 'none',
-                  background: splitRatio === '40-60' ? 'var(--primary)' : 'transparent',
-                  color: splitRatio === '40-60' ? '#fff' : '#94A3B8',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                PDF %60
-              </button>
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            {/* Desktop Split Ratio Controls */}
+            {!isMobile && (
+              <div style={{
+                display: 'flex',
+                background: '#1E293B',
+                borderRadius: '6px',
+                padding: '2px',
+                border: '1px solid #334155'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setSplitRatio('60-40')}
+                  title="Tablo Geniş (%60 Sol - %40 Sağ)"
+                  style={{
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: splitRatio === '60-40' ? 'var(--primary)' : 'transparent',
+                    color: splitRatio === '60-40' ? '#fff' : '#94A3B8',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  Tablo %60
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitRatio('50-50')}
+                  title="Eşit Görünüm (%50 Sol - %50 Sağ)"
+                  style={{
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: splitRatio === '50-50' ? 'var(--primary)' : 'transparent',
+                    color: splitRatio === '50-50' ? '#fff' : '#94A3B8',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  50 / 50
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSplitRatio('40-60')}
+                  title="PDF Geniş (%40 Sol - %60 Sağ)"
+                  style={{
+                    padding: '0.25rem 0.65rem',
+                    borderRadius: '4px',
+                    border: 'none',
+                    background: splitRatio === '40-60' ? 'var(--primary)' : 'transparent',
+                    color: splitRatio === '40-60' ? '#fff' : '#94A3B8',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  PDF %60
+                </button>
+              </div>
+            )}
+
+            {/* Mobile Tab Switcher */}
+            {isMobile && (
+              <div style={{
+                display: 'flex',
+                background: '#1E293B',
+                borderRadius: '8px',
+                padding: '2px',
+                border: '1px solid #334155'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setMobileTab('items')}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: mobileTab === 'items' ? 'var(--primary)' : 'transparent',
+                    color: mobileTab === 'items' ? '#fff' : '#94A3B8',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <FileText size={12} />
+                  <span>Kalemler</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileTab('pdf')}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    background: mobileTab === 'pdf' ? 'var(--primary)' : 'transparent',
+                    color: mobileTab === 'pdf' ? '#fff' : '#94A3B8',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px'
+                  }}
+                >
+                  <ExternalLink size={12} />
+                  <span>PDF</span>
+                </button>
+              </div>
+            )}
 
             <button
               onClick={onClose}
@@ -483,7 +549,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                 justifyContent: 'center'
               }}
             >
-              <X size={20} />
+              <X size={18} />
             </button>
           </div>
         </div>
@@ -491,33 +557,35 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
         {/* Modal Split Body */}
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* Left Side: Extracted Metadata & Item Editor */}
-          <div style={{
-            width: splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '60%' : '40%',
-            borderRight: '1px solid var(--border-color)',
-            overflowY: 'auto',
-            padding: '1.25rem',
-            transition: 'width 0.2s ease'
-          }}>
-            {/* Customer & Order Header Information Section */}
-            <div style={{ background: 'var(--bg-card)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <h3 style={{ fontSize: '0.9rem', color: 'var(--primary)', margin: 0, fontWeight: 600 }}>
-                  1. Müşteri ve Sipariş Başlık Bilgileri
-                </h3>
-                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>* Zorunlu alan</span>
-              </div>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', fontSize: '0.8rem' }}>
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 600 }}>Müşteri Adı / Ticari Unvanı * (Seçin veya Yazın)</label>
-                  <CreatableCombobox
-                    value={customerInfo.name || ''}
-                    placeholder="Müşteri unvanı seçin veya yeni firma adı yazın..."
-                    options={customerOptions}
-                    onChange={(val) => handleCustomerChange('name', val)}
-                    required
-                  />
+          {(!isMobile || mobileTab === 'items') && (
+            <div style={{
+              width: isMobile ? '100%' : (splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '60%' : '40%'),
+              borderRight: isMobile ? 'none' : '1px solid var(--border-color)',
+              overflowY: 'auto',
+              padding: isMobile ? '0.75rem' : '1.25rem',
+              transition: 'width 0.2s ease',
+              flex: isMobile ? 1 : 'initial'
+            }}>
+              {/* Customer & Order Header Information Section */}
+              <div style={{ background: 'var(--bg-card)', padding: isMobile ? '0.75rem' : '1rem', borderRadius: '8px', border: '1px solid var(--border-color)', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem' }}>
+                  <h3 style={{ fontSize: isMobile ? '0.85rem' : '0.9rem', color: 'var(--primary)', margin: 0, fontWeight: 700 }}>
+                    1. Müşteri ve Sipariş Başlık Bilgileri
+                  </h3>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>* Zorunlu alan</span>
                 </div>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '0.5rem' : '0.75rem', fontSize: '0.8rem' }}>
+                  <div style={{ gridColumn: isMobile ? '1' : '1 / -1' }}>
+                    <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem', fontWeight: 600 }}>Müşteri Adı / Ticari Unvanı * (Seçin veya Yazın)</label>
+                    <CreatableCombobox
+                      value={customerInfo.name || ''}
+                      placeholder="Müşteri unvanı seçin veya yeni firma adı yazın..."
+                      options={customerOptions}
+                      onChange={(val) => handleCustomerChange('name', val)}
+                      required
+                    />
+                  </div>
 
                 <div>
                   <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>Müşteri Kendi Sipariş No</label>
@@ -809,78 +877,84 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
               </div>
             </div>
           </div>
+        )}
 
           {/* Right Side: PDF Document Preview Viewer */}
-          <div style={{
-            width: splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '40%' : '60%',
-            background: '#0F172A',
-            display: 'flex',
-            flexDirection: 'column',
-            height: '100%',
-            transition: 'width 0.2s ease'
-          }}>
+          {(!isMobile || mobileTab === 'pdf') && (
             <div style={{
-              padding: '0.55rem 1rem',
-              background: '#0B111E',
-              borderBottom: '1px solid #1E293B',
+              width: isMobile ? '100%' : (splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '40%' : '60%'),
+              background: '#0F172A',
               display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: '0.8rem',
-              color: '#94A3B8',
-              flexShrink: 0
+              flexDirection: 'column',
+              height: '100%',
+              transition: 'width 0.2s ease',
+              flex: isMobile ? 1 : 'initial'
             }}>
-              <span style={{ fontWeight: 600, color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <FileText size={15} color="#3B82F6" /> Orijinal Belge PDF Canlı Önizleme
-              </span>
-              <a
-                href={pdfUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  color: '#60A5FA',
-                  fontSize: '0.75rem',
-                  textDecoration: 'none',
-                  background: 'rgba(59, 130, 246, 0.12)',
-                  padding: '3px 8px',
-                  borderRadius: '4px',
-                  border: '1px solid rgba(59, 130, 246, 0.3)'
-                }}
-              >
-                <ExternalLink size={12} /> Yeni Sekmede Aç
-              </a>
+              <div style={{
+                padding: '0.55rem 1rem',
+                background: '#0B111E',
+                borderBottom: '1px solid #1E293B',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                fontSize: '0.8rem',
+                color: '#94A3B8',
+                flexShrink: 0
+              }}>
+                <span style={{ fontWeight: 600, color: '#E2E8F0', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <FileText size={15} color="#3B82F6" /> Orijinal Belge PDF Canlı Önizleme
+                </span>
+                <a
+                  href={pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    color: '#60A5FA',
+                    fontSize: '0.75rem',
+                    textDecoration: 'none',
+                    background: 'rgba(59, 130, 246, 0.12)',
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(59, 130, 246, 0.3)'
+                  }}
+                >
+                  <ExternalLink size={12} /> Yeni Sekmede Aç
+                </a>
+              </div>
+              <iframe
+                src={pdfUrl}
+                title="PDF Preview"
+                style={{ width: '100%', height: 'calc(100% - 38px)', border: 'none', flex: 1 }}
+              />
             </div>
-            <iframe
-              src={pdfUrl}
-              title="PDF Preview"
-              style={{ width: '100%', height: 'calc(100% - 38px)', border: 'none', flex: 1 }}
-            />
-          </div>
+          )}
         </div>
 
         {/* Modal Footer */}
         <div style={{
-          padding: '0.85rem 1.5rem',
+          padding: isMobile ? '0.65rem 0.85rem' : '0.85rem 1.5rem',
           background: '#060910',
           borderTop: '1px solid var(--border-color)',
           display: 'flex',
+          flexDirection: isMobile ? 'column' : 'row',
           justifyContent: 'space-between',
-          alignItems: 'center',
+          alignItems: isMobile ? 'stretch' : 'center',
+          gap: isMobile ? '0.5rem' : '1rem',
           flexShrink: 0
         }}>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: isMobile ? '0.72rem' : '0.8rem', color: 'var(--text-muted)', textAlign: isMobile ? 'center' : 'left' }}>
             ✓ Kontrol Edildi. Onaylandıktan sonra sipariş ortak havuza aktarılacak.
           </span>
 
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <button onClick={onClose} className="btn btn-secondary">
-              İptal / Taslak Olarak Bırak
+          <div style={{ display: 'flex', gap: '0.5rem', width: isMobile ? '100%' : 'auto' }}>
+            <button onClick={onClose} className="btn btn-secondary" style={{ flex: isMobile ? 1 : 'initial', padding: '0.5rem 0.85rem', fontSize: '0.8rem' }}>
+              İptal / Taslak
             </button>
-            <button onClick={handleSave} disabled={saving} className="btn btn-primary" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <CheckCircle size={16} /> {saving ? 'Kaydediliyor...' : 'Onayla ve Havuza Aktar'}
+            <button onClick={handleSave} disabled={saving} className="btn btn-primary" style={{ flex: isMobile ? 2 : 'initial', padding: '0.5rem 0.85rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              <CheckCircle size={15} /> {saving ? 'Kaydediliyor...' : 'Onayla ve Havuza Aktar'}
             </button>
           </div>
         </div>

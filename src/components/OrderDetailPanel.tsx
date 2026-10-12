@@ -85,6 +85,13 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [conflictError, setConflictError] = useState<string | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== 'undefined' && window.innerWidth <= 768);
+
+  React.useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Partial shipping & item selection state
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
@@ -729,41 +736,61 @@ ${itemsSummary}${moreText}
       )}
 
       {/* Header Info Banner */}
-      <div className="order-detail-header" style={{ padding: '1rem 1.25rem', background: '#FFFFFF', borderBottom: '1px solid var(--border-color)' }}>
-        <div className="order-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-          <div style={{ flex: 1, minWidth: '260px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{fixTurkishEncoding(order.customer_name)}</h1>
-              <span className="badge badge-approved" style={{ fontSize: '0.75rem' }}>
-                <ShieldCheck size={13} /> SİP NO: {order.order_no}
+      <div className="order-detail-header" style={{ padding: isMobile ? '0.75rem 0.85rem' : '1rem 1.25rem', background: '#FFFFFF', borderBottom: '1px solid var(--border-color)' }}>
+        <div className="order-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
+          <div style={{ flex: 1, minWidth: isMobile ? '100%' : '260px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+              <h1 style={{ fontSize: isMobile ? '1.05rem' : '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{fixTurkishEncoding(order.customer_name)}</h1>
+              <span className="badge badge-approved" style={{ fontSize: '0.72rem' }}>
+                <ShieldCheck size={12} /> SİP NO: {order.order_no}
               </span>
-              <span style={{ fontSize: '0.7rem', background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.15rem 0.4rem', borderRadius: '4px', color: '#0369A1', fontWeight: 600 }}>
-                Versiyon v{order.version} (Optimistic Locking)
+              <span className="mobile-hide" style={{ fontSize: '0.7rem', background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.15rem 0.4rem', borderRadius: '4px', color: '#0369A1', fontWeight: 600 }}>
+                v{order.version}
               </span>
             </div>
             {order.customer_tax_number && (
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.3rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                <Building2 size={13} /> Vergi No: {order.customer_tax_number} | Müşteri Sipariş Ref: <strong>{order.customer_order_no || '-'}</strong>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
+                <Building2 size={12} /> Vergi: {order.customer_tax_number} | Ref: <strong>{order.customer_order_no || '-'}</strong>
               </div>
             )}
           </div>
 
-          <div className="order-header-actions" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <button onClick={handleOpenWhatsAppModal} className="btn btn-whatsapp" title="Siparişi WhatsApp İle Gönder / Paylaş">
+          <div className="order-header-actions" style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
+            <button
+              onClick={handleOpenWhatsAppModal}
+              className="btn btn-whatsapp"
+              style={{ flex: isMobile ? '1 1 100%' : 'initial', padding: isMobile ? '0.5rem 0.75rem' : '0.4rem 0.85rem' }}
+              title="Siparişi WhatsApp İle Gönder / Paylaş"
+            >
               <MessageSquare size={16} /> <span>WhatsApp'tan Gönder</span>
             </button>
 
-            <button onClick={onRefresh} className="btn btn-secondary" title="Siparişi Yenile">
-              <RefreshCw size={16} />
+            <button
+              onClick={onRefresh}
+              className="btn btn-secondary"
+              style={{ flex: isMobile ? 1 : 'initial', padding: isMobile ? '0.5rem' : '0.4rem 0.75rem' }}
+              title="Siparişi Yenile"
+            >
+              <RefreshCw size={15} />
+              {isMobile && <span>Yenile</span>}
             </button>
 
             {isEditing ? (
-              <button onClick={handleSaveEdit} disabled={saving} className="btn btn-primary">
-                <Save size={16} /> {saving ? 'Kaydediliyor...' : 'Kaydet'}
+              <button
+                onClick={handleSaveEdit}
+                disabled={saving}
+                className="btn btn-primary"
+                style={{ flex: isMobile ? 2 : 'initial', padding: isMobile ? '0.5rem' : '0.4rem 0.85rem' }}
+              >
+                <Save size={15} /> <span>{saving ? 'Kaydediliyor...' : 'Kaydet'}</span>
               </button>
             ) : (
-              <button onClick={handleStartEdit} className="btn btn-secondary">
-                <Edit3 size={16} /> Düzenle
+              <button
+                onClick={handleStartEdit}
+                className="btn btn-secondary"
+                style={{ flex: isMobile ? 2 : 'initial', padding: isMobile ? '0.5rem' : '0.4rem 0.75rem' }}
+              >
+                <Edit3 size={15} /> <span>Düzenle</span>
               </button>
             )}
 
@@ -772,15 +799,17 @@ ${itemsSummary}${moreText}
               onClick={() => setShowDeleteModal(true)}
               disabled={isDeleting}
               style={{
+                flex: isMobile ? 2 : 'initial',
                 background: '#FEF2F2',
                 color: '#DC2626',
                 border: '1px solid #FECACA',
-                padding: '0.45rem 0.75rem',
+                padding: isMobile ? '0.5rem 0.75rem' : '0.45rem 0.75rem',
                 borderRadius: '6px',
-                fontSize: '0.82rem',
+                fontSize: '0.8rem',
                 fontWeight: 600,
                 display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '5px',
                 cursor: isDeleting ? 'not-allowed' : 'pointer',
                 transition: 'all 0.15s ease'
@@ -788,32 +817,32 @@ ${itemsSummary}${moreText}
               title="Bu siparişi kalıcı olarak sil"
             >
               <Trash2 size={15} color="#DC2626" />
-              <span>Siparişi Sil</span>
+              <span>Sil</span>
             </button>
           </div>
         </div>
 
         {isEditing && (
-          <div style={{ background: '#EFF6FF', border: '1px solid #93C5FD', color: '#1E40AF', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '0.85rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', fontSize: '0.88rem', fontWeight: 600 }}>
-              <Edit3 size={18} color="#2563EB" />
-              <span>✏️ SİPARİŞ DÜZENLEME MODU AKTİF — Müşteri Sipariş Ref, Teslim Tarihi ve aşağıdaki Kalem Detaylarını değiştirebilirsiniz.</span>
+          <div style={{ background: '#EFF6FF', border: '1px solid #93C5FD', color: '#1E40AF', padding: '0.65rem 0.85rem', borderRadius: '8px', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', fontWeight: 600 }}>
+              <Edit3 size={16} color="#2563EB" />
+              <span>✏️ SİPARİŞ DÜZENLEME MODU AKTİF</span>
             </div>
-            <button onClick={() => setIsEditing(false)} className="btn btn-secondary" style={{ padding: '0.25rem 0.6rem', fontSize: '0.8rem' }}>
-              İptal Et
+            <button onClick={() => setIsEditing(false)} className="btn btn-secondary" style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem' }}>
+              İptal
             </button>
           </div>
         )}
 
         {conflictError && (
-          <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '0.75rem 1rem', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <AlertTriangle size={18} /> {conflictError}
+          <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '0.65rem 0.85rem', borderRadius: '6px', fontSize: '0.82rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertTriangle size={16} /> {conflictError}
           </div>
         )}
 
         {/* Quick Meta Stats / Edit Controls Bar */}
         {isEditing ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', background: '#F8FAFC', padding: '0.85rem', borderRadius: '8px', border: '1px solid #CBD5E1' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', background: '#F8FAFC', padding: isMobile ? '0.65rem' : '0.85rem', borderRadius: '8px', border: '1px solid #CBD5E1' }}>
             <div>
               <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>Müşteri Sipariş Ref / No:</label>
               <input
@@ -865,44 +894,59 @@ ${itemsSummary}${moreText}
             </div>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0.75rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>SİPARİŞ TARİHİ</span>
-              <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.order_date)}</strong>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(150px, 1fr))',
+            gap: isMobile ? '0.4rem' : '0.75rem',
+            fontSize: '0.8rem',
+            color: 'var(--text-secondary)'
+          }}>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>SİPARİŞ TARİHİ</span>
+              <strong style={{ color: 'var(--text-primary)', fontSize: isMobile ? '0.78rem' : '0.82rem' }}>{formatDate(order.order_date)}</strong>
             </div>
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TESLİM TARİHİ</span>
-              <strong style={{ color: 'var(--text-primary)' }}>{formatDate(order.requested_delivery_date)}</strong>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>TESLİM TARİHİ</span>
+              <strong style={{ color: 'var(--text-primary)', fontSize: isMobile ? '0.78rem' : '0.82rem' }}>{formatDate(order.requested_delivery_date)}</strong>
             </div>
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>KAPLAMA CİNSİ</span>
-              <strong style={{ color: order.coating_type ? '#0284C7' : 'var(--text-muted)' }}>{fixTurkishEncoding(order.coating_type) || 'Belirtilmedi'}</strong>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>KAPLAMA CİNSİ</span>
+              <strong style={{ color: order.coating_type ? '#0284C7' : 'var(--text-muted)', fontSize: isMobile ? '0.78rem' : '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{fixTurkishEncoding(order.coating_type) || 'Belirtilmedi'}</strong>
             </div>
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>PROJE NO</span>
-              <strong style={{ color: 'var(--text-primary)' }}>{fixTurkishEncoding(order.project_no) || 'Belirtilmedi'}</strong>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>PROJE NO</span>
+              <strong style={{ color: 'var(--text-primary)', fontSize: isMobile ? '0.78rem' : '0.82rem' }}>{fixTurkishEncoding(order.project_no) || 'Belirtilmedi'}</strong>
             </div>
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>TOPLAM KALEM / TUTAR</span>
-              <strong style={{ color: 'var(--primary)' }}>{(items || []).length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)</strong>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>TOPLAM KALEM</span>
+              <strong style={{ color: 'var(--primary)', fontSize: isMobile ? '0.78rem' : '0.82rem' }}>{(items || []).length} Kalem</strong>
             </div>
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: '0.5rem 0.75rem', borderRadius: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.7rem' }}>DURUM</span>
-              <strong style={{ color: getStatusColor(order.status) }}>{getStatusTurkishLabel(order.status)}</strong>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
+              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>DURUM</span>
+              <strong style={{ color: getStatusColor(order.status), fontSize: isMobile ? '0.78rem' : '0.82rem' }}>{getStatusTurkishLabel(order.status)}</strong>
             </div>
           </div>
         )}
       </div>
 
       {/* Tabs Bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', background: '#FFFFFF', padding: '0 1rem' }}>
+      <div style={{
+        display: 'flex',
+        borderBottom: '1px solid var(--border-color)',
+        background: '#FFFFFF',
+        padding: isMobile ? '0 0.5rem' : '0 1rem',
+        overflowX: 'auto',
+        whiteSpace: 'nowrap',
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none'
+      }}>
         {[
-          { id: 'summary', label: '1. Sipariş Özeti', icon: FileText },
-          { id: 'items', label: `2. Sipariş Kalemleri (${(items || []).length})`, icon: Layers },
-          { id: 'documents', label: `3. Sipariş Belgeleri (${(documents || []).length})`, icon: ExternalLink },
-          { id: 'production', label: '4. Üretim & Kaplama', icon: Factory },
-          { id: 'shipping', label: `5. Sevkiyat (${waybillGroups.length} İrsaliye)`, icon: Truck },
-          { id: 'history', label: '6. İşlem Geçmişi', icon: History }
+          { id: 'summary', label: isMobile ? '1. Özet' : '1. Sipariş Özeti', icon: FileText },
+          { id: 'items', label: isMobile ? `2. Kalemler (${(items || []).length})` : `2. Sipariş Kalemleri (${(items || []).length})`, icon: Layers },
+          { id: 'documents', label: isMobile ? `3. Belgeler (${(documents || []).length})` : `3. Sipariş Belgeleri (${(documents || []).length})`, icon: ExternalLink },
+          { id: 'production', label: isMobile ? '4. Üretim' : '4. Üretim & Kaplama', icon: Factory },
+          { id: 'shipping', label: isMobile ? `5. Sevk (${waybillGroups.length})` : `5. Sevkiyat (${waybillGroups.length} İrsaliye)`, icon: Truck },
+          { id: 'history', label: isMobile ? '6. Geçmiş' : '6. İşlem Geçmişi', icon: History }
         ].map((t) => {
           const Icon = t.icon;
           const isActive = activeTab === t.id;
@@ -911,41 +955,50 @@ ${itemsSummary}${moreText}
               key={t.id}
               onClick={() => setActiveTab(t.id as any)}
               style={{
-                display: 'flex',
+                display: 'inline-flex',
                 alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.75rem 1rem',
+                gap: '0.4rem',
+                padding: isMobile ? '0.65rem 0.75rem' : '0.75rem 1rem',
                 border: 'none',
                 borderBottom: isActive ? '2px solid var(--primary)' : '2px solid transparent',
                 background: 'transparent',
                 color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
-                fontWeight: isActive ? 600 : 400,
-                fontSize: '0.85rem',
-                cursor: 'pointer'
+                fontWeight: isActive ? 700 : 500,
+                fontSize: isMobile ? '0.8rem' : '0.85rem',
+                cursor: 'pointer',
+                flexShrink: 0
               }}
             >
-              <Icon size={16} /> {t.label}
+              <Icon size={isMobile ? 14 : 16} /> {t.label}
             </button>
           );
         })}
       </div>
 
       {/* Tab Contents */}
-      <div style={{ padding: '1.5rem', flex: 1, overflowY: 'auto' }}>
+      <div style={{ padding: isMobile ? '0.75rem 0.65rem' : '1.5rem', flex: 1, overflowY: 'auto' }}>
         {/* TAB 1: SUMMARY - EXECUTIVE ORDER DASHBOARD & AI CUSTOMER INTELLIGENCE */}
         {activeTab === 'summary' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? '0.75rem' : '1.25rem' }}>
             {/* 1. Sipariş Genel Süreç Hattı (Interactive Stepper) */}
-            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Activity size={16} color="var(--primary)" /> SİPARİŞ GENEL İŞ AKIŞI VE SÜREÇ HATTI
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1rem 1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.65rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                <span style={{ fontSize: isMobile ? '0.78rem' : '0.85rem', fontWeight: 700, color: '#334155', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Activity size={15} color="var(--primary)" /> SİPARİŞ GENEL İŞ AKIŞI
                 </span>
-                <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
-                  Aşamalara tıklayarak durumu doğrudan güncelleyebilirsiniz
+                <span style={{ fontSize: '0.7rem', color: '#64748B' }}>
+                  Aşamalara tıklayarak durumu güncelleyin
                 </span>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{
+                display: 'flex',
+                gap: isMobile ? '0.35rem' : '0.5rem',
+                overflowX: isMobile ? 'auto' : 'visible',
+                flexWrap: isMobile ? 'nowrap' : 'wrap',
+                WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: 'none',
+                paddingBottom: isMobile ? '4px' : '0'
+              }}>
                 {[
                   { status: 'NEW', label: '1. Yeni' },
                   { status: 'IN_PRODUCTION', label: '2. Üretimde' },
@@ -961,14 +1014,14 @@ ${itemsSummary}${moreText}
                       key={st.status}
                       onClick={() => handleStatusStep(st.status)}
                       style={{
-                        flex: 1,
-                        minWidth: '120px',
-                        padding: '0.65rem 0.5rem',
+                        flex: isMobile ? '0 0 auto' : 1,
+                        minWidth: isMobile ? '92px' : '120px',
+                        padding: isMobile ? '0.45rem 0.5rem' : '0.65rem 0.5rem',
                         borderRadius: '8px',
                         border: isCurrent ? '2px solid var(--primary)' : '1px solid #E2E8F0',
                         background: isCurrent ? 'rgba(67, 97, 238, 0.08)' : '#F8FAFC',
                         color: isCurrent ? 'var(--primary)' : '#64748B',
-                        fontSize: '0.8rem',
+                        fontSize: isMobile ? '0.72rem' : '0.8rem',
                         fontWeight: isCurrent ? 700 : 500,
                         cursor: 'pointer',
                         textAlign: 'center',
@@ -984,23 +1037,27 @@ ${itemsSummary}${moreText}
             </div>
 
             {/* 2. Dörtlü Yönetici KPI Metrik Kartları */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '1rem' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(auto-fit, minmax(230px, 1fr))',
+              gap: isMobile ? '0.5rem' : '1rem'
+            }}>
               {/* Kart 1: Ekleyen Kullanıcı & Kayıt Zamanı */}
-              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.65rem 0.75rem' : '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Siparişi Ekleyen & Kayıt
+                  <span style={{ fontSize: isMobile ? '0.65rem' : '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Ekleyen & Kayıt
                   </span>
-                  <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <User size={15} color="#3B82F6" />
+                  <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <User size={13} color="#3B82F6" />
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A' }}>
+                  <div style={{ fontSize: isMobile ? '0.85rem' : '1rem', fontWeight: 700, color: '#0F172A', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {order.creator_name || 'Sistem / Yetkili'}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                    <Clock size={12} /> {formatFullDateTime(order.created_at)}
+                  <div style={{ fontSize: '0.7rem', color: '#64748B', display: 'flex', alignItems: 'center', gap: '3px', marginTop: '2px' }}>
+                    <Clock size={11} /> {formatFullDateTime(order.created_at)}
                   </div>
                 </div>
               </div>
@@ -1009,25 +1066,25 @@ ${itemsSummary}${moreText}
               {(() => {
                 const badge = getDeliveryStatusBadge(order.requested_delivery_date);
                 return (
-                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                  <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.65rem 0.75rem' : '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        İstenen Teslim Tarihi
+                      <span style={{ fontSize: isMobile ? '0.65rem' : '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Teslim Tarihi
                       </span>
-                      <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <CalendarDays size={15} color="#D97706" />
+                      <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: '#FEF3C7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <CalendarDays size={13} color="#D97706" />
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A' }}>
+                      <div style={{ fontSize: isMobile ? '0.85rem' : '1rem', fontWeight: 700, color: '#0F172A' }}>
                         {formatDate(order.requested_delivery_date)}
                       </div>
-                      <div style={{ marginTop: '4px' }}>
+                      <div style={{ marginTop: '2px' }}>
                         <span style={{
                           display: 'inline-block',
-                          padding: '0.15rem 0.5rem',
-                          borderRadius: '6px',
-                          fontSize: '0.72rem',
+                          padding: '0.1rem 0.4rem',
+                          borderRadius: '4px',
+                          fontSize: '0.68rem',
                           fontWeight: 700,
                           background: badge.bg,
                           color: badge.color,
@@ -1042,41 +1099,41 @@ ${itemsSummary}${moreText}
               })()}
 
               {/* Kart 3: Kaplama Cinsi & Müşteri Projesi */}
-              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.65rem 0.75rem' : '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Kaplama Cinsi & Proje
+                  <span style={{ fontSize: isMobile ? '0.65rem' : '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Kaplama & Proje
                   </span>
-                  <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Paintbrush size={15} color="#8B5CF6" />
+                  <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: '#F5F3FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Paintbrush size={13} color="#8B5CF6" />
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '1rem', fontWeight: 700, color: order.coating_type ? '#7C3AED' : '#64748B' }}>
+                  <div style={{ fontSize: isMobile ? '0.85rem' : '1rem', fontWeight: 700, color: order.coating_type ? '#7C3AED' : '#64748B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {order.coating_type || 'Belirtilmedi'}
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
-                    {order.project_no ? `Proje: ${order.project_no}` : (order.customer_order_no ? `Müşteri Ref: ${order.customer_order_no}` : 'Özel Proje Tanımsız')}
+                  <div style={{ fontSize: '0.7rem', color: '#64748B', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {order.project_no ? `Proje: ${order.project_no}` : (order.customer_order_no ? `Ref: ${order.customer_order_no}` : 'Tanımsız')}
                   </div>
                 </div>
               </div>
 
               {/* Kart 4: Kalem Sayısı & Sipariş Tutarı */}
-              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.65rem 0.75rem' : '1rem 1.1rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Kalem & Sipariş Tutarı
+                  <span style={{ fontSize: isMobile ? '0.65rem' : '0.72rem', fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Tutar & Kalem
                   </span>
-                  <div style={{ width: '28px', height: '28px', borderRadius: '8px', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Tag size={15} color="#10B981" />
+                  <div style={{ width: '24px', height: '24px', borderRadius: '6px', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Tag size={13} color="#10B981" />
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#059669' }}>
+                  <div style={{ fontSize: isMobile ? '0.85rem' : '1rem', fontWeight: 700, color: '#059669', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '2px' }}>
-                    {totalItemsCount} Kalem • Toplam {totalQuantity.toLocaleString('tr-TR')} Adet
+                  <div style={{ fontSize: '0.7rem', color: '#64748B', marginTop: '2px' }}>
+                    {totalItemsCount} Kalem • {totalQuantity.toLocaleString('tr-TR')} Adet
                   </div>
                 </div>
               </div>
@@ -1087,29 +1144,29 @@ ${itemsSummary}${moreText}
               background: '#FFFFFF',
               border: '1px solid #E2E8F0',
               borderRadius: '12px',
-              padding: '1.25rem',
+              padding: isMobile ? '0.75rem' : '1.25rem',
               boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Truck size={18} color="#2563EB" />
+                  <div style={{ width: '28px', height: '28px', borderRadius: '6px', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Truck size={16} color="#2563EB" />
                   </div>
                   <div>
-                    <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-                      Kaçı Gitti, Kaçı Kaldı? — Sevkiyat İlerleme ve Teslimat Takibi
+                    <h4 style={{ fontSize: isMobile ? '0.85rem' : '0.95rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                      Kaçı Gitti, Kaçı Kaldı?
                     </h4>
-                    <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
-                      Toplam {totalQuantity.toLocaleString('tr-TR')} birimlik siparişin parçalı sevk dağılımı
+                    <span style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                      Toplam {totalQuantity.toLocaleString('tr-TR')} birimlik sevk dağılımı
                     </span>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{
-                    padding: '0.25rem 0.65rem',
+                    padding: '0.2rem 0.55rem',
                     borderRadius: '20px',
-                    fontSize: '0.78rem',
+                    fontSize: '0.75rem',
                     fontWeight: 700,
                     background: shippingProgressPercent === 100 ? '#ECFDF5' : (shippingProgressPercent > 0 ? '#EFF6FF' : '#F1F5F9'),
                     color: shippingProgressPercent === 100 ? '#059669' : (shippingProgressPercent > 0 ? '#2563EB' : '#64748B'),
@@ -1121,7 +1178,7 @@ ${itemsSummary}${moreText}
               </div>
 
               {/* Büyük İlerleme Çubuğu */}
-              <div style={{ width: '100%', height: '14px', background: '#F1F5F9', borderRadius: '10px', overflow: 'hidden', marginBottom: '1rem', border: '1px solid #E2E8F0' }}>
+              <div style={{ width: '100%', height: '12px', background: '#F1F5F9', borderRadius: '10px', overflow: 'hidden', marginBottom: '0.75rem', border: '1px solid #E2E8F0' }}>
                 <div style={{
                   height: '100%',
                   width: `${shippingProgressPercent}%`,
@@ -1132,23 +1189,23 @@ ${itemsSummary}${moreText}
               </div>
 
               {/* 3 Metrik Kutucuğu */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '0.85rem' }}>
-                <div style={{ background: '#F8FAFC', borderLeft: '4px solid #3B82F6', padding: '0.75rem 1rem', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#64748B', fontWeight: 600, display: 'block' }}>TOPLAM SİPARİŞ MİKTARI</span>
-                  <strong style={{ fontSize: '1.05rem', color: '#0F172A' }}>{totalQuantity.toLocaleString('tr-TR')} Adet</strong>
-                  <span style={{ fontSize: '0.72rem', color: '#64748B', display: 'block', marginTop: '2px' }}>{totalItemsCount} farklı kalem</span>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.65rem', marginBottom: '0.75rem' }}>
+                <div style={{ background: '#F8FAFC', borderLeft: '4px solid #3B82F6', padding: isMobile ? '0.55rem 0.75rem' : '0.75rem 1rem', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.68rem', color: '#64748B', fontWeight: 600, display: 'block' }}>TOPLAM SİPARİŞ MİKTARI</span>
+                  <strong style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', color: '#0F172A' }}>{totalQuantity.toLocaleString('tr-TR')} Adet</strong>
+                  <span style={{ fontSize: '0.7rem', color: '#64748B', display: 'block', marginTop: '1px' }}>{totalItemsCount} farklı kalem</span>
                 </div>
 
-                <div style={{ background: '#ECFDF5', borderLeft: '4px solid #10B981', padding: '0.75rem 1rem', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#047857', fontWeight: 600, display: 'block' }}>SEVK EDİLEN (GİTTİ)</span>
-                  <strong style={{ fontSize: '1.05rem', color: '#059669' }}>{totalShippedQuantity.toLocaleString('tr-TR')} Adet</strong>
-                  <span style={{ fontSize: '0.72rem', color: '#047857', display: 'block', marginTop: '2px' }}>%{shippingProgressPercent} teslim edildi</span>
+                <div style={{ background: '#ECFDF5', borderLeft: '4px solid #10B981', padding: isMobile ? '0.55rem 0.75rem' : '0.75rem 1rem', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.68rem', color: '#047857', fontWeight: 600, display: 'block' }}>SEVK EDİLEN (GİTTİ)</span>
+                  <strong style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', color: '#059669' }}>{totalShippedQuantity.toLocaleString('tr-TR')} Adet</strong>
+                  <span style={{ fontSize: '0.7rem', color: '#047857', display: 'block', marginTop: '1px' }}>%{shippingProgressPercent} teslim edildi</span>
                 </div>
 
-                <div style={{ background: '#FFFBEB', borderLeft: '4px solid #F59E0B', padding: '0.75rem 1rem', borderRadius: '6px' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#B45309', fontWeight: 600, display: 'block' }}>KALAN MİKTAR (KALDI)</span>
-                  <strong style={{ fontSize: '1.05rem', color: '#D97706' }}>{remainingQuantity.toLocaleString('tr-TR')} Adet</strong>
-                  <span style={{ fontSize: '0.72rem', color: '#B45309', display: 'block', marginTop: '2px' }}>%{100 - shippingProgressPercent} üretimde / depoda</span>
+                <div style={{ background: '#FFFBEB', borderLeft: '4px solid #F59E0B', padding: isMobile ? '0.55rem 0.75rem' : '0.75rem 1rem', borderRadius: '6px' }}>
+                  <span style={{ fontSize: '0.68rem', color: '#B45309', fontWeight: 600, display: 'block' }}>KALAN MİKTAR (KALDI)</span>
+                  <strong style={{ fontSize: isMobile ? '0.95rem' : '1.05rem', color: '#D97706' }}>{remainingQuantity.toLocaleString('tr-TR')} Adet</strong>
+                  <span style={{ fontSize: '0.7rem', color: '#B45309', display: 'block', marginTop: '1px' }}>%{100 - shippingProgressPercent} üretimde / depoda</span>
                 </div>
               </div>
 
@@ -1170,9 +1227,9 @@ ${itemsSummary}${moreText}
             </div>
 
             {/* 4. İki Kolonlu Alt Panel: Belgeler ve Kullanıcı Denetim Tarihçesi */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(320px, 1fr))', gap: isMobile ? '0.75rem' : '1.25rem' }}>
               {/* Sol Kolon: İlişkili Belgeler & Hızlı Erişim */}
-              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <FileText size={18} color="var(--primary)" />
@@ -1280,7 +1337,7 @@ ${itemsSummary}${moreText}
               </div>
 
               {/* Sağ Kolon: Kullanıcı İşlem Tarihçesi & Denetim İzi */}
-              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <History size={18} color="var(--primary)" />
@@ -1377,22 +1434,23 @@ ${itemsSummary}${moreText}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', width: isMobile ? '100%' : 'auto' }}>
                 <button
                   onClick={handleSendToProduction}
                   disabled={selectedItemIds.length === 0 || sendProdSubmitting}
                   className="btn btn-primary"
                   style={{
-                    fontSize: '0.85rem',
-                    padding: '0.5rem 1rem',
+                    fontSize: isMobile ? '0.75rem' : '0.85rem',
+                    padding: isMobile ? '0.45rem 0.65rem' : '0.5rem 1rem',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.5rem',
+                    gap: '0.4rem',
+                    flex: isMobile ? '1 1 auto' : 'initial',
                     background: selectedItemIds.length > 0 ? '#0284C7' : undefined,
                     border: selectedItemIds.length > 0 ? '1px solid #0284C7' : undefined
                   }}
                 >
-                  <Factory size={18} /> {sendProdSubmitting ? 'Form Oluşturuluyor...' : 'Seçili Kalemleri Üretime Gönder (Form Oluştur)'}
+                  <Factory size={16} /> <span>{sendProdSubmitting ? 'Oluşturuluyor...' : isMobile ? 'Üretime Gönder' : 'Seçili Kalemleri Üretime Gönder (Form Oluştur)'}</span>
                 </button>
 
                 <button
@@ -1400,58 +1458,71 @@ ${itemsSummary}${moreText}
                   disabled={selectedItemIds.length === 0 || labelSubmitting}
                   className="btn btn-primary"
                   style={{
-                    fontSize: '0.85rem',
-                    padding: '0.5rem 1rem',
+                    fontSize: isMobile ? '0.75rem' : '0.85rem',
+                    padding: isMobile ? '0.45rem 0.65rem' : '0.5rem 1rem',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '0.5rem',
+                    gap: '0.4rem',
+                    flex: isMobile ? '1 1 auto' : 'initial',
                     background: selectedItemIds.length > 0 ? '#8B5CF6' : undefined,
                     border: selectedItemIds.length > 0 ? '1px solid #8B5CF6' : undefined
                   }}
                 >
-                  <Tag size={18} /> {labelSubmitting ? 'Etiket Hazırlanıyor...' : 'Seçili Kalemlere Etiket Yazdır'}
+                  <Tag size={16} /> <span>{labelSubmitting ? 'Hazırlanıyor...' : isMobile ? 'Etiket Yazdır' : 'Seçili Kalemlere Etiket Yazdır'}</span>
                 </button>
 
                 <button
                   onClick={handleOpenDispatchModal}
                   disabled={selectedItemIds.length === 0}
                   className="btn btn-primary"
-                  style={{ fontSize: '0.85rem', padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: selectedItemIds.length > 0 ? '#10B981' : undefined, border: selectedItemIds.length > 0 ? '1px solid #10B981' : undefined }}
-                >
-                  <Truck size={18} /> Seçilen Kalemleri Sevk Et (Şoför/Plaka/Miktar Gir)
-                </button>
-
-                <select
-                  value={batchStatus}
-                  onChange={(e) => setBatchStatus(e.target.value)}
                   style={{
-                    background: 'rgba(0,0,0,0.5)',
-                    color: '#fff',
-                    border: '1px solid var(--border-color)',
-                    padding: '0.4rem 0.75rem',
-                    borderRadius: '6px',
-                    fontSize: '0.85rem'
+                    fontSize: isMobile ? '0.75rem' : '0.85rem',
+                    padding: isMobile ? '0.45rem 0.65rem' : '0.5rem 1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    flex: isMobile ? '1 1 auto' : 'initial',
+                    background: selectedItemIds.length > 0 ? '#10B981' : undefined,
+                    border: selectedItemIds.length > 0 ? '1px solid #10B981' : undefined
                   }}
                 >
-                  <option value="IN_PRODUCTION">Üretime Al</option>
-                  <option value="COATING">Kaplamaya Sevk Et</option>
-                  <option value="SHIPPING">Sevkiyata Al</option>
-                </select>
-
-                <button
-                  onClick={handleBatchItemStatusUpdate}
-                  disabled={batchUpdating || selectedItemIds.length === 0}
-                  className="btn btn-secondary"
-                  style={{ fontSize: '0.8rem', padding: '0.4rem 0.75rem' }}
-                >
-                  <ArrowRight size={14} /> Durum Değiştir
+                  <Truck size={16} /> <span>{isMobile ? 'Sevk Et' : 'Seçilen Kalemleri Sevk Et (Şoför/Plaka/Miktar Gir)'}</span>
                 </button>
 
-                {isEditing && (
-                  <button onClick={handleAddItemRow} className="btn btn-secondary" style={{ fontSize: '0.8rem', padding: '0.4rem 0.75rem' }}>
-                    <Plus size={14} /> Yeni Satır Ekle
+                <div style={{ display: 'flex', gap: '0.35rem', flex: isMobile ? '1 1 100%' : 'initial', alignItems: 'center' }}>
+                  <select
+                    value={batchStatus}
+                    onChange={(e) => setBatchStatus(e.target.value)}
+                    style={{
+                      background: 'rgba(0,0,0,0.5)',
+                      color: '#fff',
+                      border: '1px solid var(--border-color)',
+                      padding: '0.35rem 0.5rem',
+                      borderRadius: '6px',
+                      fontSize: '0.78rem',
+                      flex: 1
+                    }}
+                  >
+                    <option value="IN_PRODUCTION">Üretime Al</option>
+                    <option value="COATING">Kaplamaya Sevk Et</option>
+                    <option value="SHIPPING">Sevkiyata Al</option>
+                  </select>
+
+                  <button
+                    onClick={handleBatchItemStatusUpdate}
+                    disabled={batchUpdating || selectedItemIds.length === 0}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '0.4rem 0.6rem' }}
+                  >
+                    <ArrowRight size={13} /> Durum
                   </button>
-                )}
+
+                  {isEditing && (
+                    <button onClick={handleAddItemRow} className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '0.4rem 0.6rem' }}>
+                      <Plus size={13} /> Ekle
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1602,18 +1673,20 @@ ${itemsSummary}${moreText}
                       style={{
                         background: '#FFFFFF',
                         border: isExemptionDoc ? '2px solid #F59E0B' : isProductionForm ? '2px solid #0284C7' : '1px solid #E2E8F0',
-                        padding: '1.25rem',
+                        padding: isMobile ? '0.75rem 0.85rem' : '1.25rem',
                         borderRadius: '10px',
                         display: 'flex',
+                        flexDirection: isMobile ? 'column' : 'row',
                         justifyContent: 'space-between',
-                        alignItems: 'center',
+                        alignItems: isMobile ? 'stretch' : 'center',
+                        gap: isMobile ? '0.75rem' : '0.5rem',
                         boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
                       }}
                     >
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', flexWrap: 'wrap' }}>
-                          <FileText size={20} color={isExemptionDoc ? '#D97706' : isProductionForm ? '#0284C7' : 'var(--primary)'} />
-                          <strong style={{ fontSize: '1rem', color: '#0F172A' }}>{docName}</strong>
+                          <FileText size={isMobile ? 18 : 20} color={isExemptionDoc ? '#D97706' : isProductionForm ? '#0284C7' : 'var(--primary)'} />
+                          <strong style={{ fontSize: isMobile ? '0.88rem' : '1rem', color: '#0F172A' }}>{docName}</strong>
                           {isExemptionDoc ? (
                             <span
                               className="badge"
@@ -1640,25 +1713,25 @@ ${itemsSummary}${moreText}
                             </span>
                           )}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#64748B', marginTop: '0.4rem' }}>
-                          SHA-256 Özeti: <code style={{ color: '#0284C7', background: '#F1F5F9', padding: '0.1rem 0.4rem', borderRadius: '4px' }}>{docHash}</code>
+                        <div style={{ fontSize: '0.75rem', color: '#64748B', marginTop: '0.35rem', wordBreak: 'break-all' }}>
+                          SHA-256: <code style={{ color: '#0284C7', background: '#F1F5F9', padding: '0.1rem 0.35rem', borderRadius: '4px', fontSize: '0.72rem' }}>{isMobile ? `${docHash.slice(0, 16)}...` : docHash}</code>
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', gap: '0.5rem', width: isMobile ? '100%' : 'auto' }}>
                         <a
                           href={`/api/documents/${doc.id}/pdf?token=${token}`}
                           target="_blank"
                           rel="noreferrer"
                           className="btn btn-secondary"
-                          style={{ textDecoration: 'none', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                          style={{ flex: isMobile ? 1 : 'initial', textDecoration: 'none', fontSize: isMobile ? '0.75rem' : '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: isMobile ? '0.45rem' : '0.4rem 0.85rem' }}
                         >
-                          <ExternalLink size={14} /> Görüntüle / Yazdır
+                          <ExternalLink size={14} /> Görüntüle
                         </a>
                         <a
                           href={`/api/documents/${doc.id}/download?token=${token}`}
                           className="btn btn-primary"
-                          style={{ textDecoration: 'none', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                          style={{ flex: isMobile ? 1 : 'initial', textDecoration: 'none', fontSize: isMobile ? '0.75rem' : '0.8rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem', padding: isMobile ? '0.45rem' : '0.4rem 0.85rem' }}
                         >
                           <Download size={14} /> İndir
                         </a>
@@ -1690,57 +1763,57 @@ ${itemsSummary}${moreText}
         {/* TAB 5: SHIPPING LOG & DISPATCH HISTORY (GROUPED BY WAYBILL) */}
         {activeTab === 'shipping' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', marginBottom: '1rem', gap: '0.5rem' }}>
               <div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Sevkiyat Geçmişi ve İrsaliye Kayıtları</h3>
-                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Toplam {waybillGroups.length} Adet Sevkiyat İrsaliyesi Düzenlendi</span>
+                <h3 style={{ fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Sevkiyat Geçmişi ve İrsaliye Kayıtları</h3>
+                <span style={{ fontSize: isMobile ? '0.72rem' : '0.8rem', color: 'var(--text-muted)' }}>Toplam {waybillGroups.length} Adet Sevkiyat İrsaliyesi Düzenlendi</span>
               </div>
               <button
                 onClick={handleOpenDispatchModal}
                 disabled={selectedItemIds.length === 0}
                 className="btn btn-primary"
-                style={{ fontSize: '0.85rem' }}
+                style={{ fontSize: isMobile ? '0.78rem' : '0.85rem', width: isMobile ? '100%' : 'auto', padding: isMobile ? '0.5rem' : '0.4rem 0.85rem' }}
               >
                 <Truck size={16} /> Yeni Sevkiyat Oluştur (Seçili Kalemlerle)
               </button>
             </div>
 
             {waybillGroups.length === 0 ? (
-              <div style={{ background: 'var(--bg-card)', padding: '2rem', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)' }}>
+              <div style={{ background: 'var(--bg-card)', padding: isMobile ? '1.25rem' : '2rem', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)' }}>
                 <Truck size={36} style={{ marginBottom: '0.5rem', opacity: 0.4 }} />
                 <p>Bu sipariş için henüz parçalı sevkiyat irsaliyesi kesilmemiştir.</p>
                 <p style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>Kalemler sekmesinden sevk edilecek kalemleri seçip "Seçilen Kalemleri Sevk Et" düğmesine tıklayın.</p>
               </div>
             ) : (
-              <div style={{ display: 'grid', gap: '1.25rem' }}>
+              <div style={{ display: 'grid', gap: isMobile ? '0.75rem' : '1.25rem' }}>
                 {waybillGroups.map((group, idx) => (
-                  <div key={group.waybill_number || idx} style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderLeft: '5px solid #10B981', padding: '1.25rem', borderRadius: '10px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                  <div key={group.waybill_number || idx} style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderLeft: '5px solid #10B981', padding: isMobile ? '0.75rem 0.85rem' : '1.25rem', borderRadius: '10px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-                        <span className="badge badge-completed" style={{ fontSize: '0.85rem', fontWeight: 700, padding: '0.35rem 0.65rem' }}>
-                          <FileCheck size={16} /> İRSALİYE NO: #{group.waybill_number}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span className="badge badge-completed" style={{ fontSize: '0.8rem', fontWeight: 700, padding: '0.25rem 0.55rem' }}>
+                          <FileCheck size={14} /> İRSALİYE: #{group.waybill_number}
                         </span>
                         {group.vehicle_plate && (
-                          <span style={{ fontSize: '0.85rem', color: '#0284C7', fontWeight: 600, background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.25rem 0.6rem', borderRadius: '6px' }}>
-                            Plaka: {group.vehicle_plate}
+                          <span style={{ fontSize: '0.78rem', color: '#0284C7', fontWeight: 600, background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.2rem 0.5rem', borderRadius: '6px' }}>
+                            {group.vehicle_plate}
                           </span>
                         )}
                         {group.driver_name && (
-                          <span style={{ fontSize: '0.85rem', color: '#334155', fontWeight: 600 }}>
-                            <User size={14} style={{ marginRight: '4px', display: 'inline', verticalAlign: 'middle' }} /> Şoför: {group.driver_name}
+                          <span style={{ fontSize: '0.78rem', color: '#334155', fontWeight: 600 }}>
+                            <User size={13} style={{ marginRight: '3px', display: 'inline', verticalAlign: 'middle' }} /> {group.driver_name}
                           </span>
                         )}
-                        <span style={{ fontSize: '0.8rem', background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0', padding: '0.2rem 0.6rem', borderRadius: '6px', fontWeight: 600 }}>
-                          {group.items.length} Kalem Sevk Edildi
+                        <span style={{ fontSize: '0.75rem', background: '#DCFCE7', color: '#15803D', border: '1px solid #BBF7D0', padding: '0.15rem 0.5rem', borderRadius: '6px', fontWeight: 600 }}>
+                          {group.items.length} Kalem
                         </span>
                       </div>
-                      <span style={{ fontSize: '0.8rem', color: '#64748B', fontWeight: 500 }}>
+                      <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
                         {new Date(group.created_at).toLocaleString('tr-TR')}
                       </span>
                     </div>
 
                     {/* Table of items in this waybill */}
-                    <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px', overflow: 'hidden' }}>
+                    <div className="table-container" style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                         <thead>
                           <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
@@ -1800,11 +1873,11 @@ ${itemsSummary}${moreText}
       {/* ============================================================== */}
       {dispatchModalOpen && (
         <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1000 }}>
-          <div className="modal-content" style={{ maxWidth: '680px', width: '90%', maxHeight: '90vh', overflowY: 'auto', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: '1.5rem' }}>
+          <div className="modal-content" style={{ maxWidth: '680px', width: isMobile ? '96%' : '90%', maxHeight: '90vh', overflowY: 'auto', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: isMobile ? '0.85rem' : '1.5rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.75rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Truck size={22} color="var(--primary)" />
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0F172A' }}>Parçalı Sevkiyat İrsaliyesi Oluştur</h3>
+                <h3 style={{ fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700, color: '#0F172A' }}>Parçalı Sevkiyat İrsaliyesi Oluştur</h3>
               </div>
               <button onClick={() => setDispatchModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer' }}>
                 <X size={20} />
@@ -1818,9 +1891,9 @@ ${itemsSummary}${moreText}
             )}
 
             {/* Vehicle & Driver Info Form */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.25rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '0.6rem' : '1rem', marginBottom: '1.25rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: '0.35rem' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
                   ŞOFÖR ADI SOYADI *
                 </label>
                 <input
@@ -1828,12 +1901,12 @@ ${itemsSummary}${moreText}
                   placeholder="Örn: Ahmet Yılmaz"
                   value={driverName}
                   onChange={(e) => setDriverName(e.target.value)}
-                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.88rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: '0.35rem' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
                   ARAÇ PLAKASI *
                 </label>
                 <input
@@ -1841,12 +1914,12 @@ ${itemsSummary}${moreText}
                   placeholder="Örn: 34 ABC 123"
                   value={vehiclePlate}
                   onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.88rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: '0.35rem' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
                   İRSALİYE NUMARASI *
                 </label>
                 <input
@@ -1854,12 +1927,12 @@ ${itemsSummary}${moreText}
                   placeholder="Örn: IRS-2026-0045"
                   value={waybillNumber}
                   onChange={(e) => setWaybillNumber(e.target.value)}
-                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.88rem' }}
                 />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', color: '#64748B', fontWeight: 600, marginBottom: '0.35rem' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
                   SEVKİYAT NOTU (OPSİYONEL)
                 </label>
                 <input
@@ -1867,17 +1940,17 @@ ${itemsSummary}${moreText}
                   placeholder="Örn: 1. Parti Şantiye Teslimatı"
                   value={dispatchNotes}
                   onChange={(e) => setDispatchNotes(e.target.value)}
-                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.9rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.88rem' }}
                 />
               </div>
             </div>
 
             {/* Selected Items Dispatch Quantities List */}
-            <h4 style={{ fontSize: '0.9rem', color: '#0284C7', marginBottom: '0.75rem', fontWeight: 700 }}>
+            <h4 style={{ fontSize: '0.85rem', color: '#0284C7', marginBottom: '0.65rem', fontWeight: 700 }}>
               Sevk Edilecek Kalem Miktarlarını Belirleyin ({selectedItemIds.length} Kalem Seçili)
             </h4>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem', maxHeight: '300px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', marginBottom: '1.25rem', maxHeight: '280px', overflowY: 'auto' }}>
               {selectedItemIds.map((id) => {
                 const item = items.find((it, idx) => (it.id || idx + 1) === id);
                 if (!item) return null;
@@ -1887,23 +1960,23 @@ ${itemsSummary}${moreText}
                 const remaining = Math.max(0, qty - shipped);
 
                 return (
-                  <div key={id} style={{ background: '#F8FAFC', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <div key={id} style={{ background: '#F8FAFC', padding: isMobile ? '0.65rem 0.75rem' : '0.85rem 1rem', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', marginBottom: '0.4rem', gap: '3px' }}>
                       <div>
-                        <strong style={{ color: '#0284C7', fontSize: '0.85rem' }}>
+                        <strong style={{ color: '#0284C7', fontSize: '0.82rem' }}>
                           {item.customerProductCode || item.customer_product_code || `Kalem #${id}`}
                         </strong>
-                        <span style={{ fontSize: '0.85rem', color: '#1E293B', marginLeft: '0.5rem', fontWeight: 600 }}>
+                        <span style={{ fontSize: '0.82rem', color: '#1E293B', marginLeft: '0.4rem', fontWeight: 600 }}>
                           {item.productName || item.product_name}
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
                         Sipariş: <strong>{qty} {item.unit}</strong> | Giden: <strong style={{ color: '#059669' }}>{shipped}</strong> | Kalan: <strong style={{ color: '#0284C7' }}>{remaining} {item.unit}</strong>
                       </div>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                      <label style={{ fontSize: '0.8rem', color: '#475569' }}>Bu Sevkiyatta Gönderilecek Miktar:</label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                      <label style={{ fontSize: '0.78rem', color: '#475569' }}>Bu Sevkiyatta Sevk Miktarı:</label>
                       <input
                         type="number"
                         step="0.1"
@@ -1913,17 +1986,17 @@ ${itemsSummary}${moreText}
                           [id]: parseFloat(e.target.value) || 0
                         })}
                         style={{
-                          width: '110px',
+                          width: '100px',
                           background: '#FFFFFF',
                           border: '1px solid #0284C7',
                           color: '#0284C7',
                           fontWeight: 700,
                           padding: '0.35rem 0.5rem',
                           borderRadius: '6px',
-                          fontSize: '0.95rem'
+                          fontSize: '0.9rem'
                         }}
                       />
-                      <span style={{ fontSize: '0.85rem', color: '#64748B' }}>{item.unit || 'Adet'}</span>
+                      <span style={{ fontSize: '0.8rem', color: '#64748B' }}>{item.unit || 'Adet'}</span>
                     </div>
                   </div>
                 );
@@ -1931,15 +2004,15 @@ ${itemsSummary}${moreText}
             </div>
 
             {/* Modal Actions */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button onClick={() => setDispatchModalOpen(false)} className="btn btn-secondary">
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button onClick={() => setDispatchModalOpen(false)} className="btn btn-secondary" style={{ width: isMobile ? '100%' : 'auto' }}>
                 İptal
               </button>
               <button
                 onClick={() => handlePerformDispatch(false)}
                 disabled={dispatchSubmitting}
                 className="btn btn-primary"
-                style={{ background: '#10B981', border: '1px solid #10B981', fontWeight: 700 }}
+                style={{ width: isMobile ? '100%' : 'auto', background: '#10B981', border: '1px solid #10B981', fontWeight: 700, padding: '0.5rem 1rem' }}
               >
                 {dispatchSubmitting ? 'Sevkiyat Kaydediliyor...' : '✓ Sevkiyatı Onayla ve İrsaliyeyi Kes'}
               </button>
@@ -2192,16 +2265,16 @@ ${itemsSummary}${moreText}
       {/* ============================================================== */}
       {whatsappModalOpen && (
         <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1300 }}>
-          <div className="modal-content" style={{ maxWidth: '640px', width: '92%', height: 'auto', maxHeight: '90vh', background: '#FFFFFF', borderRadius: '16px', padding: '1.5rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+          <div className="modal-content" style={{ maxWidth: '640px', width: isMobile ? '96%' : '92%', height: 'auto', maxHeight: '92vh', background: '#FFFFFF', borderRadius: '16px', padding: isMobile ? '0.85rem' : '1.5rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflowY: 'auto' }}>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid #E2E8F0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ background: '#DCFCE7', padding: '0.6rem', borderRadius: '10px', color: '#16A34A', display: 'flex' }}>
-                  <MessageSquare size={24} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <div style={{ background: '#DCFCE7', padding: '0.5rem', borderRadius: '10px', color: '#16A34A', display: 'flex' }}>
+                  <MessageSquare size={20} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>Siparişi WhatsApp ile Paylaş</h3>
-                  <span style={{ fontSize: '0.82rem', color: '#64748B' }}>PC & Mobil Uyumlu Anlık WhatsApp Gönderimi</span>
+                  <h3 style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>Siparişi WhatsApp ile Paylaş</h3>
+                  <span style={{ fontSize: isMobile ? '0.75rem' : '0.82rem', color: '#64748B' }}>PC & Mobil Uyumlu Anlık WhatsApp Gönderimi</span>
                 </div>
               </div>
 
@@ -2211,8 +2284,8 @@ ${itemsSummary}${moreText}
             </div>
 
             {/* Phone Number Input */}
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '0.35rem' }}>
+            <div style={{ marginBottom: '0.85rem' }}>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '0.3rem' }}>
                 ALICI WHATSAPP TELEFON NUMARASI (Opsiyonel):
               </label>
               <div style={{ position: 'relative' }}>
@@ -2222,32 +2295,32 @@ ${itemsSummary}${moreText}
                   placeholder="ör. 0532 123 45 67 (Boş bırakırsanız WhatsApp içinde kişi seçersiniz)"
                   value={whatsappPhone}
                   onChange={(e) => setWhatsappPhone(e.target.value)}
-                  style={{ width: '100%', padding: '0.55rem 0.75rem 0.55rem 2.2rem', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '0.85rem' }}
+                  style={{ width: '100%', padding: '0.5rem 0.75rem 0.5rem 2.2rem', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '0.85rem' }}
                 />
               </div>
             </div>
 
             {/* Message Preview */}
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '0.35rem' }}>
+            <div style={{ marginBottom: '1rem' }}>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#334155', display: 'block', marginBottom: '0.3rem' }}>
                 MESAJ İÇERİĞİ (İsteğe Göre Düzenlenebilir):
               </label>
               <textarea
-                rows={9}
+                rows={isMobile ? 6 : 9}
                 value={whatsappCustomText}
                 onChange={(e) => setWhatsappCustomText(e.target.value)}
-                style={{ width: '100%', padding: '0.75rem', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '0.83rem', fontFamily: 'monospace', color: '#0F172A', background: '#F8FAFC', lineHeight: 1.4 }}
+                style={{ width: '100%', padding: '0.65rem', border: '1px solid #CBD5E1', borderRadius: '8px', fontSize: '0.8rem', fontFamily: 'monospace', color: '#0F172A', background: '#F8FAFC', lineHeight: 1.4 }}
               />
             </div>
 
             {/* Action Buttons */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button onClick={() => setWhatsappModalOpen(false)} className="btn btn-secondary">
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'column-reverse' : 'row', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              <button onClick={() => setWhatsappModalOpen(false)} className="btn btn-secondary" style={{ width: isMobile ? '100%' : 'auto' }}>
                 İptal
               </button>
 
-              <button onClick={handleSendWhatsApp} className="btn btn-whatsapp" style={{ padding: '0.6rem 1.25rem', fontSize: '0.88rem' }}>
-                <MessageSquare size={18} /> WhatsApp'ta Aç ve Gönder
+              <button onClick={handleSendWhatsApp} className="btn btn-whatsapp" style={{ width: isMobile ? '100%' : 'auto', padding: '0.55rem 1.25rem', fontSize: '0.85rem' }}>
+                <MessageSquare size={16} /> WhatsApp'ta Aç ve Gönder
               </button>
             </div>
           </div>

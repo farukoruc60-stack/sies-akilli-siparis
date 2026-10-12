@@ -326,7 +326,8 @@ table.custom-table tr:hover td {
     -webkit-overflow-scrolling: touch;
   }
 
-  .order-detail-panel {
+  .order-detail-panel,
+  .detail-panel {
     width: 100% !important;
     flex: 1;
     height: 100%;
@@ -468,11 +469,24 @@ table.custom-table tr:hover td {
   .table-container {
     -webkit-overflow-scrolling: touch;
     overflow-x: auto;
+    position: relative;
+    max-width: 100%;
+  }
+
+  /* Prevent iOS zoom on inputs while keeping compact UI */
+  input, select, textarea {
+    font-size: 14px !important;
   }
 
   .btn {
-    min-height: 38px;
-    padding: 0.5rem 0.85rem;
+    min-height: 36px;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.8rem;
+  }
+
+  .badge {
+    padding: 0.15rem 0.45rem;
+    font-size: 0.68rem;
   }
 
   .mobile-hide {

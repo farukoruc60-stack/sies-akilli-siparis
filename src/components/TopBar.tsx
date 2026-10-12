@@ -74,16 +74,16 @@ export const TopBar: React.FC<TopBarProps> = ({
       </div>
 
       {/* Right User & System Status */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         {/* Postgres Status Indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#059669', background: '#D1FAE5', padding: '2px 8px', borderRadius: '12px', border: '1px solid #A7F3D0', fontWeight: 500 }}>
+        <div className="mobile-hide" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#059669', background: '#D1FAE5', padding: '2px 8px', borderRadius: '12px', border: '1px solid #A7F3D0', fontWeight: 500 }}>
           <Database size={12} />
           <span>PostgreSQL Canlı Bağlı</span>
         </div>
 
         {/* User Info Pill */}
         {user && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#2D3748', background: '#FFFFFF', padding: '3px 10px', borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+          <div className="mobile-hide" style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11.5px', color: '#2D3748', background: '#FFFFFF', padding: '3px 10px', borderRadius: '14px', border: '1px solid #E2E8F0' }}>
             <ShieldCheck size={13} style={{ color: '#4361EE' }} />
             <span style={{ fontWeight: 600 }}>{user.name}</span>
             <span style={{ color: '#A0AEC0', fontSize: '10px' }}>({user.role === 'ADMIN' ? 'Yönetici' : 'Kullanıcı'})</span>
@@ -95,20 +95,21 @@ export const TopBar: React.FC<TopBarProps> = ({
           onClick={onRefresh}
           style={{
             background: '#FFFFFF',
-            border: '1px solid #E2E8F0',
+            border: '1px solid #CBD5E1',
             borderRadius: '6px',
-            padding: '4px 8px',
-            color: '#4A5568',
+            padding: '5px 8px',
+            color: '#334155',
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '4px',
-            fontSize: '11px'
+            fontSize: '11px',
+            fontWeight: 500
           }}
           title="Verileri Yenile"
         >
-          <RefreshCw size={12} />
-          <span>Yenile</span>
+          <RefreshCw size={13} />
+          <span className="mobile-hide">Yenile</span>
         </button>
 
         {user && (
@@ -118,7 +119,7 @@ export const TopBar: React.FC<TopBarProps> = ({
               background: '#FEE2E2',
               border: '1px solid #FCA5A5',
               borderRadius: '6px',
-              padding: '4px 8px',
+              padding: '5px 8px',
               color: '#DC2626',
               cursor: 'pointer',
               display: 'flex',
@@ -129,8 +130,8 @@ export const TopBar: React.FC<TopBarProps> = ({
             }}
             title="Oturumu Kapat"
           >
-            <LogOut size={12} />
-            <span>Çıkış</span>
+            <LogOut size={13} />
+            <span className="mobile-hide">Çıkış</span>
           </button>
         )}
       </div>
