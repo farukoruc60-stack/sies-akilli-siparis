@@ -121,7 +121,13 @@ export async function processUploadedDocument(filePath, originalName, mimeType) 
   try {
     if (ext === '.pdf') {
       const dataBuffer = fs.readFileSync(filePath);
-      const pdfData = await pdfParse(dataBuffer);
+      let pdfData;
+      try {
+        pdfData = await pdfParse(dataBuffer, { pagerender: smartPdfPageRender });
+      } catch (pdfErr) {
+        console.warn('[DocumentProcessor] smartPdfPageRender başarısız, varsayılan renderer deneniyor:', pdfErr.message);
+        pdfData = await pdfParse(dataBuffer);
+      }
       const text = pdfData.text || '';
 
       if (text.trim().length > 30) {
@@ -226,6 +232,86 @@ async function runTesseractOCR(filePath) {
     console.warn('Tesseract OCR çalıştırılamadı:', err.message);
     return '';
   }
+}
+
+function smartPdfPageRender(pageData) {
+  const render_options = {
+    normalizeWhitespace: false,
+    disableCombineTextItems: false
+  };
+
+  return pageData.getTextContent(render_options).then(function(textContent) {
+    const items = textContent.items || [];
+    if (!items.length) return '';
+
+    const lineBuckets = [];
+    const Y_TOLERANCE = 3.5;
+
+    for (const item of items) {
+      if (!item.str && item.str !== ' ') continue;
+      const x = item.transform[4];
+      const y = item.transform[5];
+
+      let bucket = lineBuckets.find(b => Math.abs(b.y - y) <= Y_TOLERANCE);
+      if (!bucket) {
+        bucket = { y: y, items: [] };
+        lineBuckets.push(bucket);
+      }
+      bucket.items.push({ str: item.str, x: x });
+    }
+
+    lineBuckets.sort((a, b) => b.y - a.y);
+
+    const lineStrings = [];
+    for (const bucket of lineBuckets) {
+      bucket.items.sort((a, b) => a.x - b.x);
+
+      let lineText = '';
+      for (let i = 0; i < bucket.items.length; i++) {
+        const str = bucket.items[i].str;
+        if (!str) continue;
+        if (!lineText) {
+          lineText = str;
+        } else {
+          if (/\s$/.test(lineText) || /^\s/.test(str)) {
+            lineText += str;
+          } else {
+            lineText += ' ' + str;
+          }
+        }
+      }
+      if (lineText.trim()) {
+        lineStrings.push(lineText.trim());
+      }
+    }
+
+    return lineStrings.join('\n');
+  });
+}
+
+function isValidOrderNo(val) {
+  if (!val || typeof val !== 'string') return false;
+  const upper = val.trim().toUpperCase();
+  const invalidWords = [
+    'SİPARİŞ', 'SIPARIS', 'SİPARİ', 'SIPARI', 'SATINALMA', 'SATIS', 'SATIŞ',
+    'TEKLİF', 'TEKLIF', 'FORMU', 'TALEP', 'PROJE', 'PROJECT', 'REVİZYON',
+    'REVIZYON', 'BELGE', 'TARIH', 'TARİH', 'DURUM', 'DURUMU'
+  ];
+  if (invalidWords.includes(upper)) return false;
+  if (upper.length < 3) return false;
+  return true;
+}
+
+function isValidProjectNo(val) {
+  if (!val || typeof val !== 'string') return false;
+  const upper = val.trim().toUpperCase();
+  const invalidWords = [
+    'TEKLİF', 'TEKLIF', 'SİPARİŞ', 'SIPARIS', 'PROJE', 'PROJECT',
+    'YOK', 'TANIMSIZ', 'GENEL', 'TALEP', 'SATINALMA', 'FORM'
+  ];
+  if (invalidWords.includes(upper)) return false;
+  if (upper.length < 2) return false;
+  return true;
 }
 
 function cleanPdfText(text) {
@@ -1105,11 +1191,20 @@ function parseDearsanGemi(text, lines, originalName = '') {
     currency: 'USD'
   };
 
-  const orderNoMatch = text.match(/(?:Satınalma\s*Siparişi|Bu\s*Sipariş\s*İçin\s*No)\s*:?\s*([A-Z0-9]+)/i);
-  if (orderNoMatch) customerInfo.orderNo = orderNoMatch[1].trim();
+  const explicitOrderMatch = text.match(/Bu\s*Sipariş\s*İçin\s*No\s*:?\s*([A-Z0-9\-]+)/i) ||
+                             text.match(/Satınalma\s*Siparişi(?:\s*No)?\s*:?\s*([A-Z0-9\-]+)/i);
+  if (explicitOrderMatch && isValidOrderNo(explicitOrderMatch[1])) {
+    customerInfo.orderNo = explicitOrderMatch[1].trim();
+  } else {
+    const sMatch = text.match(/\b(S\d{4,8})\b/i);
+    if (sMatch && isValidOrderNo(sMatch[1])) customerInfo.orderNo = sMatch[1].trim();
+  }
 
-  const projMatch = text.match(/Project\s*Id\s*:?\s*([A-Z0-9]+)/i);
-  if (projMatch) customerInfo.projectNo = projMatch[1].trim();
+  const projMatch = text.match(/Project\s*Id\s*:?\s*([A-Z0-9\-]+)/i) ||
+                    text.match(/\b(NB\d{3,5}[A-Z0-9]*)\b/i);
+  if (projMatch && isValidProjectNo(projMatch[1])) {
+    customerInfo.projectNo = projMatch[1].trim();
+  }
 
   const dateMatch = text.match(/Sipariş\s*Zamanı\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
   if (dateMatch) customerInfo.orderDate = normalizeDateToISO(dateMatch[1]) || customerInfo.orderDate;
@@ -1126,95 +1221,91 @@ function parseDearsanGemi(text, lines, originalName = '') {
   else if (/304/i.test(text)) customerInfo.coatingType = '304 Paslanmaz';
   else if (/Galvaniz/i.test(text)) customerInfo.coatingType = 'Sıcak Daldırma Galvaniz';
 
-  const orderItems = [];
-  let inTable = false;
-  let lineNo = 1;
+  // Chunk bazlı satır ayrıştırma (tablodaki çok satırlı hücrelerin kaymasını engeller)
+  const chunks = [];
+  let currentChunk = null;
 
   for (let i = 0; i < lines.length; i++) {
     const rawLine = lines[i].trim();
     if (!rawLine) continue;
 
-    // Alt toplam ve imza kısımlarına gelince tablo okumayı kes
-    if (/^(?:Alt Toplam|Toplam Vergi|Genel Toplam|Toplam Tutar|İndirim|Lütfen İrsaliye|Bu Sipariş İçin No)/i.test(rawLine)) {
+    if (/^(?:Alt Toplam|Toplam Vergi|Genel Toplam|Toplam Tutar|İndirim|Lütfen İrsaliye)/i.test(rawLine)) {
+      if (currentChunk) chunks.push(currentChunk);
+      currentChunk = null;
       break;
     }
 
-    if (/Malz\.\s*Numarası|Tanımlama|Talep\s*No/i.test(rawLine)) {
-      inTable = true;
-      continue;
+    const rowStartMatch = rawLine.match(/^([1-9]\d{0,2}\s+)?(\d{6,8})\b/);
+    if (rowStartMatch) {
+      if (currentChunk) chunks.push(currentChunk);
+      currentChunk = {
+        code: rowStartMatch[2],
+        lines: [rawLine]
+      };
+    } else if (currentChunk) {
+      currentChunk.lines.push(rawLine);
+    }
+  }
+  if (currentChunk) chunks.push(currentChunk);
+
+  const orderItems = [];
+  let lineNo = 1;
+
+  for (const chunk of chunks) {
+    const fullText = chunk.lines.join(' ');
+
+    // Miktar ve birim
+    const qtyMatch = fullText.match(/(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)\s*(ad|adet|m|mt|metre|boy|kg|pcs)\b/i);
+    const qty = qtyMatch ? parseTurkishNumber(qtyMatch[1]) : 1;
+    const unitRaw = qtyMatch ? qtyMatch[2].toLowerCase() : 'ad';
+    const unit = (unitRaw === 'ad' || unitRaw === 'adet' || unitRaw === 'pcs') ? 'Adet' : ((unitRaw === 'm' || unitRaw === 'mt') ? 'Metre' : unitRaw);
+
+    // Termin tarihi
+    const itemDateMatch = fullText.match(/(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/);
+    if (itemDateMatch && !customerInfo.deliveryDate) {
+      customerInfo.deliveryDate = normalizeDateToISO(itemDateMatch[1]) || customerInfo.deliveryDate;
     }
 
-    // Satır başlangıcı: 1 169387 ASKI AYAĞI, DELİKLİ, 316L... veya 169387 ASKI AYAĞI...
-    const singleLineMatch = rawLine.match(/^(\d{1,3}\s+)?(\d{6,8})\s+(.+)/i);
-    if (singleLineMatch) {
-      inTable = true;
-      const code = singleLineMatch[2].trim();
-      const afterCode = singleLineMatch[3].trim();
-
-      // Ürün açıklaması
-      const descMatch = afterCode.match(/^(.+?)(?:\s+\d{5}\b|\s+TOYGAR|\s+Muhtelif|\s+\d{4}\s+SS|\s+\d{1,3}(?:\.\d{3})*(?:,\d+)?\s*(?:ad|adet|m|mt|kg|pcs))/i);
-      const desc = descMatch ? descMatch[1].trim() : afterCode;
-
-      // Miktar ve birim
-      const qtyMatch = rawLine.match(/(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)\s*(ad|adet|m|mt|metre|boy|kg|pcs)\b/i);
-      const qty = qtyMatch ? parseTurkishNumber(qtyMatch[1]) : 1;
-      const unitRaw = qtyMatch ? qtyMatch[2].toLowerCase() : 'ad';
-      const unit = (unitRaw === 'ad' || unitRaw === 'adet' || unitRaw === 'pcs') ? 'Adet' : ((unitRaw === 'm' || unitRaw === 'mt') ? 'Metre' : unitRaw);
-
-      // Termin tarihi
-      const itemDateMatch = rawLine.match(/(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/);
-      if (itemDateMatch && !customerInfo.deliveryDate) {
-        customerInfo.deliveryDate = normalizeDateToISO(itemDateMatch[1]) || customerInfo.deliveryDate;
-      }
-
-      // Birim fiyat ve satır toplamı
-      const priceMatch = rawLine.match(/(?:ad|adet|m|mt|metre|boy|kg|pcs)\s+(?:\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4}\s+)?(\d+[\,\.]\d{2})\s*(?:%?\d+)?\s*(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)?\s*(USD|EUR|TRY)?/i);
-      let unitPrice = 0;
-      let lineTotal = 0;
-      if (priceMatch) {
-        unitPrice = parseTurkishNumber(priceMatch[1]);
-        lineTotal = priceMatch[2] ? parseTurkishNumber(priceMatch[2]) : (qty * unitPrice);
-      } else {
-        const altPriceMatch = rawLine.match(/(\d+[\,\.]\d{2})\s*(?:%?\d+)?\s*(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)?\s*USD/i);
-        if (altPriceMatch) {
-          unitPrice = parseTurkishNumber(altPriceMatch[1]);
-          lineTotal = altPriceMatch[2] ? parseTurkishNumber(altPriceMatch[2]) : (qty * unitPrice);
-        }
-      }
-
-      const itemCurrency = (priceMatch && priceMatch[3]) ? priceMatch[3].toUpperCase() : currency;
-
-      orderItems.push({
-        lineNo: lineNo++,
-        customerProductCode: code,
-        internalProductCode: `SIES-${code}`,
-        productName: desc,
-        productDescription: desc,
-        quantity: qty,
-        unit: unit,
-        unitPrice: unitPrice,
-        currency: itemCurrency,
-        lineTotal: lineTotal || (qty * unitPrice),
-        material: /316L/i.test(desc) ? '316L Paslanmaz' : 'Paslanmaz',
-        surfaceCoating: '316L Paslanmaz',
-        confidenceScore: 0.99,
-        status: 'OK'
-      });
-      continue;
-    }
-
-    // Çok satırlı açıklama tamamlama
-    if (inTable && orderItems.length > 0 && !rawLine.match(/^(?:Alt Toplam|Toplam|İndirim|Lütfen|Sayfa)/i)) {
-      if (!rawLine.match(/^\d{5,8}\b/) && !rawLine.match(/^(\d{1,3}\s+)?\d{6,8}\b/)) {
-        if (!rawLine.includes('Vergi') && !rawLine.includes('Ödeme') && !rawLine.includes('Adres') && !rawLine.includes('Tedarikçi')) {
-          const last = orderItems[orderItems.length - 1];
-          if (last.productDescription.length < 120 && !last.productDescription.includes(rawLine)) {
-            last.productDescription = `${last.productDescription} ${rawLine}`.trim();
-            last.productName = last.productDescription;
-          }
-        }
+    // Fiyat ve Tutar
+    let unitPrice = 0;
+    let lineTotal = 0;
+    const priceMatch = fullText.match(/(?:ad|adet|m|mt|kg|pcs)\s+(?:\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4}\s+)?(\d+[\,\.]\d{2,4})\s*(?:%?\s*\d+)?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+(?:,\d{2}))?/i);
+    if (priceMatch) {
+      unitPrice = parseTurkishNumber(priceMatch[1]);
+      lineTotal = priceMatch[2] ? parseTurkishNumber(priceMatch[2]) : (qty * unitPrice);
+    } else {
+      const altPriceMatch = fullText.match(/(\d+[\,\.]\d{2,4})\s*(?:%?\s*\d+)?\s*(\d{1,3}(?:\.\d{3})*(?:,\d{2})|\d+(?:,\d{2}))?\s*(?:USD|EUR|TRY)?/i);
+      if (altPriceMatch) {
+        unitPrice = parseTurkishNumber(altPriceMatch[1]);
+        lineTotal = altPriceMatch[2] ? parseTurkishNumber(altPriceMatch[2]) : (qty * unitPrice);
       }
     }
+
+    // Açıklama temizliği (ERP kodları, onaylayan isimleri, miktarlar vb. temizlenir)
+    const firstLine = chunk.lines[0];
+    let desc = firstLine.replace(new RegExp('^([1-9]\\d{0,2}\\s+)?' + chunk.code + '\\s*'), '').trim();
+    desc = desc.replace(/\s+(?:\d{5}\b|TOYGAR|Muhtelif|\d{4}:\d+|\d{1,3}(?:\.\d{3})*(?:,\d+)?\s*(?:ad|adet)).*$/i, '').trim();
+
+    if (!desc || desc.length < 3) {
+      desc = `Dearsan Kalem (${chunk.code})`;
+    }
+
+    orderItems.push({
+      lineNo: lineNo++,
+      customerProductCode: chunk.code,
+      internalProductCode: `SIES-${chunk.code}`,
+      productName: desc,
+      productDescription: desc,
+      quantity: qty,
+      unit: unit,
+      unitPrice: unitPrice,
+      currency: currency,
+      lineTotal: lineTotal || (qty * unitPrice),
+      material: /316L/i.test(desc) ? '316L Paslanmaz' : 'Paslanmaz',
+      surfaceCoating: '316L Paslanmaz',
+      confidenceScore: 0.99,
+      status: 'OK'
+    });
   }
 
   return { customerInfo, orderItems };
@@ -1259,13 +1350,13 @@ function parseUniversalText(text, lines, originalName = '') {
   }
 
   const projMatch = text.match(/(?:Proje\s*No|Project\s*No|Müşteri\s*Proje)\s*:?\s*([A-Z0-9\-\_]+)/i);
-  if (projMatch) customerInfo.projectNo = projMatch[1].trim();
+  if (projMatch && isValidProjectNo(projMatch[1])) customerInfo.projectNo = projMatch[1].trim();
 
   // 3. Sipariş Numarası & Tarih Taraması
   const orderNoMatch = text.match(/(\d{4,10})\s*NOLU\s*(?:SATINALMA\s*)?SİPARİŞİ/i) ||
                        text.match(/(?:Sipariş\s*No|Sipariş\s*Numarası|PO\s*No|Order\s*No|Sipariş\s*Ref)\s*:?\s*([A-Z0-9\-\/]{3,20})/i) ||
-                       text.match(/\b(P\d{4,10}|SO\-\d{4,10}|PO\-\d{4,10})\b/i);
-  if (orderNoMatch) customerInfo.orderNo = orderNoMatch[1].trim();
+                       text.match(/\b(P\d{4,10}|SO\-\d{4,10}|PO\-\d{4,10}|S\d{4,8})\b/i);
+  if (orderNoMatch && isValidOrderNo(orderNoMatch[1])) customerInfo.orderNo = orderNoMatch[1].trim();
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];

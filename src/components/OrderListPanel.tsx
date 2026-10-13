@@ -57,9 +57,6 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   // Grouping Mode State: Default to Customer Grouping (true)
   const [groupByCustomer, setGroupByCustomer] = useState<boolean>(true);
 
-  // Expanded/Collapsed Customer Groups State (empty map = all expanded by default)
-  const [collapsedCustomers, setCollapsedCustomers] = useState<{ [custName: string]: boolean }>({});
-
   // Single active order accordion state: ONLY the selected order can have its accordion open
   const [isSelectedExpanded, setIsSelectedExpanded] = useState<boolean>(true);
 
@@ -67,13 +64,6 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   React.useEffect(() => {
     setIsSelectedExpanded(true);
   }, [selectedOrderId]);
-
-  const toggleCustomerGroup = (custName: string) => {
-    setCollapsedCustomers(prev => ({
-      ...prev,
-      [custName]: !prev[custName]
-    }));
-  };
 
   const fixTurkishEncoding = (text?: string): string => {
     if (!text) return '';
@@ -149,6 +139,36 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
       totalItems: customerOrders.reduce((acc, o) => acc + (parseInt(String(o.total_items || 0)) || 0), 0)
     }));
   }, [orders]);
+
+  // Single active expanded customer group: ONLY the selected order's customer group is open!
+  const selectedCustomerName = useMemo(() => {
+    const selOrder = orders.find(o => o.id === selectedOrderId);
+    return selOrder ? (fixTurkishEncoding(selOrder.customer_name) || 'Bilinmeyen Müşteri') : null;
+  }, [orders, selectedOrderId]);
+
+  // Keep track of the currently expanded customer group. By default, it's the customer of the selected order!
+  const [expandedCustomerName, setExpandedCustomerName] = useState<string | null>(null);
+
+  // Sync expandedCustomerName with selected order whenever selectedOrderId or orders change
+  React.useEffect(() => {
+    if (selectedCustomerName) {
+      setExpandedCustomerName(selectedCustomerName);
+    } else if (customerGroups.length > 0 && !expandedCustomerName) {
+      setExpandedCustomerName(customerGroups[0].customerName);
+    }
+  }, [selectedCustomerName, customerGroups]);
+
+  const handleToggleCustomerGroup = (custName: string, firstOrder?: Order) => {
+    if (expandedCustomerName === custName) {
+      setExpandedCustomerName(null);
+    } else {
+      setExpandedCustomerName(custName);
+      if (firstOrder && firstOrder.id !== selectedOrderId) {
+        onSelectOrder(firstOrder);
+        setIsSelectedExpanded(true);
+      }
+    }
+  };
 
   const renderOrderCard = (order: Order) => {
     const isSelected = selectedOrderId === order.id;
@@ -493,7 +513,8 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
         ) : groupByCustomer ? (
           /* CUSTOMER GROUPED ACCORDION VIEW */
           customerGroups.map((group) => {
-            const isCollapsed = collapsedCustomers[group.customerName];
+            const isExpanded = expandedCustomerName === group.customerName;
+            const isCollapsed = !isExpanded;
             const hasSelectedOrderInGroup = group.customerOrders.some(o => o.id === selectedOrderId);
 
             return (
@@ -509,11 +530,11 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
               >
                 {/* Customer Accordion Header */}
                 <div
-                  onClick={() => toggleCustomerGroup(group.customerName)}
+                  onClick={() => handleToggleCustomerGroup(group.customerName, group.customerOrders[0])}
                   style={{
                     padding: '8px 12px',
                     background: hasSelectedOrderInGroup ? '#EFF6FF' : '#F8FAFC',
-                    borderBottom: !isCollapsed ? '1px solid #E2E8F0' : 'none',
+                    borderBottom: isExpanded ? '1px solid #E2E8F0' : 'none',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'space-between',
@@ -537,7 +558,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                 </div>
 
                 {/* Customer Orders List (when expanded) */}
-                {!isCollapsed && (
+                {isExpanded && (
                   <div style={{ padding: '6px 8px', background: '#FAFAFA' }}>
                     {group.customerOrders.map(order => renderOrderCard(order))}
                   </div>
