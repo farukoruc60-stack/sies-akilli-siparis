@@ -49,6 +49,20 @@ export default function App() {
   const [orderHistory, setOrderHistory] = useState<OrderStatusHistory[]>([]);
   const [orderDispatches, setOrderDispatches] = useState<DispatchRecord[]>([]);
   const [customerInsights, setCustomerInsights] = useState<CustomerInsights | null>(null);
+  const [isOrderDetailLoading, setIsOrderDetailLoading] = useState<boolean>(false);
+
+  // In-memory cache for instant (0ms) order switching
+  const orderDetailCacheRef = useRef<Map<number, {
+    order: Order;
+    items: OrderItem[];
+    documents: OrderDocument[];
+    history: OrderStatusHistory[];
+    dispatches: DispatchRecord[];
+    customerInsights: CustomerInsights | null;
+  }>>(new Map());
+
+  // Active request sequence ID to eliminate race conditions
+  const activeDetailRequestIdRef = useRef<number>(0);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -117,7 +131,7 @@ export default function App() {
 
         // Auto select first order if none selected
         if (data.orders.length > 0 && !selectedOrder) {
-          fetchOrderDetail(data.orders[0].id);
+          handleSelectOrder(data.orders[0]);
         }
       }
     } catch (err) {
@@ -125,9 +139,13 @@ export default function App() {
     }
   };
 
-  // Fetch Single Order Detail
-  const fetchOrderDetail = async (orderId: number) => {
+  // Fetch Single Order Detail with Race-Condition Guard & In-Memory Cache
+  const fetchOrderDetail = async (orderId: number, isSilent: boolean = false) => {
     if (!token) return;
+    const reqId = ++activeDetailRequestIdRef.current;
+    if (!isSilent) {
+      setIsOrderDetailLoading(true);
+    }
     try {
       const res = await fetch(`/api/orders/${orderId}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -139,18 +157,66 @@ export default function App() {
       }
 
       const data = await res.json();
-      if (!res.ok || !data.order) {
-        console.error('Sipariş detayı yüklenemedi:', data.error || 'Geçersiz veri');
+      // Drop response if user has navigated to another order in the meantime
+      if (reqId !== activeDetailRequestIdRef.current) {
         return;
       }
-      setSelectedOrder(data.order);
-      setOrderItems(data.items || []);
-      setOrderDocuments(data.documents || []);
-      setOrderHistory(data.history || []);
-      setOrderDispatches(data.dispatches || []);
-      setCustomerInsights(data.customerInsights || null);
+
+      if (!res.ok || !data.order) {
+        console.error('Sipariş detayı yüklenemedi:', data.error || 'Geçersiz veri');
+        setIsOrderDetailLoading(false);
+        return;
+      }
+
+      const detailData = {
+        order: data.order,
+        items: data.items || [],
+        documents: data.documents || [],
+        history: data.history || [],
+        dispatches: data.dispatches || [],
+        customerInsights: data.customerInsights || null
+      };
+
+      orderDetailCacheRef.current.set(orderId, detailData);
+
+      setSelectedOrder(detailData.order);
+      setOrderItems(detailData.items);
+      setOrderDocuments(detailData.documents);
+      setOrderHistory(detailData.history);
+      setOrderDispatches(detailData.dispatches);
+      setCustomerInsights(detailData.customerInsights);
+      setIsOrderDetailLoading(false);
     } catch (err) {
-      console.error('Sipariş detayı alınamadı:', err);
+      if (reqId === activeDetailRequestIdRef.current) {
+        console.error('Sipariş detayı alınamadı:', err);
+        setIsOrderDetailLoading(false);
+      }
+    }
+  };
+
+  // Instant Order Selection with 0ms Switching & Stale State Elimination
+  const handleSelectOrder = (order: Order) => {
+    setSelectedOrder(order);
+    const cached = orderDetailCacheRef.current.get(order.id);
+    if (cached) {
+      // Instant switch from cache (0ms delay)
+      setSelectedOrder(cached.order);
+      setOrderItems(cached.items);
+      setOrderDocuments(cached.documents);
+      setOrderHistory(cached.history);
+      setOrderDispatches(cached.dispatches);
+      setCustomerInsights(cached.customerInsights);
+      setIsOrderDetailLoading(false);
+      // Background silent revalidation
+      fetchOrderDetail(order.id, true);
+    } else {
+      // Immediately clear previous order data so old items NEVER show under the new order
+      setOrderItems([]);
+      setOrderDocuments([]);
+      setOrderHistory([]);
+      setOrderDispatches([]);
+      setCustomerInsights(null);
+      fetchOrderDetail(order.id, false);
     }
   };
 
@@ -315,6 +381,8 @@ export default function App() {
     }
     if (!res.ok) throw new Error(toTurkishErrorMessage(data.error || 'Güncelleme başarısız'));
 
+    // Invalidate memory cache so next fetch gets updated data
+    orderDetailCacheRef.current.delete(selectedOrder.id);
     await fetchOrderDetail(selectedOrder.id);
     await fetchOrders();
   };
@@ -333,6 +401,9 @@ export default function App() {
       if (!res.ok) {
         throw new Error(toTurkishErrorMessage(data.error || 'Sipariş silinemedi!'));
       }
+
+      // Invalidate memory cache
+      orderDetailCacheRef.current.delete(orderId);
 
       // If deleted order was selected, clear selection
       if (selectedOrder?.id === orderId) {
@@ -369,6 +440,8 @@ export default function App() {
 
     if (!res.ok) throw new Error(toTurkishErrorMessage('Durum değiştirilemedi'));
 
+    // Invalidate memory cache
+    orderDetailCacheRef.current.delete(selectedOrder.id);
     await fetchOrderDetail(selectedOrder.id);
     await fetchOrders();
   };
@@ -415,10 +488,11 @@ export default function App() {
                 orders={orders}
                 selectedOrderId={selectedOrder?.id || null}
                 onSelectOrder={(order) => {
-                  setSelectedOrder(order);
-                  fetchOrderDetail(order.id);
+                  handleSelectOrder(order);
                   setMobileActiveView('detail');
                 }}
+                selectedOrderItems={orderItems}
+                isOrderDetailLoading={isOrderDetailLoading}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
                 statusFilter={statusFilter}
@@ -437,6 +511,7 @@ export default function App() {
                 history={orderHistory}
                 dispatches={orderDispatches}
                 customerInsights={customerInsights}
+                isLoading={isOrderDetailLoading}
                 onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
                 onUpdateOrder={handleUpdateOrder}
                 onDeleteOrder={handleDeleteOrder}
@@ -450,10 +525,9 @@ export default function App() {
               <OrderListPanel
                 orders={orders}
                 selectedOrderId={selectedOrder?.id || null}
-                onSelectOrder={(order) => {
-                  setSelectedOrder(order);
-                  fetchOrderDetail(order.id);
-                }}
+                onSelectOrder={handleSelectOrder}
+                selectedOrderItems={orderItems}
+                isOrderDetailLoading={isOrderDetailLoading}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
                 statusFilter={statusFilter}
@@ -473,6 +547,7 @@ export default function App() {
                 history={orderHistory}
                 dispatches={orderDispatches}
                 customerInsights={customerInsights}
+                isLoading={isOrderDetailLoading}
                 onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
                 onUpdateOrder={handleUpdateOrder}
                 onDeleteOrder={handleDeleteOrder}

@@ -41,8 +41,13 @@ export async function initDatabase() {
           created_by INTEGER REFERENCES users(id),
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+      CREATE INDEX IF NOT EXISTS idx_documents_order_id ON documents(order_id);
+      CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id ON order_status_history(order_id);
+      CREATE INDEX IF NOT EXISTS idx_dispatches_order_id ON dispatches(order_id);
+      CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
     `);
-    console.log('✓ PostgreSQL sevkiyat, kaplama ve proje tabloları güncellendi.');
+    console.log('✓ PostgreSQL sevkiyat, kaplama ve proje tabloları ve indeksleri güncellendi.');
 
     client.release();
     return 'PG';
@@ -245,6 +250,15 @@ async function runSqliteMigrations() {
   } catch (e) {}
   try {
     await new Promise((res) => sqliteDb.run("ALTER TABLE orders ADD COLUMN project_no TEXT", () => res(true)));
+  } catch (e) {}
+
+  // Create SQLite indexes on relational foreign keys
+  try {
+    await new Promise((res) => sqliteDb.run("CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id)", () => res(true)));
+    await new Promise((res) => sqliteDb.run("CREATE INDEX IF NOT EXISTS idx_documents_order_id ON documents(order_id)", () => res(true)));
+    await new Promise((res) => sqliteDb.run("CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id ON order_status_history(order_id)", () => res(true)));
+    await new Promise((res) => sqliteDb.run("CREATE INDEX IF NOT EXISTS idx_dispatches_order_id ON dispatches(order_id)", () => res(true)));
+    await new Promise((res) => sqliteDb.run("CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id)", () => res(true)));
   } catch (e) {}
 }
 

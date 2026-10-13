@@ -50,6 +50,7 @@ interface OrderDetailPanelProps {
   history: OrderStatusHistory[];
   dispatches?: DispatchRecord[];
   customerInsights?: CustomerInsights | null;
+  isLoading?: boolean;
   onRefresh: () => void;
   onUpdateOrder: (
     updatedItems: OrderItem[],
@@ -67,6 +68,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   history,
   dispatches = [],
   customerInsights,
+  isLoading = false,
   onRefresh,
   onUpdateOrder,
   onDeleteOrder,
@@ -1021,7 +1023,9 @@ ${itemsSummary}
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>TOPLAM KALEM</span>
-              <strong style={{ color: 'var(--primary)', fontSize: isMobile ? '0.78rem' : '0.82rem' }}>{(items || []).length} Kalem</strong>
+              <strong style={{ color: 'var(--primary)', fontSize: isMobile ? '0.78rem' : '0.82rem' }}>
+                {isLoading && items.length === 0 ? `${order.total_items || 0} Kalem (Yükleniyor...)` : `${(items || []).length} Kalem`}
+              </strong>
             </div>
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>DURUM</span>
@@ -1044,8 +1048,8 @@ ${itemsSummary}
       }}>
         {[
           { id: 'summary', label: isMobile ? '1. Özet' : '1. Sipariş Özeti', icon: FileText },
-          { id: 'items', label: isMobile ? `2. Kalemler (${(items || []).length})` : `2. Sipariş Kalemleri (${(items || []).length})`, icon: Layers },
-          { id: 'documents', label: isMobile ? `3. Belgeler (${(documents || []).length})` : `3. Sipariş Belgeleri (${(documents || []).length})`, icon: ExternalLink },
+          { id: 'items', label: isMobile ? `2. Kalemler (${isLoading && items.length === 0 ? (order.total_items || 0) : (items || []).length})` : `2. Sipariş Kalemleri (${isLoading && items.length === 0 ? (order.total_items || 0) : (items || []).length})`, icon: Layers },
+          { id: 'documents', label: isMobile ? `3. Belgeler (${isLoading && documents.length === 0 ? (order.total_docs || 0) : (documents || []).length})` : `3. Sipariş Belgeleri (${isLoading && documents.length === 0 ? (order.total_docs || 0) : (documents || []).length})`, icon: ExternalLink },
           { id: 'production', label: isMobile ? '4. Üretim' : '4. Üretim & Kaplama', icon: Factory },
           { id: 'shipping', label: isMobile ? `5. Sevk (${waybillGroups.length})` : `5. Sevkiyat (${waybillGroups.length} İrsaliye)`, icon: Truck },
           { id: 'history', label: isMobile ? '6. Geçmiş' : '6. İşlem Geçmişi', icon: History }
@@ -1232,10 +1236,10 @@ ${itemsSummary}
                 </div>
                 <div>
                   <div style={{ fontSize: isMobile ? '0.85rem' : '1rem', fontWeight: 700, color: '#059669', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                    {isLoading && items.length === 0 ? 'Hesaplanıyor...' : `${totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY`}
                   </div>
                   <div style={{ fontSize: '0.7rem', color: '#64748B', marginTop: '2px' }}>
-                    {totalItemsCount} Kalem • {totalQuantity.toLocaleString('tr-TR')} Adet
+                    {isLoading && items.length === 0 ? `${order.total_items || 0} Kalem` : `${totalItemsCount} Kalem • ${totalQuantity.toLocaleString('tr-TR')} Adet`}
                   </div>
                 </div>
               </div>
@@ -1654,9 +1658,30 @@ ${itemsSummary}
                   </tr>
                 </thead>
                 <tbody>
-                  {(isEditing ? editingItems : items).map((item, idx) => {
-                    const itemId = item.id || idx + 1;
-                    const isSelected = selectedItemIds.includes(itemId);
+                  {isLoading && items.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} style={{ textAlign: 'center', padding: '3.5rem 1rem', background: '#F8FAFC' }}>
+                        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+                          <Clock size={30} color="var(--primary)" style={{ animation: 'spin 1s linear infinite' }} />
+                          <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1E293B' }}>
+                            Sipariş kalemleri yükleniyor...
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                            Lütfen bekleyin, veriler aktarılıyor.
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (isEditing ? editingItems : items).length === 0 ? (
+                    <tr>
+                      <td colSpan={11} style={{ textAlign: 'center', padding: '2.5rem', color: '#94A3B8' }}>
+                        Bu siparişe ait kayıtlı ürün kalemi bulunamadı.
+                      </td>
+                    </tr>
+                  ) : (
+                    (isEditing ? editingItems : items).map((item, idx) => {
+                      const itemId = item.id || idx + 1;
+                      const isSelected = selectedItemIds.includes(itemId);
                     const qty = parseFloat(String(item.quantity)) || 0;
                     const shipped = parseFloat(String(item.shippedQuantity || 0));
                     const remaining = Math.max(0, qty - shipped);
@@ -1747,7 +1772,7 @@ ${itemsSummary}
                         </td>
                       </tr>
                     );
-                  })}
+                  }))}
                 </tbody>
               </table>
             </div>

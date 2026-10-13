@@ -353,21 +353,41 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
 app.get('/api/orders/:id', authenticateToken, async (req, res) => {
   try {
     const orderId = req.params.id;
-    const orderRes = await query(`
-      SELECT o.*, c.name as customer_name, c.tax_office, c.tax_number, c.address, c.phone, c.email as customer_email,
-             u1.full_name as creator_name, u2.full_name as updater_name
-      FROM orders o
-      LEFT JOIN customers c ON o.customer_id = c.id
-      LEFT JOIN users u1 ON o.created_by = u1.id
-      LEFT JOIN users u2 ON o.updated_by = u2.id
-      WHERE o.id = ?
-    `, [orderId]);
+
+    // Run core order detail queries in parallel via Promise.all to minimize latency
+    const [orderRes, itemsRes, docsRes, historyRes, dispatchesRes] = await Promise.all([
+      query(`
+        SELECT o.*, c.name as customer_name, c.tax_office, c.tax_number, c.address, c.phone, c.email as customer_email,
+               u1.full_name as creator_name, u2.full_name as updater_name
+        FROM orders o
+        LEFT JOIN customers c ON o.customer_id = c.id
+        LEFT JOIN users u1 ON o.created_by = u1.id
+        LEFT JOIN users u2 ON o.updated_by = u2.id
+        WHERE o.id = ?
+      `, [orderId]),
+      query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC, id ASC', [orderId]),
+      query('SELECT * FROM documents WHERE order_id = ? ORDER BY id DESC', [orderId]),
+      query(`
+        SELECT h.*, u.full_name as user_name
+        FROM order_status_history h
+        LEFT JOIN users u ON h.changed_by = u.id
+        WHERE h.order_id = ?
+        ORDER BY h.created_at DESC
+      `, [orderId]),
+      query(`
+        SELECT d.*, oi.customer_product_code, oi.product_name, u.full_name as creator_name
+        FROM dispatches d
+        LEFT JOIN order_items oi ON d.order_item_id = oi.id
+        LEFT JOIN users u ON d.created_by = u.id
+        WHERE d.order_id = ?
+        ORDER BY d.created_at DESC
+      `, [orderId])
+    ]);
 
     if (orderRes.rows.length === 0) {
       return res.status(404).json({ error: 'Sipariş bulunamadı!' });
     }
 
-    const itemsRes = await query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC, id ASC', [orderId]);
     const itemsRaw = itemsRes.rows;
     const items = itemsRaw.map(it => ({
       ...it,
@@ -385,24 +405,6 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       confidenceScore: parseFloat(it.confidence_score) || 1.0,
       status: it.status || 'PENDING'
     }));
-
-    const docsRes = await query('SELECT * FROM documents WHERE order_id = ? ORDER BY id DESC', [orderId]);
-    const historyRes = await query(`
-      SELECT h.*, u.full_name as user_name
-      FROM order_status_history h
-      LEFT JOIN users u ON h.changed_by = u.id
-      WHERE h.order_id = ?
-      ORDER BY h.created_at DESC
-    `, [orderId]);
-
-    const dispatchesRes = await query(`
-      SELECT d.*, oi.customer_product_code, oi.product_name, u.full_name as creator_name
-      FROM dispatches d
-      LEFT JOIN order_items oi ON d.order_item_id = oi.id
-      LEFT JOIN users u ON d.created_by = u.id
-      WHERE d.order_id = ?
-      ORDER BY d.created_at DESC
-    `, [orderId]);
 
     const orderData = orderRes.rows[0];
 
@@ -422,58 +424,63 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
     };
 
     try {
-      // Find all orders for this customer (by customer_id or matching name)
-      const allCustOrdersRes = await query(`
-        SELECT o.id, o.order_no, o.order_date, o.created_at, o.status, o.coating_type,
-               (SELECT COALESCE(SUM(line_total), 0) FROM order_items WHERE order_id = o.id) as order_total
-        FROM orders o
-        WHERE o.customer_id = ? OR o.customer_id IN (SELECT id FROM customers WHERE name = ?)
-        ORDER BY o.created_at ASC, o.id ASC
-      `, [orderData.customer_id, orderData.customer_name]);
+      if (orderData.customer_id) {
+        // Run customer orders and favorite products in parallel with optimized aggregated queries
+        const [allCustOrdersRes, allCustItemsRes] = await Promise.all([
+          query(`
+            SELECT o.id, o.order_no, o.order_date, o.created_at, o.status, o.coating_type,
+                   COALESCE(SUM(oi.line_total), 0) as order_total
+            FROM orders o
+            LEFT JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.customer_id = ?
+            GROUP BY o.id, o.order_no, o.order_date, o.created_at, o.status, o.coating_type
+            ORDER BY o.created_at ASC, o.id ASC
+          `, [orderData.customer_id]),
+          query(`
+            SELECT oi.product_name, oi.customer_product_code, COUNT(*) as cnt, SUM(oi.quantity) as total_qty, oi.unit
+            FROM order_items oi
+            JOIN orders o ON oi.order_id = o.id
+            WHERE o.customer_id = ?
+            GROUP BY oi.product_name, oi.customer_product_code, oi.unit
+            ORDER BY cnt DESC
+            LIMIT 5
+          `, [orderData.customer_id])
+        ]);
 
-      const allOrders = allCustOrdersRes.rows || [];
-      if (allOrders.length > 0) {
-        const orderYear = customerInsights.year;
-        const thisYearOrders = allOrders.filter(o => {
-          const dStr = o.order_date || o.created_at;
-          return dStr && new Date(dStr).getFullYear() === orderYear;
-        });
+        const allOrders = allCustOrdersRes.rows || [];
+        if (allOrders.length > 0) {
+          const orderYear = customerInsights.year;
+          const thisYearOrders = allOrders.filter(o => {
+            const dStr = o.order_date || o.created_at;
+            return dStr && new Date(dStr).getFullYear() === orderYear;
+          });
 
-        const currentOrderIdx = thisYearOrders.findIndex(o => String(o.id) === String(orderId));
-        customerInsights.orderRankThisYear = currentOrderIdx !== -1 ? currentOrderIdx + 1 : thisYearOrders.length || 1;
-        customerInsights.totalOrdersThisYear = Math.max(thisYearOrders.length, 1);
-        customerInsights.totalOrdersAllTime = Math.max(allOrders.length, 1);
+          const currentOrderIdx = thisYearOrders.findIndex(o => String(o.id) === String(orderId));
+          customerInsights.orderRankThisYear = currentOrderIdx !== -1 ? currentOrderIdx + 1 : thisYearOrders.length || 1;
+          customerInsights.totalOrdersThisYear = Math.max(thisYearOrders.length, 1);
+          customerInsights.totalOrdersAllTime = Math.max(allOrders.length, 1);
 
-        const totalRev = allOrders.reduce((sum, o) => sum + (parseFloat(o.order_total) || 0), 0);
-        customerInsights.totalCustomerRevenue = totalRev > 0 ? totalRev : customerInsights.thisOrderAmount;
-        if (customerInsights.totalCustomerRevenue > 0) {
-          customerInsights.thisOrderRevenueSharePercent = Math.min(
-            100,
-            Math.round((customerInsights.thisOrderAmount / customerInsights.totalCustomerRevenue) * 1000) / 10
-          );
-        }
-
-        const coatingCounts = {};
-        allOrders.forEach(o => {
-          if (o.coating_type) {
-            coatingCounts[o.coating_type] = (coatingCounts[o.coating_type] || 0) + 1;
+          const totalRev = allOrders.reduce((sum, o) => sum + (parseFloat(o.order_total) || 0), 0);
+          customerInsights.totalCustomerRevenue = totalRev > 0 ? totalRev : customerInsights.thisOrderAmount;
+          if (customerInsights.totalCustomerRevenue > 0) {
+            customerInsights.thisOrderRevenueSharePercent = Math.min(
+              100,
+              Math.round((customerInsights.thisOrderAmount / customerInsights.totalCustomerRevenue) * 1000) / 10
+            );
           }
-        });
-        customerInsights.favoriteCoatings = Object.entries(coatingCounts)
-          .sort((a, b) => b[1] - a[1])
-          .map(([name, count]) => ({ name, count }));
 
-        const allCustItemsRes = await query(`
-          SELECT oi.product_name, oi.customer_product_code, COUNT(*) as cnt, SUM(oi.quantity) as total_qty, oi.unit
-          FROM order_items oi
-          JOIN orders o ON oi.order_id = o.id
-          WHERE o.customer_id = ? OR o.customer_id IN (SELECT id FROM customers WHERE name = ?)
-          GROUP BY oi.product_name
-          ORDER BY cnt DESC
-          LIMIT 5
-        `, [orderData.customer_id, orderData.customer_name]);
+          const coatingCounts = {};
+          allOrders.forEach(o => {
+            if (o.coating_type) {
+              coatingCounts[o.coating_type] = (coatingCounts[o.coating_type] || 0) + 1;
+            }
+          });
+          customerInsights.favoriteCoatings = Object.entries(coatingCounts)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({ name, count }));
 
-        customerInsights.favoriteProducts = allCustItemsRes.rows || [];
+          customerInsights.favoriteProducts = allCustItemsRes.rows || [];
+        }
       }
 
       const cName = orderData.customer_name;

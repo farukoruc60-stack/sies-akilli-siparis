@@ -23,6 +23,8 @@ interface OrderListPanelProps {
   orders: Order[];
   selectedOrderId: number | null;
   onSelectOrder: (order: Order) => void;
+  selectedOrderItems?: OrderItem[];
+  isOrderDetailLoading?: boolean;
   searchQuery: string;
   setSearchQuery: (q: string) => void;
   statusFilter: string;
@@ -38,6 +40,8 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   orders,
   selectedOrderId,
   onSelectOrder,
+  selectedOrderItems = [],
+  isOrderDetailLoading = false,
   searchQuery,
   setSearchQuery,
   statusFilter,
@@ -56,44 +60,19 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
   // Expanded/Collapsed Customer Groups State (empty map = all expanded by default)
   const [collapsedCustomers, setCollapsedCustomers] = useState<{ [custName: string]: boolean }>({});
 
-  // Expanded Order Accordion State & Loaded Items Cache
-  const [expandedOrders, setExpandedOrders] = useState<{ [orderId: number]: boolean }>({});
-  const [itemsByOrder, setItemsByOrder] = useState<{ [orderId: number]: OrderItem[] }>({});
-  const [loadingItems, setLoadingItems] = useState<{ [orderId: number]: boolean }>({});
+  // Single active order accordion state: ONLY the selected order can have its accordion open
+  const [isSelectedExpanded, setIsSelectedExpanded] = useState<boolean>(true);
+
+  // Automatically expand accordion whenever a new order is selected
+  React.useEffect(() => {
+    setIsSelectedExpanded(true);
+  }, [selectedOrderId]);
 
   const toggleCustomerGroup = (custName: string) => {
     setCollapsedCustomers(prev => ({
       ...prev,
       [custName]: !prev[custName]
     }));
-  };
-
-  const toggleOrderExpand = async (orderId: number) => {
-    const isCurrentlyExpanded = !!expandedOrders[orderId];
-    const nextState = !isCurrentlyExpanded;
-
-    setExpandedOrders(prev => ({
-      ...prev,
-      [orderId]: nextState
-    }));
-
-    // Fetch order items if expanding and not already cached
-    if (nextState && !itemsByOrder[orderId] && !loadingItems[orderId]) {
-      setLoadingItems(prev => ({ ...prev, [orderId]: true }));
-      try {
-        const res = await fetch(`/api/orders/${orderId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
-        const data = await res.json();
-        if (data && data.items) {
-          setItemsByOrder(prev => ({ ...prev, [orderId]: data.items }));
-        }
-      } catch (err) {
-        console.error('Order items fetch error:', err);
-      } finally {
-        setLoadingItems(prev => ({ ...prev, [orderId]: false }));
-      }
-    }
   };
 
   const fixTurkishEncoding = (text?: string): string => {
@@ -173,9 +152,9 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
 
   const renderOrderCard = (order: Order) => {
     const isSelected = selectedOrderId === order.id;
-    const isExpanded = !!expandedOrders[order.id];
-    const items = itemsByOrder[order.id];
-    const isLoadingItems = !!loadingItems[order.id];
+    const isExpanded = isSelected && isSelectedExpanded;
+    const items = isSelected ? (selectedOrderItems || []) : [];
+    const isLoadingItems = isSelected && !!isOrderDetailLoading;
 
     return (
       <div
@@ -193,8 +172,10 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
         {/* Main Compact Card Summary */}
         <div
           onClick={() => {
-            onSelectOrder(order);
-            toggleOrderExpand(order.id);
+            if (!isSelected) {
+              onSelectOrder(order);
+              setIsSelectedExpanded(true);
+            }
           }}
           style={{
             padding: '7px 9px',
@@ -259,8 +240,12 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSelectOrder(order);
-                  toggleOrderExpand(order.id);
+                  if (isSelected) {
+                    setIsSelectedExpanded(prev => !prev);
+                  } else {
+                    onSelectOrder(order);
+                    setIsSelectedExpanded(true);
+                  }
                 }}
                 style={{
                   display: 'inline-flex',
@@ -296,14 +281,14 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
                 Kalemler
               </span>
               <span style={{ fontSize: '10px', color: '#64748B' }}>
-                {items ? `${items.length} Kalem` : '...'}
+                {isLoadingItems ? 'Yükleniyor...' : items ? `${items.length} Kalem` : `${order.total_items || 0} Kalem`}
               </span>
             </div>
 
-            {isLoadingItems ? (
+            {isLoadingItems && items.length === 0 ? (
               <div style={{ padding: '8px', textAlign: 'center', color: '#64748B', fontSize: '10.5px' }}>
                 <Clock size={12} style={{ display: 'inline', marginRight: '4px', animation: 'spin 1s linear infinite' }} />
-                Yükleniyor...
+                Kalemler yükleniyor...
               </div>
             ) : !items || items.length === 0 ? (
               <div style={{ padding: '6px', textAlign: 'center', color: '#94A3B8', fontSize: '10.5px' }}>
