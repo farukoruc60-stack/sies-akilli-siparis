@@ -133,6 +133,8 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
     excessQty: number;
   }[]>([]);
 
+  const { token, user } = useAuth();
+
   // WhatsApp Share Modal State
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState('');
@@ -142,31 +144,47 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const handleOpenWhatsAppModal = () => {
     if (!order) return;
 
-    const itemsSummary = (items || [])
-      .slice(0, 5)
-      .map((it, idx) => `  ${idx + 1}. ${it.customerProductCode || it.customer_product_code || ''} - ${it.productName || it.product_name} (${it.quantity} ${it.unit || 'Adet'})`)
+    // Seçili olan kalemler varsa seçilenleri, yoksa tüm kalemleri al (kesinti/kısaltma olmadan tamamı)
+    const targetItems = (selectedItemIds.length > 0
+      ? (items || []).filter(it => selectedItemIds.includes(it.id!))
+      : (items || []));
+
+    const itemsSummary = targetItems
+      .map((it, idx) => {
+        const code = it.customerProductCode || it.customer_product_code || it.internalProductCode || it.internal_product_code || '';
+        const name = it.productName || it.product_name || 'Ürün';
+        const qty = it.quantity || 0;
+        const unit = it.unit || 'Adet';
+        const codePrefix = code ? `${code} - ` : '';
+        return `  ${idx + 1}. ${codePrefix}${name} (${qty} ${unit})`;
+      })
       .join('\n');
 
-    const moreText = (items || []).length > 5 ? `\n  ... ve ${(items || []).length - 5} kalem daha.` : '';
+    const customerName = fixTurkishEncoding(order.customer_name);
+    const coatingText = order.coating_type ? fixTurkishEncoding(order.coating_type) : 'Belirtilmedi';
+    const senderName = user?.name || user?.email || 'Faruk ORUÇ (Kalite Müdürü)';
+    const projectText = order.project_no ? `\n🏗️ *Proje / Gemi No:* ${fixTurkishEncoding(order.project_no)}` : '';
 
     const text = `📦 *SİES ELEKTRİK - SİPARİŞ İŞ EMRİ BİLGİSİ*
 
-👤 *Müşteri:* ${order.customer_name}
+👤 *Müşteri:* ${customerName}
 📑 *Sipariş No:* ${order.order_no}
-📋 *Müşteri Sip Ref:* ${order.customer_order_no || '-'}
+📋 *Müşteri Sip Ref:* ${order.customer_order_no || '-'}${projectText}
+🎨 *Kaplama Cinsi:* ${coatingText}
 📅 *Sipariş Tarihi:* ${formatDate(order.order_date)}
 📅 *Teslim Tarihi:* ${formatDate(order.requested_delivery_date)}
-📊 *Kalem Sayısı:* ${(items || []).length} Kalem (${totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)
+👤 *İş Emrini Gönderen:* ${senderName}
 
-📋 *Sipariş Kalem Özeti:*
-${itemsSummary}${moreText}
+📋 *Sipariş Kalemleri:*
+${itemsSummary}
 
 📌 *Sipariş Durumu:* ${getStatusTurkishLabel(order.status)}
 
 🏢 *SİES ELEKTRİK MÜMESSİLLİK SAN. VE TİC. LTD. ŞTİ.*`;
 
     setWhatsappCustomText(text);
-    setWhatsappPhone(order.customer_tax_number || '');
+    const phone = order.phone || order.customer_tax_number || '';
+    setWhatsappPhone(phone);
     setWhatsappModalOpen(true);
   };
 
@@ -181,8 +199,6 @@ ${itemsSummary}${moreText}
     window.open(url, '_blank');
     setWhatsappModalOpen(false);
   };
-
-  const { token } = useAuth();
 
   // Handle Send Selected Items to Production & Generate PDF Form
   const handleSendToProduction = async () => {
