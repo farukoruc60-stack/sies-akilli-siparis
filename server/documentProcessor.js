@@ -999,13 +999,17 @@ function parseTersanTersanesi(text, lines, originalName) {
     customerInfo.projectNo = '';
   }
 
-  // Sipariş & Teslim Tarihi
-  const dateMatch = text.match(/(?:Sipariş\s*Tarihi|Tarih|Sip\.\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i) ||
-                    text.match(/\b(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})\b/);
-  if (dateMatch) customerInfo.orderDate = normalizeDateToISO(dateMatch[1]);
+  // Sipariş & Teslim Tarihi (Türkçe karakter ve sıra duyarlı)
+  const sipDateMatch = text.match(/(?:S[İIıi]PAR[İIıi][ŞS]\s*TAR[İIıi]H[İIıi]|S[İIıi]P\.?\s*TAR[İIıi]H[İIıi])\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
+  if (sipDateMatch) customerInfo.orderDate = normalizeDateToISO(sipDateMatch[1]);
 
-  const delivMatch = text.match(/(?:Teslim\s*Tarihi|İst\.?\s*Tes\.?\s*Tarihi|Termin\s*Tarihi)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
+  const delivMatch = text.match(/(?:TESL[İIıi]M\s*TAR[İIıi]H[İIıi]|TERM[İIıi]N\s*TAR[İIıi]H[İIıi]|İST(?:ENEN)?\.?\s*TESL[İIıi]M)\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
   if (delivMatch) customerInfo.deliveryDate = normalizeDateToISO(delivMatch[1]);
+
+  if (!customerInfo.orderDate) {
+    const fallbackDate = text.match(/\b(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})\b/);
+    if (fallbackDate) customerInfo.orderDate = normalizeDateToISO(fallbackDate[1]);
+  }
 
   // ÇOK SATIRLI EKSİKSİZ TABLO AYRIŞTIRICI (Dual-Anchor Row Chunking):
   const rowChunks = [];
@@ -1072,72 +1076,95 @@ function parseTersanTersanesi(text, lines, originalName) {
       }
     }
 
-    // FORMAT A: Yapışık Sütun Formatı (Örn 405844: "S83726160,00m9.6600579,609.6600PROFİL...")
-    const uMatch = firstLine.match(/^(.*?)(\d+)[,\.](\d{2})\s*(pcs|m|adet|mt|ad)(.*)/i);
-    if (uMatch) {
-      const gluedPre = uMatch[1] + uMatch[2];
-      unit = (uMatch[4].toLowerCase() === 'm' || uMatch[4].toLowerCase() === 'mt') ? 'Metre' : 'Adet';
-      const afterUnit = uMatch[5].trim();
+    // Check if this chunk is legacy glued format (e.g. "S83726160,00m9.6600579,609.6600PROFİL...")
+    const isLegacyGlued = /^([1-9]\d{0,1}\s+)?S\d{6,}\d+[,\.]\d{2}(?:m|pcs|adet|ad)/i.test(firstLine);
 
-      const pricesMatch = afterUnit.match(/^(\d+(?:[\.,]\d{2,4}))\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/);
-      if (pricesMatch) {
-        unitPrice = parseFloat(pricesMatch[1].replace(',', '.'));
-        lineTotal = parseFloat(pricesMatch[2].replace(/\./g, '').replace(',', '.'));
-        if (unitPrice > 0 && lineTotal > 0) {
-          qty = Math.round((lineTotal / unitPrice) * 100) / 100;
+    if (isLegacyGlued) {
+      // FORMAT A: Yapışık Sütun Formatı
+      const uMatch = firstLine.match(/^(.*?)(\d+)[,\.](\d{2})\s*(pcs|m|adet|mt|ad)(.*)/i);
+      if (uMatch) {
+        const gluedPre = uMatch[1] + uMatch[2];
+        unit = (uMatch[4].toLowerCase() === 'm' || uMatch[4].toLowerCase() === 'mt') ? 'Metre' : 'Adet';
+        const afterUnit = uMatch[5].trim();
+
+        const pricesMatch = afterUnit.match(/^(\d+(?:[\.,]\d{2,4}))\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2})/);
+        if (pricesMatch) {
+          unitPrice = parseFloat(pricesMatch[1].replace(',', '.'));
+          lineTotal = parseFloat(pricesMatch[2].replace(/\./g, '').replace(',', '.'));
+          if (unitPrice > 0 && lineTotal > 0) {
+            qty = Math.round((lineTotal / unitPrice) * 100) / 100;
+          }
+        }
+
+        let rawCode = gluedPre;
+        if (qty > 0) {
+          const qtyIntStr = String(Math.floor(qty));
+          if (gluedPre.endsWith(qtyIntStr)) {
+            rawCode = gluedPre.slice(0, -qtyIntStr.length);
+          }
+        }
+        if (rawCode.startsWith('S') && rawCode.length >= 6) {
+          code = '5' + rawCode.slice(1);
+        } else {
+          code = rawCode;
+        }
+
+        const descFirst = afterUnit.replace(/^[\d\s\.,]+(?=[A-Za-zÇŞĞÜÖİçşğüöı])/, '').trim();
+        const descExtra = [];
+        for (let ci = 1; ci < chunk.lines.length; ci++) {
+          const l = chunk.lines[ci];
+          if (!l.match(/\b\d{6}\s+NB/i) && !l.match(/\bNB\d+/i)) {
+            descExtra.push(l);
+          }
+        }
+        desc = [descFirst, ...descExtra].join(' ').replace(/\s+/g, ' ').trim();
+      }
+    } else {
+      // FORMAT B: Boşluklu Standart Format (Örn: "1 5840479 SIKMA MFS KOLAY MONTAJ SOMUNLARI M8 201025 NB1135 500,00pcs 0.4500 0.4500 225,00")
+      const codeMatch = combined.match(/\b([S5]?\d{6,8}|\d{6,8})\b/i);
+      if (codeMatch) code = codeMatch[1].toUpperCase();
+
+      const qtyMatch = firstLine.match(/(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)\s*(pcs|adet|ad|m|mt|metre|boy|kg)\b/i) ||
+                       combined.match(/(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)\s*(pcs|adet|ad|m|mt|metre|boy|kg)\b/i);
+
+      if (qtyMatch) {
+        qty = parseTurkishNumber(qtyMatch[1]) || 1;
+        const uRaw = qtyMatch[2].toLowerCase();
+        unit = (uRaw === 'm' || uRaw === 'mt' || uRaw === 'metre') ? 'Metre' : 'Adet';
+
+        // Miktar sonrasındaki fiyat belirteçleri (ilk satırdan)
+        const afterQty = firstLine.substring(qtyMatch.index + qtyMatch[0].length).trim();
+        const priceTokens = afterQty.match(/\d+(?:[\.,]\d+)?/g);
+        if (priceTokens && priceTokens.length >= 2) {
+          unitPrice = parseTurkishNumber(priceTokens[0]);
+          lineTotal = parseTurkishNumber(priceTokens[priceTokens.length - 1]);
+        } else if (priceTokens && priceTokens.length === 1) {
+          unitPrice = parseTurkishNumber(priceTokens[0]);
+          lineTotal = Math.round(qty * unitPrice * 100) / 100;
         }
       }
 
-      let rawCode = gluedPre;
-      if (qty > 0) {
-        const qtyIntStr = String(Math.floor(qty));
-        if (gluedPre.endsWith(qtyIntStr)) {
-          rawCode = gluedPre.slice(0, -qtyIntStr.length);
-        }
+      // Ürün açıklaması
+      let descFirst = firstLine;
+      descFirst = descFirst.replace(new RegExp('^' + chunk.sn + '\\s+'), '');
+      if (code) descFirst = descFirst.replace(new RegExp('\\b' + code + '\\b', 'g'), '');
+      descFirst = descFirst.replace(/\b(201025|890000|881000|\d{6})\b/g, ''); // SFI
+      descFirst = descFirst.replace(/\bNB\d{3,5}[A-Z0-9]*\b/gi, ''); // Proje
+      if (qtyMatch) {
+        const qIdx = descFirst.search(new RegExp(qtyMatch[0].replace('(', '\\(').replace(')', '\\)'), 'i'));
+        if (qIdx !== -1) descFirst = descFirst.substring(0, qIdx);
       }
-      if (rawCode.startsWith('S') && rawCode.length >= 6) {
-        code = '5' + rawCode.slice(1);
-      } else {
-        code = rawCode;
-      }
+      descFirst = descFirst.trim();
 
-      const descFirst = afterUnit.replace(/^[\d\s\.,]+(?=[A-Za-zÇŞĞÜÖİçşğüöı])/, '').trim();
       const descExtra = [];
       for (let ci = 1; ci < chunk.lines.length; ci++) {
-        const l = chunk.lines[ci];
-        if (!l.match(/\b\d{6}\s+NB/i) && !l.match(/\bNB\d+/i)) {
+        const l = chunk.lines[ci].trim();
+        if (!l.match(/\b\d{6}\b/) && !l.match(/\bNB\d+/i) && !l.match(/^(?:NET|KDV|BRÜT|Yukarıda)/i)) {
           descExtra.push(l);
         }
       }
+
       desc = [descFirst, ...descExtra].join(' ').replace(/\s+/g, ' ').trim();
-    } else {
-      // FORMAT B: Boşluklu Standart Format (Örn 405148: "578806 AYAK L TİPİ... 100,00pcs 1.6300...")
-      const codeMatch = combined.match(/\b([S5]?\d{5,8})\b/i);
-      if (codeMatch) code = codeMatch[1].toUpperCase();
-
-      const qpMatch = combined.match(/(\d+(?:[\.\,]\d+)?)\s*(PCS|ADET|AD|BOY|KG|METRE|M|MT)\s*(\d+(?:[\.\,]\d+)?)\s*(\d+(?:[\.\,]\d+)?)/i);
-      if (qpMatch) {
-        qty = parseFloat(qpMatch[1].replace(',', '.')) || 1;
-        const uRaw = qpMatch[2].toUpperCase();
-        unit = (uRaw === 'PCS' || uRaw === 'AD' || uRaw === 'ADET') ? 'Adet' : 'Metre';
-        unitPrice = parseFloat(qpMatch[3].replace(',', '.')) || 0;
-        lineTotal = parseFloat(qpMatch[4].replace(',', '.')) || (qty * unitPrice);
-      }
-
-      let clean = combined;
-      clean = clean.replace(new RegExp(`^${chunk.sn}\\s+`), '');
-      if (code) clean = clean.replace(new RegExp(`\\b${code}\\b`, 'gi'), '');
-      clean = clean.replace(/^\d+(?:[\.,]\d{2,4})\s*/, '');
-      clean = clean.replace(/^\d+(?:[\.,]\d{2,4})([A-Za-zÇŞĞÜÖİçşğüöı])/i, '$1');
-      clean = clean.replace(/\b\d{5,7}\s*NB[0-9A-Z]+\b/gi, '');
-      clean = clean.replace(/\d{5,7}NB[0-9A-Z]+/gi, '');
-      clean = clean.replace(/\b(890000|881000|201025|\d{6})\b/g, '');
-      if (proj) clean = clean.replace(new RegExp(`\\b${proj}\\b`, 'gi'), '');
-      clean = clean.replace(/\bNB\d{3,5}[A-Z0-9]*\b/gi, '');
-      if (qpMatch) clean = clean.replace(qpMatch[0], '');
-      clean = clean.replace(/\b\d{1,4}[,\.]00\s*(?:pcs|m|adet|mt)?\b/gi, '');
-      clean = clean.replace(/(?:\b\d+(?:[\.,]\d{2,4})\b\s*){1,3}$/, '');
-      desc = clean.replace(/\s+/g, ' ').trim();
     }
 
     // Residual SFI / Proje ve Fiyat temizliği
@@ -1285,6 +1312,30 @@ function parseDearsanGemi(text, lines, originalName = '') {
     const firstLine = chunk.lines[0];
     let desc = firstLine.replace(new RegExp('^([1-9]\\d{0,2}\\s+)?' + chunk.code + '\\s*'), '').trim();
     desc = desc.replace(/\s+(?:\d{5}\b|TOYGAR|Muhtelif|\d{4}:\d+|\d{1,3}(?:\.\d{3})*(?:,\d+)?\s*(?:ad|adet)).*$/i, '').trim();
+
+    // Çok satırlı açıklama/ebat devamı (Örn: alt satırdaki "100x35x4" vb. ebatlar)
+    const extraDesc = [];
+    for (let ci = 1; ci < chunk.lines.length; ci++) {
+      const lineStr = chunk.lines[ci].trim();
+      if (!lineStr) continue;
+      const extraMatch = lineStr.match(/^(.+?)(?=\s+\d{5}\b|\s+TOYGAR|\s+Muhtelif|\s+\d{4}:|\s+\d+[\.,]\d+\s*(?:ad|adet|m|mt)|$)/i);
+      if (extraMatch && extraMatch[1].trim()) {
+        const candidate = extraMatch[1].trim();
+        if (!candidate.match(/^\d{4}:/) && !candidate.match(/^\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4}/)) {
+          extraDesc.push(candidate);
+        }
+      }
+    }
+    if (extraDesc.length > 0) {
+      desc = `${desc} ${extraDesc.join(' ')}`.replace(/\s+/g, ' ').trim();
+    }
+
+    // Ebat Güvenlik Kontrolü: 100x35x4, 150x35x4 vb. ebat parçası açıklama dışında kaldıysa ekle
+    const dimMatch = fullText.match(/\b\d{2,4}\s*[xX*]\s*\d{1,4}(?:\s*[xX*]\s*\d{1,4})?\b/);
+    if (dimMatch && !desc.includes(dimMatch[0])) {
+      desc = `${desc} ${dimMatch[0]}`.replace(/\s+/g, ' ').trim();
+    }
+    desc = desc.replace(/,\s*$/, '').trim();
 
     if (!desc || desc.length < 3) {
       desc = `Dearsan Kalem (${chunk.code})`;
