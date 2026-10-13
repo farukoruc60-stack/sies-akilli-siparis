@@ -172,6 +172,24 @@ function sanitizeForFileName(str) {
 }
 
 // -------------------------------------------------------------
+// SYSTEM HEALTH & AUTOMATED WAKEUP ROUTE
+// -------------------------------------------------------------
+app.get(['/api/health', '/api/ping'], async (req, res) => {
+  try {
+    const dbCheck = await query('SELECT 1 as alive');
+    res.json({
+      status: 'ok',
+      service: 'sies-akilli-siparis',
+      timestamp: new Date().toISOString(),
+      uptimeSeconds: Math.floor(process.uptime()),
+      database: dbCheck.rows.length > 0 ? 'connected' : 'error'
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
 // AUTH ROUTES
 // -------------------------------------------------------------
 app.post('/api/auth/login', async (req, res) => {
@@ -1524,6 +1542,20 @@ app.listen(PORT, () => {
   console.log(` SİES AKILLI SİPARİŞ TAKİP SUNUCUSU AKTİF: PORT ${PORT}`);
   console.log(` API Endpoint: http://localhost:${PORT}/api/orders`);
   console.log(`=======================================================`);
+
+  // Gün içi otomatik uyanık tutma (Mesai saatlerinde her 10 dakikada bir self-ping)
+  const externalUrl = process.env.RENDER_EXTERNAL_URL || 'https://sies-akilli-siparis.onrender.com';
+  setInterval(() => {
+    try {
+      const now = new Date();
+      // Türkiye Saati (GMT+3)
+      const turkeyHour = (now.getUTCHours() + 3) % 24;
+      // Sabah 06:30 - Akşam 20:30 arası sunucunun uykuya geçmesini engelle
+      if (turkeyHour >= 6 && turkeyHour <= 20) {
+        fetch(`${externalUrl}/api/health`).catch(() => {});
+      }
+    } catch (e) {}
+  }, 10 * 60 * 1000);
 });
 
 

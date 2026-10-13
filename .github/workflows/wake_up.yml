@@ -1,0 +1,30 @@
+name: SİES Render Otomatik Sabah Uyandırma ve Canlı Tutma
+
+on:
+  schedule:
+    # Türkiye Saati: GMT+3 (UTC+3)
+    # 04:00 UTC = Sabah 07:00 (Türkiye)
+    # 17:00 UTC = Akşam 20:00 (Türkiye)
+    # Hafta içi ve cumartesi günleri mesai saatlerinde her 14 dakikada bir ping atarak uyanık tutar
+    - cron: '*/14 4-17 * * *'
+  workflow_dispatch: # GitHub panelinden istenildiğinde elle de tetiklenebilir
+
+jobs:
+  wake_up_render:
+    name: Render Sunucusunu Uyandır
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Ping SİES Canlı Sunucu
+        run: |
+          echo "=========================================================="
+          echo "SİES Akıllı Sipariş Takip Platformu Uyandırma İsteği Gönderiliyor..."
+          echo "Hedef URL: https://sies-akilli-siparis.onrender.com/api/health"
+          echo "=========================================================="
+          
+          # Render uyku modundan çıkarken ilk istek 30-50 sn sürebilir, max 90 sn bekleyelim
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}\n" -m 90 "https://sies-akilli-siparis.onrender.com/api/health" || curl -s -w "\nHTTP_STATUS:%{http_code}\n" -m 90 "https://sies-akilli-siparis.onrender.com/")
+          
+          echo "$RESPONSE"
+          echo "✓ Uyandırma isteği tamamlandı!"
