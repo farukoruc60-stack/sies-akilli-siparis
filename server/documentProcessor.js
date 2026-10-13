@@ -32,6 +32,14 @@ export function calculateSHA256(filePath) {
   return crypto.createHash('sha256').update(fileBuffer).digest('hex');
 }
 
+export function safeWriteFileSync(targetPath, data) {
+  const dir = path.dirname(targetPath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(targetPath, data);
+}
+
 export function findBestOrderSheet(workbook) {
   let bestSheetName = workbook.SheetNames[0];
   let bestScore = -1;
@@ -1898,7 +1906,7 @@ async function generatePdfFromText(text, outputPath, title) {
   }
 
   const pdfBytes = await pdfDoc.save();
-  fs.writeFileSync(outputPath, pdfBytes);
+  safeWriteFileSync(outputPath, pdfBytes);
 }
 
 async function generatePdfFromExcel(jsonData, outputPath, title) {
@@ -2062,7 +2070,7 @@ async function generatePdfFromExcel(jsonData, outputPath, title) {
   }
 
   const pdfBytes = await pdfDoc.save();
-  fs.writeFileSync(outputPath, pdfBytes);
+  safeWriteFileSync(outputPath, pdfBytes);
 }
 
 async function generatePdfFromImage(imagePath, outputPath) {
@@ -2087,7 +2095,7 @@ async function generatePdfFromImage(imagePath, outputPath) {
   });
 
   const pdfBytes = await pdfDoc.save();
-  fs.writeFileSync(outputPath, pdfBytes);
+  safeWriteFileSync(outputPath, pdfBytes);
 }
 
 export async function generateProductionFormPdf(order, items, outputPath, formNotes = '') {
@@ -2361,7 +2369,7 @@ export async function generateProductionFormPdf(order, items, outputPath, formNo
   });
 
   const pdfBytes = await pdfDoc.save();
-  fs.writeFileSync(outputPath, pdfBytes);
+  safeWriteFileSync(outputPath, pdfBytes);
 }
 
 export async function generateShippingLabelsPdf(order, items, outputPath, labelSize = '100x100') {
@@ -2697,7 +2705,7 @@ export async function generateShippingLabelsPdf(order, items, outputPath, labelS
   }
 
   const pdfBytes = await pdfDoc.save();
-  fs.writeFileSync(outputPath, pdfBytes);
+  safeWriteFileSync(outputPath, pdfBytes);
 }
 
 export async function generateDocumentViewerPdf(order, items, document, outputPath) {
@@ -2897,7 +2905,7 @@ export async function generateDocumentViewerPdf(order, items, document, outputPa
   });
 
   const pdfBytes = await pdfDoc.save();
-  fs.writeFileSync(outputPath, pdfBytes);
+  safeWriteFileSync(outputPath, pdfBytes);
 }
 
 

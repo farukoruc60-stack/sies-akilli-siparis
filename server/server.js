@@ -163,6 +163,14 @@ function fixMulterFilename(name) {
     .replace(/Ã§/g, 'ç');
 }
 
+function sanitizeForFileName(str) {
+  if (!str) return 'belge';
+  return String(str)
+    .trim()
+    .replace(/[\/\\:*?"<>|]/g, '_')
+    .replace(/\s+/g, '_');
+}
+
 // -------------------------------------------------------------
 // AUTH ROUTES
 // -------------------------------------------------------------
@@ -695,7 +703,8 @@ app.post('/api/orders/:id/production-form', authenticateToken, async (req, res) 
 
     // 3. Generate Production Form PDF file
     const timestamp = Date.now();
-    const pdfFileName = `Uretim_Formu_${order.order_no || orderId}_${timestamp}.pdf`;
+    const safeOrderNo = sanitizeForFileName(order.order_no || orderId);
+    const pdfFileName = `Uretim_Formu_${safeOrderNo}_${timestamp}.pdf`;
     const pdfFilePath = path.join(uploadDir, pdfFileName);
     const originalDocName = `Üretim Formu - Sipariş ${order.order_no || orderId} (${selectedItems.length} Kalem).pdf`;
 
@@ -801,7 +810,8 @@ app.post('/api/orders/:id/shipping-labels', authenticateToken, async (req, res) 
     // 3. Generate Shipping Labels PDF
     const timestamp = Date.now();
     const labelSizeStr = size === '100x50' ? '100x50mm' : '100x100mm';
-    const pdfFileName = `Sevkiyat_Etiketi_${order.order_no || orderId}_${size}_${timestamp}.pdf`;
+    const safeOrderNo = sanitizeForFileName(order.order_no || orderId);
+    const pdfFileName = `Sevkiyat_Etiketi_${safeOrderNo}_${size}_${timestamp}.pdf`;
     const pdfFilePath = path.join(uploadDir, pdfFileName);
     const originalDocName = `Sevkiyat Etiketleri (${labelSizeStr}) - Sipariş ${order.order_no || orderId} (${selectedItems.length} Kalem).pdf`;
 
