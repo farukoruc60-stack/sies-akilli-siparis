@@ -350,7 +350,27 @@ ${itemsSummary}
     setSaving(true);
     setConflictError(null);
     try {
-      await onUpdateOrder(editingItems, {
+      const sanitizedItems = editingItems.map((it, idx) => {
+        const q = typeof it.quantity === 'number'
+          ? it.quantity
+          : parseFloat(String(it.quantity || '0').replace(',', '.')) || 0;
+        const p = typeof (it.unitPrice ?? it.unit_price) === 'number'
+          ? (it.unitPrice ?? it.unit_price)
+          : parseFloat(String(it.unitPrice ?? it.unit_price ?? '0').replace(',', '.')) || 0;
+        return {
+          ...it,
+          lineNo: it.lineNo || it.line_no || idx + 1,
+          customerProductCode: it.customerProductCode || it.customer_product_code || '',
+          productName: it.productName || it.product_name || 'Ürün',
+          productDescription: it.productDescription || it.product_description || it.productName || it.product_name || '',
+          quantity: q,
+          unitPrice: p,
+          lineTotal: Math.round(q * p * 100) / 100,
+          currency: it.currency || (order as any)?.currency || 'TRY'
+        };
+      });
+
+      await onUpdateOrder(sanitizedItems, {
         customerOrderNo: editCustomerOrderNo.trim() || undefined,
         projectNo: editProjectNo.trim() || undefined,
         coatingType: editCoatingType.trim() || undefined,
@@ -383,9 +403,13 @@ ${itemsSummary}
     updated[index] = { ...updated[index], [field]: val };
 
     if (field === 'quantity' || field === 'unitPrice' || (field as string) === 'unit_price') {
-      const q = parseFloat(String(updated[index].quantity)) || 0;
-      const p = parseFloat(String(updated[index].unitPrice ?? updated[index].unit_price)) || 0;
-      updated[index].lineTotal = q * p;
+      const q = typeof updated[index].quantity === 'number'
+        ? updated[index].quantity
+        : parseFloat(String(updated[index].quantity || '').replace(',', '.')) || 0;
+      const p = typeof (updated[index].unitPrice ?? updated[index].unit_price) === 'number'
+        ? (updated[index].unitPrice ?? updated[index].unit_price)
+        : parseFloat(String(updated[index].unitPrice ?? updated[index].unit_price ?? '').replace(',', '.')) || 0;
+      updated[index].lineTotal = Math.round(q * p * 100) / 100;
     }
     setEditingItems(updated);
   };
@@ -1677,11 +1701,12 @@ ${itemsSummary}
                         <td>
                           {isEditing ? (
                             <input
-                              type="number"
-                              step="0.1"
-                              value={qty}
-                              onChange={(e) => handleItemCellChange(idx, 'quantity', parseFloat(e.target.value))}
-                              style={{ width: '70px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                              type="text"
+                              inputMode="decimal"
+                              value={item.quantity === undefined || item.quantity === null ? '' : item.quantity}
+                              placeholder="0"
+                              onChange={(e) => handleItemCellChange(idx, 'quantity', e.target.value)}
+                              style={{ width: '70px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px', textAlign: 'right', fontWeight: 600 }}
                             />
                           ) : (
                             <strong>{qty}</strong>
@@ -1703,18 +1728,19 @@ ${itemsSummary}
                         <td>
                           {isEditing ? (
                             <input
-                              type="number"
-                              step="0.01"
-                              value={uPrice}
-                              onChange={(e) => handleItemCellChange(idx, 'unitPrice', parseFloat(e.target.value))}
-                              style={{ width: '80px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                              type="text"
+                              inputMode="decimal"
+                              value={(item.unitPrice ?? item.unit_price) === undefined || (item.unitPrice ?? item.unit_price) === null ? '' : (item.unitPrice ?? item.unit_price)}
+                              placeholder="0.00"
+                              onChange={(e) => handleItemCellChange(idx, 'unitPrice', e.target.value)}
+                              style={{ width: '80px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px', textAlign: 'right' }}
                             />
                           ) : (
-                            `${uPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY`
+                            `${uPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${item.currency || (order as any)?.currency || 'TRY'}`
                           )}
                         </td>
                         <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY
+                          {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.currency || (order as any)?.currency || 'TRY'}
                         </td>
                         <td>
                           {getItemStatusBadge(item.status)}

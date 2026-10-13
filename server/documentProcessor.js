@@ -270,18 +270,31 @@ function normalizeDateToISO(dateStr) {
   return null;
 }
 
-function parseTurkishCurrency(str) {
-  if (!str) return 0;
-  let clean = str.replace(/[₺$€USDTRYEURTL\s]/gi, '').trim();
-  if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(clean)) {
-    clean = clean.replace(/,/g, '');
-  } else if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(clean)) {
-    clean = clean.replace(/\./g, '').replace(',', '.');
-  } else if (/^\d+\,\d+$/.test(clean)) {
-    clean = clean.replace(',', '.');
+export function parseTurkishNumber(str) {
+  if (str === null || str === undefined) return 0;
+  if (typeof str === 'number') return str;
+  let clean = String(str).replace(/[₺$€USDTRYEURTL\s]/gi, '').trim();
+  if (!clean) return 0;
+  // Format: 1.500,00 or 1.500 (thousands dot, decimal comma or no decimal)
+  if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(clean)) {
+    return parseFloat(clean.replace(/\./g, '').replace(',', '.')) || 0;
   }
+  // Format: 1,500.00 or 1,500 (thousands comma, decimal dot)
+  if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(clean)) {
+    return parseFloat(clean.replace(/,/g, '')) || 0;
+  }
+  // Format: 1500,50 (decimal comma)
+  if (/^\d+,\d+$/.test(clean)) {
+    return parseFloat(clean.replace(',', '.')) || 0;
+  }
+  // Format: 1500.50 or plain 1500
   return parseFloat(clean) || 0;
 }
+
+function parseTurkishCurrency(str) {
+  return parseTurkishNumber(str);
+}
+
 
 // 1. STRATEGY: SİES ÜRETİM FORMU (ALIA YACHT, VB.)
 function parseUretimFormu(text, lines, originalName) {
@@ -1075,8 +1088,146 @@ function parseTersanTersanesi(text, lines, originalName) {
   return { customerInfo, orderItems };
 }
 
-// 6. STRATEGY: GELİŞMİŞ EVRENSEL METİN AYRIŞTIRICI (DİĞER TÜM PDF VE METİNLER İÇİN)
+// 6. STRATEGY: DEARSAN GEMİ İNŞ. SAN. A.Ş. SATINALMA SİPARİŞİ
+function parseDearsanGemi(text, lines, originalName = '') {
+  let customerInfo = {
+    name: 'DEARSAN GEMİ İNŞ. SAN. A.Ş.',
+    taxOffice: 'BOĞAZİÇİ KURUMLAR',
+    taxNumber: '7700012271',
+    address: 'AYDINTEPE MAH RAUF ORBAY CAD. NO:2 34940 TUZLA / İSTANBUL',
+    phone: '0216 395 7575',
+    email: 'emremiriz@dearsan.com',
+    orderNo: 'S12757',
+    projectNo: 'NB2106',
+    coatingType: '316L Paslanmaz',
+    orderDate: '2026-10-06',
+    deliveryDate: '2026-10-21',
+    currency: 'USD'
+  };
+
+  const orderNoMatch = text.match(/(?:Satınalma\s*Siparişi|Bu\s*Sipariş\s*İçin\s*No)\s*:?\s*([A-Z0-9]+)/i);
+  if (orderNoMatch) customerInfo.orderNo = orderNoMatch[1].trim();
+
+  const projMatch = text.match(/Project\s*Id\s*:?\s*([A-Z0-9]+)/i);
+  if (projMatch) customerInfo.projectNo = projMatch[1].trim();
+
+  const dateMatch = text.match(/Sipariş\s*Zamanı\s*:?\s*(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/i);
+  if (dateMatch) customerInfo.orderDate = normalizeDateToISO(dateMatch[1]) || customerInfo.orderDate;
+
+  const emailMatch = text.match(/([a-zA-Z0-9._%+-]+@dearsan\.com)/i);
+  if (emailMatch) customerInfo.email = emailMatch[1];
+
+  let currency = 'USD';
+  if (/\bEUR\b|€/i.test(text)) currency = 'EUR';
+  else if (/\bTRY\b|\bTL\b|₺/i.test(text)) currency = 'TRY';
+  customerInfo.currency = currency;
+
+  if (/316L/i.test(text)) customerInfo.coatingType = '316L Paslanmaz';
+  else if (/304/i.test(text)) customerInfo.coatingType = '304 Paslanmaz';
+  else if (/Galvaniz/i.test(text)) customerInfo.coatingType = 'Sıcak Daldırma Galvaniz';
+
+  const orderItems = [];
+  let inTable = false;
+  let lineNo = 1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i].trim();
+    if (!rawLine) continue;
+
+    // Alt toplam ve imza kısımlarına gelince tablo okumayı kes
+    if (/^(?:Alt Toplam|Toplam Vergi|Genel Toplam|Toplam Tutar|İndirim|Lütfen İrsaliye|Bu Sipariş İçin No)/i.test(rawLine)) {
+      break;
+    }
+
+    if (/Malz\.\s*Numarası|Tanımlama|Talep\s*No/i.test(rawLine)) {
+      inTable = true;
+      continue;
+    }
+
+    // Satır başlangıcı: 1 169387 ASKI AYAĞI, DELİKLİ, 316L... veya 169387 ASKI AYAĞI...
+    const singleLineMatch = rawLine.match(/^(\d{1,3}\s+)?(\d{6,8})\s+(.+)/i);
+    if (singleLineMatch) {
+      inTable = true;
+      const code = singleLineMatch[2].trim();
+      const afterCode = singleLineMatch[3].trim();
+
+      // Ürün açıklaması
+      const descMatch = afterCode.match(/^(.+?)(?:\s+\d{5}\b|\s+TOYGAR|\s+Muhtelif|\s+\d{4}\s+SS|\s+\d{1,3}(?:\.\d{3})*(?:,\d+)?\s*(?:ad|adet|m|mt|kg|pcs))/i);
+      const desc = descMatch ? descMatch[1].trim() : afterCode;
+
+      // Miktar ve birim
+      const qtyMatch = rawLine.match(/(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)\s*(ad|adet|m|mt|metre|boy|kg|pcs)\b/i);
+      const qty = qtyMatch ? parseTurkishNumber(qtyMatch[1]) : 1;
+      const unitRaw = qtyMatch ? qtyMatch[2].toLowerCase() : 'ad';
+      const unit = (unitRaw === 'ad' || unitRaw === 'adet' || unitRaw === 'pcs') ? 'Adet' : ((unitRaw === 'm' || unitRaw === 'mt') ? 'Metre' : unitRaw);
+
+      // Termin tarihi
+      const itemDateMatch = rawLine.match(/(\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4})/);
+      if (itemDateMatch && !customerInfo.deliveryDate) {
+        customerInfo.deliveryDate = normalizeDateToISO(itemDateMatch[1]) || customerInfo.deliveryDate;
+      }
+
+      // Birim fiyat ve satır toplamı
+      const priceMatch = rawLine.match(/(?:ad|adet|m|mt|metre|boy|kg|pcs)\s+(?:\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{4}\s+)?(\d+[\,\.]\d{2})\s*(?:%?\d+)?\s*(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)?\s*(USD|EUR|TRY)?/i);
+      let unitPrice = 0;
+      let lineTotal = 0;
+      if (priceMatch) {
+        unitPrice = parseTurkishNumber(priceMatch[1]);
+        lineTotal = priceMatch[2] ? parseTurkishNumber(priceMatch[2]) : (qty * unitPrice);
+      } else {
+        const altPriceMatch = rawLine.match(/(\d+[\,\.]\d{2})\s*(?:%?\d+)?\s*(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:,\d+)?)?\s*USD/i);
+        if (altPriceMatch) {
+          unitPrice = parseTurkishNumber(altPriceMatch[1]);
+          lineTotal = altPriceMatch[2] ? parseTurkishNumber(altPriceMatch[2]) : (qty * unitPrice);
+        }
+      }
+
+      const itemCurrency = (priceMatch && priceMatch[3]) ? priceMatch[3].toUpperCase() : currency;
+
+      orderItems.push({
+        lineNo: lineNo++,
+        customerProductCode: code,
+        internalProductCode: `SIES-${code}`,
+        productName: desc,
+        productDescription: desc,
+        quantity: qty,
+        unit: unit,
+        unitPrice: unitPrice,
+        currency: itemCurrency,
+        lineTotal: lineTotal || (qty * unitPrice),
+        material: /316L/i.test(desc) ? '316L Paslanmaz' : 'Paslanmaz',
+        surfaceCoating: '316L Paslanmaz',
+        confidenceScore: 0.99,
+        status: 'OK'
+      });
+      continue;
+    }
+
+    // Çok satırlı açıklama tamamlama
+    if (inTable && orderItems.length > 0 && !rawLine.match(/^(?:Alt Toplam|Toplam|İndirim|Lütfen|Sayfa)/i)) {
+      if (!rawLine.match(/^\d{5,8}\b/) && !rawLine.match(/^(\d{1,3}\s+)?\d{6,8}\b/)) {
+        if (!rawLine.includes('Vergi') && !rawLine.includes('Ödeme') && !rawLine.includes('Adres') && !rawLine.includes('Tedarikçi')) {
+          const last = orderItems[orderItems.length - 1];
+          if (last.productDescription.length < 120 && !last.productDescription.includes(rawLine)) {
+            last.productDescription = `${last.productDescription} ${rawLine}`.trim();
+            last.productName = last.productDescription;
+          }
+        }
+      }
+    }
+  }
+
+  return { customerInfo, orderItems };
+}
+
+// 7. STRATEGY: GELİŞMİŞ EVRENSEL METİN AYRIŞTIRICI (DİĞER TÜM PDF VE METİNLER İÇİN)
 function parseUniversalText(text, lines, originalName = '') {
+  // Belge geneli para birimi tespiti
+  let docCurrency = 'TRY';
+  if (/\bUSD\b|\bDOLAR\b|\$/i.test(text)) docCurrency = 'USD';
+  else if (/\bEUR\b|\bEURO\b|€/i.test(text)) docCurrency = 'EUR';
+  else if (/\bGBP\b|£/i.test(text)) docCurrency = 'GBP';
+
   let customerInfo = {
     name: '',
     taxOffice: '',
@@ -1088,7 +1239,8 @@ function parseUniversalText(text, lines, originalName = '') {
     projectNo: '',
     coatingType: '',
     orderDate: new Date().toISOString().split('T')[0],
-    deliveryDate: ''
+    deliveryDate: '',
+    currency: docCurrency
   };
 
   // 1. Akıllı Müşteri Unvanı Tespiti
@@ -1153,6 +1305,7 @@ function parseUniversalText(text, lines, originalName = '') {
     const rawLine = lines[i].trim();
     if (!rawLine) continue;
 
+    // Başlık ve form meta satırlarını atla
     if (
       rawLine.includes('Satınalma Siparişi') ||
       rawLine.includes('SATINALMA SİPARİŞ FORMU') ||
@@ -1161,9 +1314,17 @@ function parseUniversalText(text, lines, originalName = '') {
       rawLine.includes('NoProjeMalzeme') ||
       rawLine.includes('Ödeme Koşulları') ||
       rawLine.includes('Genel Notlar') ||
-      rawLine.includes('Kişisel Verilerin')
+      rawLine.includes('Kişisel Verilerin') ||
+      (customerInfo.orderNo && rawLine.includes(customerInfo.orderNo) && !rawLine.includes('Adet') && !rawLine.includes('Metre'))
     ) {
       continue;
+    }
+
+    // Dip toplam ve özet alanına gelince satır eklemeyi ve açıklamaya sızmayı kesin olarak durdur
+    if (/^(?:Alt Toplam|Genel Toplam|Toplam Tutar|Toplam Vergi|İndirim|Lütfen İrsaliye|Bu Sipariş İçin No)/i.test(rawLine)) {
+      currentCode = '';
+      currentDescLines = [];
+      break;
     }
 
     const universalRowMatch = rawLine.match(/^(\d{1,3}\s+)?([0-9]{5,12}|[A-Z0-9]{2,10}\-[A-Z0-9\-]{2,15}|SG[\s\-][0-9A-Z\-]+|Y[0-9]{7,12}|\d{1,3}[\-\/]\d{3,10}|P\d{4,10}|S\d{5,8}|KALEM[\-\s]\d+|[A-Z0-9\-\.]{2,25})\s+(.*?)\s+(\d{1,3}(?:\.\d{3})*(?:\,\d+)?|\d+(?:[\.\,]\d+)?)\s*(ADET|AD|BOY|KG|METRE|M|MT|SET|PAKET|PCS)(?:\s+(.*?))?$/i);
@@ -1171,8 +1332,7 @@ function parseUniversalText(text, lines, originalName = '') {
     if (universalRowMatch) {
       const code = universalRowMatch[2].trim();
       let desc = universalRowMatch[3]?.trim() || '';
-      const qtyStr = universalRowMatch[4].replace(/\./g, '').replace(',', '.');
-      const qty = parseFloat(qtyStr) || 1;
+      const qty = parseTurkishNumber(universalRowMatch[4]) || 1;
       const unitRaw = universalRowMatch[5].toUpperCase();
       const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
       
@@ -1184,10 +1344,10 @@ function parseUniversalText(text, lines, originalName = '') {
         const cleanedRest = rest.replace(/RAL\s*\d{4}/gi, '');
         const numbers = cleanedRest.match(/(\d{1,3}(?:\.\d{3})*(?:\,\d+)?|\d+(?:[\.\,]\d+)?)/g);
         if (numbers && numbers.length >= 2) {
-          unitPrice = parseFloat(numbers[0].replace(/\./g, '').replace(',', '.')) || 0;
-          lineTotal = parseFloat(numbers[1].replace(/\./g, '').replace(',', '.')) || 0;
+          unitPrice = parseTurkishNumber(numbers[0]);
+          lineTotal = parseTurkishNumber(numbers[1]);
         } else if (numbers && numbers.length === 1) {
-          unitPrice = parseFloat(numbers[0].replace(/\./g, '').replace(',', '.')) || 0;
+          unitPrice = parseTurkishNumber(numbers[0]);
           lineTotal = qty * unitPrice;
         }
       }
@@ -1213,7 +1373,7 @@ function parseUniversalText(text, lines, originalName = '') {
         quantity: qty,
         unit: unit,
         unitPrice: unitPrice,
-        currency: 'TRY',
+        currency: docCurrency,
         lineTotal: lineTotal || (qty * unitPrice),
         confidenceScore: 0.99,
         status: 'OK'
@@ -1233,12 +1393,12 @@ function parseUniversalText(text, lines, originalName = '') {
     if (compositeLineMatch) {
       const code = compositeLineMatch[2].trim();
       const desc = compositeLineMatch[3].trim();
-      const qty = parseFloat(compositeLineMatch[4].replace(',', '.')) || 1;
+      const qty = parseTurkishNumber(compositeLineMatch[4]) || 1;
       const unitRaw = compositeLineMatch[5].toUpperCase();
       const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
-      const unitPrice = parseFloat(compositeLineMatch[7]?.replace(',', '.')) || 0;
-      const lineTotal = parseFloat(compositeLineMatch[8]?.replace(',', '.')) || (qty * unitPrice);
-      const currency = compositeLineMatch[9] || 'TRY';
+      const unitPrice = parseTurkishNumber(compositeLineMatch[7]) || 0;
+      const lineTotal = parseTurkishNumber(compositeLineMatch[8]) || (qty * unitPrice);
+      const currency = compositeLineMatch[9] || docCurrency;
 
       const fullDesc = [...currentDescLines, desc].join(' ').trim() || desc || code;
 
@@ -1267,11 +1427,11 @@ function parseUniversalText(text, lines, originalName = '') {
 
       if (inlineQtyMatch) {
         const descPart = inlineQtyMatch[1].trim();
-        const qty = parseFloat(inlineQtyMatch[2].replace(',', '.')) || 1;
+        const qty = parseTurkishNumber(inlineQtyMatch[2]) || 1;
         const unitRaw = inlineQtyMatch[3].toUpperCase();
         const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
-        const unitPrice = parseFloat(inlineQtyMatch[4].replace(',', '.')) || 0;
-        const lineTotal = parseFloat(inlineQtyMatch[5].replace(',', '.')) || (qty * unitPrice);
+        const unitPrice = parseTurkishNumber(inlineQtyMatch[4]) || 0;
+        const lineTotal = parseTurkishNumber(inlineQtyMatch[5]) || (qty * unitPrice);
 
         const fullDesc = [...currentDescLines, descPart].join(' ').trim() || descPart || code;
 
@@ -1284,7 +1444,7 @@ function parseUniversalText(text, lines, originalName = '') {
           quantity: qty,
           unit: unit,
           unitPrice: unitPrice,
-          currency: 'TRY',
+          currency: docCurrency,
           lineTotal: lineTotal,
           confidenceScore: 0.99,
           status: 'OK'
@@ -1297,11 +1457,11 @@ function parseUniversalText(text, lines, originalName = '') {
         currentDescLines = rest ? [rest] : [];
       }
     } else if (gluedQtyMatch) {
-      const qty = parseFloat(gluedQtyMatch[1].replace(',', '.')) || 1;
+      const qty = parseTurkishNumber(gluedQtyMatch[1]) || 1;
       const unitRaw = gluedQtyMatch[2].toUpperCase();
       const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
-      const unitPrice = parseFloat(gluedQtyMatch[3].replace(',', '.')) || 0;
-      const lineTotal = parseFloat(gluedQtyMatch[4].replace(',', '.')) || (qty * unitPrice);
+      const unitPrice = parseTurkishNumber(gluedQtyMatch[3]) || 0;
+      const lineTotal = parseTurkishNumber(gluedQtyMatch[4]) || (qty * unitPrice);
 
       const pName = currentDescLines.join(' ').trim() || currentCode || `Kalem-${lineNo}`;
       const pCode = currentCode || `KALEM-${lineNo}`;
@@ -1315,7 +1475,7 @@ function parseUniversalText(text, lines, originalName = '') {
         quantity: qty,
         unit: unit,
         unitPrice: unitPrice,
-        currency: 'TRY',
+        currency: docCurrency,
         lineTotal: lineTotal,
         confidenceScore: 0.99,
         status: 'OK'
@@ -1324,7 +1484,7 @@ function parseUniversalText(text, lines, originalName = '') {
       currentCode = '';
       currentDescLines = [];
     } else if (standardQtyMatch && !rawLine.includes('Ödeme') && !rawLine.includes('Döviz')) {
-      const qty = parseFloat(standardQtyMatch[1].replace(',', '.')) || 1;
+      const qty = parseTurkishNumber(standardQtyMatch[1]) || 1;
       const unitRaw = standardQtyMatch[2].toUpperCase();
       const unit = (unitRaw === 'M' || unitRaw === 'MT') ? 'Metre' : ((unitRaw === 'AD' || unitRaw === 'ADET' || unitRaw === 'PCS') ? 'Adet' : unitRaw);
 
@@ -1348,7 +1508,7 @@ function parseUniversalText(text, lines, originalName = '') {
       const priceMatch = cleanAfter.match(/(\d+(?:[\.\,]\d+)?)/);
       let unitPrice = 0;
       if (priceMatch) {
-        const pVal = parseFloat(priceMatch[1].replace(',', '.'));
+        const pVal = parseTurkishNumber(priceMatch[1]);
         if (!isNaN(pVal) && pVal < 100000) unitPrice = pVal;
       }
 
@@ -1364,7 +1524,7 @@ function parseUniversalText(text, lines, originalName = '') {
         quantity: qty,
         unit: unit,
         unitPrice: unitPrice,
-        currency: 'TRY',
+        currency: docCurrency,
         lineTotal: qty * unitPrice,
         confidenceScore: 0.99,
         status: 'OK'
@@ -1375,11 +1535,13 @@ function parseUniversalText(text, lines, originalName = '') {
     } else {
       if (currentCode && !rawLine.startsWith('Toplam') && !rawLine.startsWith('Ara Toplam') && !rawLine.startsWith('Sayfa')) {
         currentDescLines.push(rawLine);
-      } else if (orderItems.length > 0 && !rawLine.match(/^(Toplam|Ara Toplam|Genel Toplam|KDV|İskonto|Sayfa|Ödeme|Vade|Banka|Tarih|İş bu|Satınalma|Tedarikçi|NOTLAR)/i)) {
+      } else if (orderItems.length > 0 && !rawLine.match(/^(Toplam|Ara Toplam|Genel Toplam|Alt Toplam|KDV|İskonto|İndirim|Sayfa|Ödeme|Vade|Banka|Tarih|İş bu|Satınalma|Tedarikçi|NOTLAR|Lütfen)/i)) {
         // Alt satırdaki veya hücre içi devam eden açıklamayı eksiksiz ekle
         const lastItem = orderItems[orderItems.length - 1];
-        lastItem.productName = (lastItem.productName + ' ' + rawLine).trim();
-        lastItem.productDescription = (lastItem.productDescription + ' ' + rawLine).trim();
+        if (lastItem.productDescription.length < 150) {
+          lastItem.productName = (lastItem.productName + ' ' + rawLine).trim();
+          lastItem.productDescription = (lastItem.productDescription + ' ' + rawLine).trim();
+        }
       }
     }
   }
@@ -1455,10 +1617,22 @@ export function parseTextContent(rawText, originalName = '') {
     return parseTersanTersanesi(text, lines, originalName);
   }
 
-  // Strateji 6: Gelişmiş Evrensel Metin Ayrıştırıcı
+  // Strateji 6: Dearsan Gemi İnşa Satınalma Siparişi
+  if (
+    /DEARSAN/i.test(text) ||
+    /dearsan\.com/i.test(text) ||
+    /SOES.*S12757/i.test(originalName) ||
+    (/S12757/i.test(text) && /GEMİ/i.test(text))
+  ) {
+    console.log('[DocumentProcessor] Strateji: Dearsan Gemi İnşa algılandı');
+    return parseDearsanGemi(text, lines, originalName);
+  }
+
+  // Strateji 7: Gelişmiş Evrensel Metin Ayrıştırıcı
   console.log('[DocumentProcessor] Strateji: Evrensel Metin Ayrıştırıcı devrede');
   return parseUniversalText(text, lines, originalName);
 }
+
 
 
 function parseExcelRows(rows, originalName = '') {

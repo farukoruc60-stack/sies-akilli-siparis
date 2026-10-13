@@ -290,14 +290,25 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
     setCustomerInfo(prev => ({ ...prev, exemptionDocId: undefined }));
   };
 
+  const orderCurrency = (customerInfo as any)?.currency || orderItems[0]?.currency || 'TRY';
+
+  const handleCurrencyChange = (newCurr: string) => {
+    setCustomerInfo(prev => ({ ...prev, currency: newCurr } as any));
+    setOrderItems(orderItems.map(it => ({ ...it, currency: newCurr })));
+  };
+
   const handleItemChange = (index: number, field: keyof OrderItem, val: any) => {
     const copy = [...orderItems];
     copy[index] = { ...copy[index], [field]: val };
 
     if (field === 'quantity' || field === 'unitPrice') {
-      const q = parseFloat(String(copy[index].quantity)) || 0;
-      const p = parseFloat(String(copy[index].unitPrice)) || 0;
-      copy[index].lineTotal = q * p;
+      const q = typeof copy[index].quantity === 'number'
+        ? copy[index].quantity
+        : parseFloat(String(copy[index].quantity || '').replace(',', '.')) || 0;
+      const p = typeof copy[index].unitPrice === 'number'
+        ? copy[index].unitPrice
+        : parseFloat(String(copy[index].unitPrice || '').replace(',', '.')) || 0;
+      copy[index].lineTotal = Math.round(q * p * 100) / 100;
     }
     setOrderItems(copy);
   };
@@ -307,18 +318,25 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
       ...orderItems,
       {
         lineNo: orderItems.length + 1,
-        productName: 'Yeni Taşıyıcı Kanal Kalemi',
-        widthMm: 150,
-        heightMm: 50,
-        thicknessMm: 1.5,
-        quantity: 10,
-        unit: 'Boy',
-        unitPrice: 200,
-        currency: 'TRY',
-        lineTotal: 2000,
-        confidenceScore: 1.0
+        customerProductCode: '',
+        productName: '',
+        productDescription: '',
+        quantity: 1,
+        unit: 'Adet',
+        unitPrice: 0,
+        currency: orderCurrency,
+        lineTotal: 0,
+        confidenceScore: 1.0,
+        status: 'OK'
       }
     ]);
+  };
+
+  const handleClearAllRows = () => {
+    if (orderItems.length === 0) return;
+    if (window.confirm('Tüm sipariş kalemlerini silip temizlemek istediğinize emin misiniz?')) {
+      setOrderItems([]);
+    }
   };
 
   const handleDeleteRow = (index: number) => {
@@ -337,9 +355,30 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
   };
 
   const handleSave = async () => {
+    if (!customerInfo.name || !customerInfo.name.trim()) {
+      alert('Lütfen müşteri unvanını giriniz!');
+      return;
+    }
     setSaving(true);
     try {
-      await onConfirm(customerInfo, orderItems, documentId);
+      const sanitizedItems = orderItems.map((it, idx) => {
+        const q = typeof it.quantity === 'number'
+          ? it.quantity
+          : parseFloat(String(it.quantity || '0').replace(',', '.')) || 0;
+        const p = typeof it.unitPrice === 'number'
+          ? it.unitPrice
+          : parseFloat(String(it.unitPrice || '0').replace(',', '.')) || 0;
+        return {
+          ...it,
+          lineNo: it.lineNo || idx + 1,
+          quantity: q,
+          unitPrice: p,
+          lineTotal: Math.round(q * p * 100) / 100,
+          currency: it.currency || orderCurrency
+        };
+      });
+
+      await onConfirm({ ...customerInfo, currency: orderCurrency } as any, sanitizedItems, documentId);
       onClose();
     } catch (err: any) {
       alert(`Sipariş kaydedilirken hata oluştu: ${err.message}`);
@@ -348,7 +387,6 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
     }
   };
 
-  const orderCurrency = orderItems[0]?.currency || (customerInfo as any)?.currency || 'TRY';
   const totalAmount = orderItems.reduce((acc, it) => acc + (it.lineTotal || 0), 0);
 
   const formatDateToISO = (dStr?: string) => {
@@ -364,6 +402,8 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
     }
     return trimmed;
   };
+
+  const isManualMode = !pdfUrl;
 
   return (
     <div className="modal-overlay-fullscreen">
@@ -393,7 +433,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
             <div style={{ minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                 <h2 style={{ fontSize: isMobile ? '0.92rem' : '1.15rem', fontWeight: 700, color: '#fff', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {isMobile ? 'Belge Kontrol & Onay' : 'Otomatik Belge Okuma Kontrol ve Onay Ekranı'}
+                  {isManualMode ? (isMobile ? '✍️ Manuel Sipariş' : '✍️ Yeni Sipariş Girişi (Manuel)') : (isMobile ? 'Belge Kontrol & Onay' : 'Otomatik Belge Okuma Kontrol ve Onay Ekranı')}
                 </h2>
                 <span style={{
                   background: '#1E293B',
@@ -410,15 +450,17 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
               </div>
               {!isMobile && (
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  Çıkarılan verileri sol tarafta inceleyip düzenleyin, sağ tarafta orijinal PDF'i kontrol edin.
+                  {isManualMode
+                    ? 'Müşteri bilgilerini ve sipariş kalemlerini girin, onaylayıp ortak sipariş havuzuna aktarın.'
+                    : "Çıkarılan verileri sol tarafta inceleyip düzenleyin, sağ tarafta orijinal PDF'i kontrol edin."}
                 </span>
               )}
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
-            {/* Desktop Split Ratio Controls */}
-            {!isMobile && (
+            {/* Desktop Split Ratio Controls - Only when PDF exists */}
+            {!isMobile && Boolean(pdfUrl) && (
               <div style={{
                 display: 'flex',
                 background: '#1E293B',
@@ -483,8 +525,8 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
               </div>
             )}
 
-            {/* Mobile Tab Switcher */}
-            {isMobile && (
+            {/* Mobile Tab Switcher - Only when PDF exists */}
+            {isMobile && Boolean(pdfUrl) && (
               <div style={{
                 display: 'flex',
                 background: '#1E293B',
@@ -560,8 +602,8 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
           {/* Left Side: Extracted Metadata & Item Editor */}
           {(!isMobile || mobileTab === 'items') && (
             <div style={{
-              width: isMobile ? '100%' : (splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '60%' : '40%'),
-              borderRight: isMobile ? 'none' : '1px solid var(--border-color)',
+              width: !pdfUrl ? '100%' : (isMobile ? '100%' : (splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '60%' : '40%')),
+              borderRight: (!pdfUrl || isMobile) ? 'none' : '1px solid var(--border-color)',
               overflowY: 'auto',
               padding: isMobile ? '0.75rem' : '1.25rem',
               transition: 'width 0.2s ease',
@@ -618,6 +660,20 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                     options={COATING_OPTIONS}
                     onChange={(val) => handleCustomerChange('coatingType', val)}
                   />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', color: 'var(--text-muted)', marginBottom: '0.2rem' }}>Döviz / Para Birimi</label>
+                  <select
+                    value={orderCurrency}
+                    onChange={(e) => handleCurrencyChange(e.target.value)}
+                    style={{ width: '100%', padding: '0.45rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A', fontWeight: 600 }}
+                  >
+                    <option value="TRY">TRY (₺ - Türk Lirası)</option>
+                    <option value="USD">USD ($ - Amerikan Doları)</option>
+                    <option value="EUR">EUR (€ - Euro)</option>
+                    <option value="GBP">GBP (£ - İngiliz Sterlini)</option>
+                  </select>
                 </div>
 
                 <div>
@@ -753,135 +809,162 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
 
             {/* Extracted Order Items Section */}
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <h3 style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 600 }}>
-                  2. Çıkarılan Sipariş Kalemleri ({orderItems.length} Kalem - Toplam {totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {orderCurrency})
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '8px' }}>
+                <h3 style={{ fontSize: '0.9rem', color: 'var(--primary)', fontWeight: 600, margin: 0 }}>
+                  2. Sipariş Kalemleri ({orderItems.length} Kalem - Toplam {totalAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {orderCurrency})
                 </h3>
-                <button onClick={handleAddRow} className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
-                  <Plus size={14} /> Satır Ekle
-                </button>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={handleAddRow} className="btn btn-secondary" style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Plus size={14} /> Satır Ekle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearAllRows}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', color: '#EF4444', borderColor: '#FCA5A5', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    title="Tüm kalemleri sil ve temizle"
+                  >
+                    <Trash2 size={13} /> Tümünü Temizle
+                  </button>
+                </div>
               </div>
 
-              <div className="table-container">
-                <table className="custom-table" style={{ fontSize: '0.8rem' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: '30px' }}>#</th>
-                      <th>Ürün Kodu</th>
-                      <th>Ürün Açıklaması</th>
-                      <th>Miktar</th>
-                      <th>Birim</th>
-                      <th>Birim Fiyat</th>
-                      <th>Toplam Tutar</th>
-                      <th>İşlem</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {orderItems.map((item, idx) => {
-                      const qty = parseFloat(String(item.quantity)) || 0;
-                      const uPrice = parseFloat(String(item.unitPrice)) || 0;
-                      const lTotal = parseFloat(String(item.lineTotal)) || (qty * uPrice);
+              {orderItems.length > 0 ? (
+                <div className="table-container">
+                  <table className="custom-table" style={{ fontSize: '0.8rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '30px' }}>#</th>
+                        <th>Ürün Kodu</th>
+                        <th>Ürün Açıklaması</th>
+                        <th style={{ width: '90px' }}>Miktar</th>
+                        <th style={{ width: '80px' }}>Birim</th>
+                        <th style={{ width: '100px' }}>Birim Fiyat</th>
+                        <th style={{ width: '110px' }}>Toplam Tutar</th>
+                        <th style={{ width: '65px' }}>İşlem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orderItems.map((item, idx) => {
+                        const qty = typeof item.quantity === 'number'
+                          ? item.quantity
+                          : parseFloat(String(item.quantity || '').replace(',', '.')) || 0;
+                        const uPrice = typeof item.unitPrice === 'number'
+                          ? item.unitPrice
+                          : parseFloat(String(item.unitPrice || '').replace(',', '.')) || 0;
+                        const lTotal = parseFloat(String(item.lineTotal)) || (qty * uPrice);
 
-                      return (
-                        <tr key={idx} style={{ background: (item.confidenceScore || 1) < 0.9 ? '#FEF3C7' : undefined }}>
-                          <td>{idx + 1}</td>
-                          <td>
-                            <input
-                              type="text"
-                              value={item.customerProductCode || ''}
-                              onChange={(e) => handleItemChange(idx, 'customerProductCode', e.target.value)}
-                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem 0.4rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}
-                            />
-                          </td>
-                          <td style={{ minWidth: '320px' }}>
-                            <textarea
-                              rows={2}
-                              value={item.productName || item.productDescription || ''}
-                              placeholder="Ürün açıklaması / teknik detayları..."
-                              onChange={(e) => {
-                                handleItemChange(idx, 'productName', e.target.value);
-                                handleItemChange(idx, 'productDescription', e.target.value);
-                              }}
-                              style={{
-                                width: '100%',
-                                background: '#FFFFFF',
-                                border: '1px solid #CBD5E1',
-                                color: '#0F172A',
-                                padding: '0.35rem 0.5rem',
-                                borderRadius: '4px',
-                                fontSize: '0.8rem',
-                                lineHeight: '1.35',
-                                resize: 'vertical',
-                                fontFamily: 'inherit',
-                                display: 'block'
-                              }}
-                            />
-                            {(item.material || item.surfaceCoating) && (
-                              <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
-                                {item.surfaceCoating && item.surfaceCoating !== 'Belirtilmedi' && (
-                                  <span style={{ background: '#EFF6FF', color: '#1D4ED8', padding: '1px 5px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: 600 }}>
-                                    {item.surfaceCoating}
-                                  </span>
-                                )}
-                                {item.material && item.material !== 'Çelik' && (
-                                  <span style={{ background: '#F1F5F9', color: '#475569', padding: '1px 5px', borderRadius: '3px', fontSize: '0.68rem' }}>
-                                    {item.material}
-                                  </span>
-                                )}
+                        return (
+                          <tr key={idx} style={{ background: (item.confidenceScore || 1) < 0.9 ? '#FEF3C7' : undefined }}>
+                            <td>{idx + 1}</td>
+                            <td>
+                              <input
+                                type="text"
+                                value={item.customerProductCode || ''}
+                                placeholder="Örn: 169387"
+                                onChange={(e) => handleItemChange(idx, 'customerProductCode', e.target.value)}
+                                style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem 0.4rem', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 600 }}
+                              />
+                            </td>
+                            <td style={{ minWidth: '320px' }}>
+                              <textarea
+                                rows={2}
+                                value={item.productName || item.productDescription || ''}
+                                placeholder="Ürün açıklaması / teknik detayları..."
+                                onChange={(e) => {
+                                  handleItemChange(idx, 'productName', e.target.value);
+                                  handleItemChange(idx, 'productDescription', e.target.value);
+                                }}
+                                style={{
+                                  width: '100%',
+                                  background: '#FFFFFF',
+                                  border: '1px solid #CBD5E1',
+                                  color: '#0F172A',
+                                  padding: '0.35rem 0.5rem',
+                                  borderRadius: '4px',
+                                  fontSize: '0.8rem',
+                                  lineHeight: '1.35',
+                                  resize: 'vertical',
+                                  fontFamily: 'inherit',
+                                  display: 'block'
+                                }}
+                              />
+                              {(item.material || item.surfaceCoating) && (
+                                <div style={{ display: 'flex', gap: '4px', marginTop: '3px', flexWrap: 'wrap' }}>
+                                  {item.surfaceCoating && item.surfaceCoating !== 'Belirtilmedi' && (
+                                    <span style={{ background: '#EFF6FF', color: '#1D4ED8', padding: '1px 5px', borderRadius: '3px', fontSize: '0.68rem', fontWeight: 600 }}>
+                                      {item.surfaceCoating}
+                                    </span>
+                                  )}
+                                  {item.material && item.material !== 'Çelik' && (
+                                    <span style={{ background: '#F1F5F9', color: '#475569', padding: '1px 5px', borderRadius: '3px', fontSize: '0.68rem' }}>
+                                      {item.material}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            <td>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={item.quantity === undefined || item.quantity === null ? '' : item.quantity}
+                                placeholder="0"
+                                onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+                                style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right', fontWeight: 600 }}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="text"
+                                value={item.unit || 'Adet'}
+                                onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
+                                style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem' }}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={item.unitPrice === undefined || item.unitPrice === null ? '' : item.unitPrice}
+                                placeholder="0.00"
+                                onChange={(e) => handleItemChange(idx, 'unitPrice', e.target.value)}
+                                style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem', textAlign: 'right' }}
+                              />
+                            </td>
+                            <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap', textAlign: 'right' }}>
+                              {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.currency || orderCurrency}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center' }}>
+                                <button onClick={() => handleCopyRow(idx)} title="Satırı Kopyala" style={{ background: 'none', border: 'none', color: '#60A5FA', cursor: 'pointer', padding: '2px' }}>
+                                  <Copy size={15} />
+                                </button>
+                                <button onClick={() => handleDeleteRow(idx)} title="Satırı Sil" style={{ background: 'none', border: 'none', color: '#F87171', cursor: 'pointer', padding: '2px' }}>
+                                  <Trash2 size={15} />
+                                </button>
                               </div>
-                            )}
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              step="0.1"
-                              value={qty}
-                              onChange={(e) => handleItemChange(idx, 'quantity', parseFloat(e.target.value))}
-                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem' }}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="text"
-                              value={item.unit || 'Adet'}
-                              onChange={(e) => handleItemChange(idx, 'unit', e.target.value)}
-                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem' }}
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={uPrice}
-                              onChange={(e) => handleItemChange(idx, 'unitPrice', parseFloat(e.target.value))}
-                              style={{ width: '100%', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.3rem', borderRadius: '4px', fontSize: '0.8rem' }}
-                            />
-                          </td>
-                          <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                            {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.currency || orderCurrency}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: '0.3rem' }}>
-                              <button onClick={() => handleCopyRow(idx)} title="Satırı Kopyala" style={{ background: 'none', border: 'none', color: '#60A5FA', cursor: 'pointer', padding: '2px' }}>
-                                <Copy size={15} />
-                              </button>
-                              <button onClick={() => handleDeleteRow(idx)} title="Satırı Sil" style={{ background: 'none', border: 'none', color: '#F87171', cursor: 'pointer', padding: '2px' }}>
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div style={{ padding: '2.5rem', textAlign: 'center', color: '#64748B', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1', marginTop: '0.5rem' }}>
+                  <p style={{ margin: '0 0 0.6rem 0', fontWeight: 600, fontSize: '0.88rem' }}>Henüz hiç sipariş kalemi bulunmuyor.</p>
+                  <button onClick={handleAddRow} className="btn btn-primary" style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                    <Plus size={14} /> Yeni Kalem Ekle
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
 
-          {/* Right Side: PDF Document Preview Viewer */}
-          {(!isMobile || mobileTab === 'pdf') && (
+          {/* Right Side: PDF Document Preview Viewer (Only if PDF exists) */}
+          {Boolean(pdfUrl) && (!isMobile || mobileTab === 'pdf') && (
             <div style={{
               width: isMobile ? '100%' : (splitRatio === '50-50' ? '50%' : splitRatio === '60-40' ? '40%' : '60%'),
               background: '#0F172A',

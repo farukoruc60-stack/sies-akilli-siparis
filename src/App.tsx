@@ -34,7 +34,8 @@ import {
   UserCheck, 
   LayoutDashboard,
   ShieldCheck,
-  Paintbrush
+  Paintbrush,
+  Edit3
 } from 'lucide-react';
 
 export default function App() {
@@ -58,6 +59,7 @@ export default function App() {
   // Upload & Verification Modal State
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [newOrderModalOpen, setNewOrderModalOpen] = useState(false);
   const [verificationModalOpen, setVerificationModalOpen] = useState(false);
   const [verificationData, setVerificationData] = useState<{
     documentId: number;
@@ -158,11 +160,42 @@ export default function App() {
     }
   }, [isAuthenticated, searchQuery, statusFilter, page]);
 
-  // Handle File Upload Trigger
+  // Handle New Order Trigger: Show choice modal (AI Belge Okuma vs Manuel Giriş)
   const handleUploadClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
+    setNewOrderModalOpen(true);
+  };
+
+  const handleStartManualOrder = () => {
+    setNewOrderModalOpen(false);
+    setVerificationData({
+      documentId: 0,
+      pdfUrl: '',
+      customerInfo: {
+        name: '',
+        orderNo: `SO-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`,
+        projectNo: '',
+        coatingType: 'Sıcak Daldırma Galvaniz (TS EN ISO 1461)',
+        orderDate: new Date().toISOString().split('T')[0],
+        deliveryDate: '',
+        currency: 'TRY'
+      },
+      orderItems: [
+        {
+          lineNo: 1,
+          customerProductCode: '',
+          productName: '',
+          productDescription: '',
+          quantity: 1,
+          unit: 'Adet',
+          unitPrice: 0,
+          currency: 'TRY',
+          lineTotal: 0,
+          confidenceScore: 1.0,
+          status: 'OK'
+        }
+      ]
+    });
+    setVerificationModalOpen(true);
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -729,6 +762,159 @@ export default function App() {
             }}>
               <span>Hücre & Tablo Ayrıştırma</span>
               <span style={{ color: '#2563EB', fontWeight: 600 }}>Aktif İşleniyor</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Order Method Selector Modal */}
+      {newOrderModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(15, 23, 42, 0.7)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 9998,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '1rem'
+        }}>
+          <div style={{
+            background: '#FFFFFF',
+            borderRadius: '16px',
+            maxWidth: '520px',
+            width: '100%',
+            padding: '1.75rem',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            border: '1px solid #E2E8F0',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  Yeni Sipariş Ekle
+                </h3>
+                <p style={{ fontSize: '0.8rem', color: '#64748B', margin: '4px 0 0 0' }}>
+                  Siparişi nasıl eklemek istediğinizi seçin:
+                </p>
+              </div>
+              <button
+                onClick={() => setNewOrderModalOpen(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#94A3B8',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center'
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '0.85rem' }}>
+              {/* Option 1: AI Document Upload */}
+              <button
+                type="button"
+                onClick={() => {
+                  setNewOrderModalOpen(false);
+                  fileInputRef.current?.click();
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '1rem',
+                  padding: '1.1rem 1.25rem',
+                  background: '#F8FAFC',
+                  border: '2px solid #E2E8F0',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#3B82F6';
+                  e.currentTarget.style.background = '#EFF6FF';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#E2E8F0';
+                  e.currentTarget.style.background = '#F8FAFC';
+                }}
+              >
+                <div style={{
+                  background: '#DBEAFE',
+                  color: '#2563EB',
+                  padding: '10px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <UploadCloud size={24} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '0.95rem', marginBottom: '3px' }}>
+                    📄 Belgeden Akıllı Oku (PDF / Excel / Resim)
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748B', lineHeight: '1.4' }}>
+                    Müşteri satınalma formunu yükleyin. Yapay zeka ürün kodlarını, açıklamalarını, miktarları ve birim fiyatları otomatik ayrıştırsın.
+                  </div>
+                </div>
+              </button>
+
+              {/* Option 2: Manual Order Entry */}
+              <button
+                type="button"
+                onClick={handleStartManualOrder}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '1rem',
+                  padding: '1.1rem 1.25rem',
+                  background: '#F8FAFC',
+                  border: '2px solid #E2E8F0',
+                  borderRadius: '12px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = '#10B981';
+                  e.currentTarget.style.background = '#ECFDF5';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = '#E2E8F0';
+                  e.currentTarget.style.background = '#F8FAFC';
+                }}
+              >
+                <div style={{
+                  background: '#D1FAE5',
+                  color: '#059669',
+                  padding: '10px',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Edit3 size={24} />
+                </div>
+                <div>
+                  <div style={{ fontWeight: 700, color: '#0F172A', fontSize: '0.95rem', marginBottom: '3px' }}>
+                    ✍️ Manuel Sipariş Ekle (Form ile Elle Giriş)
+                  </div>
+                  <div style={{ fontSize: '0.78rem', color: '#64748B', lineHeight: '1.4' }}>
+                    Belge yüklemeden müşteri adı, sipariş no ve ürün kalemlerini doğrudan tabloya elle girip anında havuza aktarın.
+                  </div>
+                </div>
+              </button>
             </div>
           </div>
         </div>

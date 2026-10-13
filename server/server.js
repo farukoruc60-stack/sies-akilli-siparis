@@ -968,20 +968,50 @@ app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
 app.put('/api/orders/:id', authenticateToken, async (req, res) => {
   try {
     const orderId = req.params.id;
-    const { version, customerOrderNo, projectNo, coatingType, requestedDeliveryDate, items } = req.body;
+    const {
+      version,
+      customerOrderNo,
+      projectNo,
+      coatingType,
+      requestedDeliveryDate,
+      orderDate,
+      orderNo,
+      customerName,
+      currency,
+      items
+    } = req.body;
 
     if (version === undefined || version === null) {
       return res.status(400).json({ error: 'Versiyon bilgisi (version) zorunludur!' });
     }
 
     const parsedDeliveryDate = normalizeDateToISO(requestedDeliveryDate);
+    const parsedOrderDate = normalizeDateToISO(orderDate);
 
     // Optimistic locking query: WHERE id = ? AND version = ?
     const updateRes = await query(
       `UPDATE orders 
-       SET customer_order_no = ?, project_no = ?, coating_type = ?, requested_delivery_date = ?, version = version + 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+       SET customer_order_no = COALESCE(?, customer_order_no),
+           project_no = COALESCE(?, project_no),
+           coating_type = COALESCE(?, coating_type),
+           requested_delivery_date = ?,
+           order_date = COALESCE(?, order_date),
+           order_no = COALESCE(?, order_no),
+           version = version + 1,
+           updated_by = ?,
+           updated_at = CURRENT_TIMESTAMP
        WHERE id = ? AND version = ?`,
-      [customerOrderNo || null, projectNo || null, coatingType || null, parsedDeliveryDate, req.user.id, orderId, version]
+      [
+        customerOrderNo !== undefined ? customerOrderNo : null,
+        projectNo !== undefined ? projectNo : null,
+        coatingType !== undefined ? coatingType : null,
+        parsedDeliveryDate,
+        parsedOrderDate,
+        orderNo !== undefined ? orderNo : null,
+        req.user.id,
+        orderId,
+        version
+      ]
     );
 
     if (updateRes.rowCount === 0) {
@@ -990,12 +1020,29 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
       });
     }
 
+    // Update customer name if provided
+    if (customerName && customerName.trim()) {
+      const ordRow = await query('SELECT customer_id FROM orders WHERE id = ?', [orderId]);
+      if (ordRow.rows?.[0]?.customer_id) {
+        await query('UPDATE customers SET name = ? WHERE id = ?', [customerName.trim(), ordRow.rows[0].customer_id]);
+      }
+    }
+
     // Replace items if provided
     if (items && Array.isArray(items)) {
       await query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
       for (let idx = 0; idx < items.length; idx++) {
         const item = items[idx];
         const lineNo = item.line_no || item.lineNo || (idx + 1);
+        const pCode = item.customer_product_code || item.customerProductCode || '';
+        const pIntCode = item.internal_product_code || item.internalProductCode || '';
+        const pName = item.product_name || item.productName || 'Ürün';
+        const pDesc = item.product_description || item.productDescription || pName;
+        const qty = parseFloat(item.quantity) || 1;
+        const unitPrice = parseFloat(item.unit_price ?? item.unitPrice) || 0;
+        const lineTotal = parseFloat(item.line_total ?? item.lineTotal) || (qty * unitPrice);
+        const itemCurrency = item.currency || currency || 'TRY';
+
         await query(
           `INSERT INTO order_items (
             order_id, line_no, customer_product_code, internal_product_code, product_name, product_description,
@@ -1003,9 +1050,25 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
             quantity, unit, unit_price, currency, line_total, status
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
-            orderId, lineNo, item.customer_product_code || '', item.internal_product_code || '', item.product_name || 'Ürün', item.product_description || '',
-            item.width_mm || null, item.height_mm || null, item.length_mm || null, item.thickness_mm || null, item.material || '', item.surface_coating || '', item.color || '',
-            parseFloat(item.quantity) || 1, item.unit || 'Adet', parseFloat(item.unit_price ?? item.unitPrice) || 0, item.currency || 'TRY', parseFloat(item.line_total ?? item.lineTotal) || 0, item.status || 'APPROVED'
+            orderId,
+            lineNo,
+            pCode,
+            pIntCode,
+            pName,
+            pDesc,
+            item.width_mm || item.widthMm || null,
+            item.height_mm || item.heightMm || null,
+            item.length_mm || item.lengthMm || null,
+            item.thickness_mm || item.thicknessMm || null,
+            item.material || '',
+            item.surface_coating || item.surfaceCoating || '',
+            item.color || '',
+            qty,
+            item.unit || 'Adet',
+            unitPrice,
+            itemCurrency,
+            lineTotal,
+            item.status || 'APPROVED'
           ]
         );
       }
