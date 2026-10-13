@@ -96,14 +96,27 @@ export default function App() {
       const res = await fetch(`/api/orders?${queryParams.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const data = await res.json();
-      setOrders(data.orders || []);
-      setTotalPages(data.totalPages || 1);
-      setTotalCount(data.totalCount || 0);
 
-      // Auto select first order if none selected
-      if (data.orders?.length > 0 && !selectedOrder) {
-        fetchOrderDetail(data.orders[0].id);
+      if (res.status === 401 || res.status === 403) {
+        logout();
+        return;
+      }
+
+      if (!res.ok) {
+        console.warn('Sipariş listesi sunucu yanıtı geçici olarak başarısız:', res.status);
+        return;
+      }
+
+      const data = await res.json();
+      if (data && Array.isArray(data.orders)) {
+        setOrders(data.orders);
+        setTotalPages(data.totalPages || 1);
+        setTotalCount(data.totalCount || 0);
+
+        // Auto select first order if none selected
+        if (data.orders.length > 0 && !selectedOrder) {
+          fetchOrderDetail(data.orders[0].id);
+        }
       }
     } catch (err) {
       console.error('Sipariş listesi yüklenemedi:', err);
@@ -117,6 +130,12 @@ export default function App() {
       const res = await fetch(`/api/orders/${orderId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+
+      if (res.status === 401 || res.status === 403) {
+        logout();
+        return;
+      }
+
       const data = await res.json();
       if (!res.ok || !data.order) {
         console.error('Sipariş detayı yüklenemedi:', data.error || 'Geçersiz veri');
