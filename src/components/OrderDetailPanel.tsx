@@ -109,6 +109,13 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [selectedItemIds, setSelectedItemIds] = useState<number[]>([]);
   const [batchStatus, setBatchStatus] = useState<string>('SHIPPING');
   const [batchUpdating, setBatchUpdating] = useState(false);
+  const [isDeletingItems, setIsDeletingItems] = useState(false);
+
+  React.useEffect(() => {
+    setSelectedItemIds([]);
+    setIsEditing(false);
+    setConflictError(null);
+  }, [order?.id]);
 
   // Production Form Modal & Action State
   const [productionModalOpen, setProductionModalOpen] = useState(false);
@@ -525,10 +532,11 @@ ${itemsSummary}
 
   // Select item handlers
   const handleToggleSelectAll = () => {
-    if (selectedItemIds.length === items.length) {
+    const list = isEditing ? editingItems : items;
+    if (selectedItemIds.length === list.length) {
       setSelectedItemIds([]);
     } else {
-      setSelectedItemIds(items.map((it, idx) => it.id || idx + 1));
+      setSelectedItemIds(list.map((it, idx) => it.id || idx + 1));
     }
   };
 
@@ -537,6 +545,85 @@ ${itemsSummary}
       setSelectedItemIds(selectedItemIds.filter(i => i !== id));
     } else {
       setSelectedItemIds([...selectedItemIds, id]);
+    }
+  };
+
+  const handleDeleteSelectedItems = async () => {
+    if (selectedItemIds.length === 0) {
+      alert('Lütfen silinecek en az bir kalem seçin!');
+      return;
+    }
+
+    const count = selectedItemIds.length;
+    const confirmMsg = `Seçili ${count} kalemi siparişten silmek istediğinize emin misiniz?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    if (isEditing) {
+      const updated = editingItems
+        .filter((item, idx) => {
+          const itemId = item.id || idx + 1;
+          return !selectedItemIds.includes(itemId);
+        })
+        .map((it, idx) => ({ ...it, lineNo: idx + 1, line_no: idx + 1 }));
+      setEditingItems(updated);
+      setSelectedItemIds([]);
+      return;
+    }
+
+    if (!order) return;
+    setIsDeletingItems(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/items/delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ itemIds: selectedItemIds })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Kalemler silinirken hata oluştu');
+      }
+
+      setSelectedItemIds([]);
+      await onRefresh();
+      alert(`Seçili ${count} kalem başarıyla silindi.`);
+    } catch (err: any) {
+      alert(toTurkishErrorMessage(err, 'Kalemler silinemedi'));
+    } finally {
+      setIsDeletingItems(false);
+    }
+  };
+
+  const handleDirectDeleteItem = async (itemId: number) => {
+    if (!order) return;
+    if (!window.confirm('Bu kalemi siparişten silmek istediğinize emin misiniz?')) {
+      return;
+    }
+    setIsDeletingItems(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/items/delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ itemIds: [itemId] })
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Kalem silinirken hata oluştu');
+      }
+
+      setSelectedItemIds(prev => prev.filter(id => id !== itemId));
+      await onRefresh();
+    } catch (err: any) {
+      alert(toTurkishErrorMessage(err, 'Kalem silinemedi'));
+    } finally {
+      setIsDeletingItems(false);
     }
   };
 
@@ -1754,6 +1841,28 @@ ${itemsSummary}
                   <Truck size={16} /> <span>{isMobile ? 'Sevk Et' : 'Seçilen Kalemleri Sevk Et (Şoför/Plaka/Miktar Gir)'}</span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handleDeleteSelectedItems}
+                  disabled={selectedItemIds.length === 0 || isDeletingItems}
+                  className="btn btn-primary"
+                  style={{
+                    fontSize: isMobile ? '0.75rem' : '0.85rem',
+                    padding: isMobile ? '0.45rem 0.65rem' : '0.5rem 1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    flex: isMobile ? '1 1 auto' : 'initial',
+                    background: selectedItemIds.length > 0 ? '#DC2626' : undefined,
+                    border: selectedItemIds.length > 0 ? '1px solid #B91C1C' : undefined,
+                    color: '#fff',
+                    fontWeight: 700
+                  }}
+                  title="Seçili kalemleri siparişten sil"
+                >
+                  <Trash2 size={16} /> <span>{isDeletingItems ? 'Siliniyor...' : (isMobile ? 'Sil' : `Seçili Kalemi Sil ${selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}`)}</span>
+                </button>
+
                 <div style={{ display: 'flex', gap: '0.35rem', flex: isMobile ? '1 1 100%' : 'initial', alignItems: 'center' }}>
                   <select
                     value={batchStatus}
@@ -1998,7 +2107,28 @@ ${itemsSummary}
                                 </button>
                               </div>
                             ) : (
-                              getItemStatusBadge(item.status)
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                                {getItemStatusBadge(item.status)}
+                                {item.id && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDirectDeleteItem(item.id!)}
+                                    title="Bu kalemi siparişten sil"
+                                    style={{
+                                      background: 'rgba(239, 68, 68, 0.08)',
+                                      border: '1px solid rgba(239, 68, 68, 0.2)',
+                                      color: '#EF4444',
+                                      cursor: 'pointer',
+                                      padding: '3px 5px',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      borderRadius: '4px'
+                                    }}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </td>
                         </tr>

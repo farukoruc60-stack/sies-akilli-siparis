@@ -708,6 +708,60 @@ app.post('/api/orders/:id/items/status', authenticateToken, async (req, res) => 
   }
 });
 
+// DELETE SELECTED ITEMS FROM AN ORDER
+app.post('/api/orders/:id/items/delete', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const { itemIds } = req.body;
+
+    if (!itemIds || !Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ error: 'Lütfen silinecek en az bir kalem seçin!' });
+    }
+
+    const placeholders = itemIds.map(() => '?').join(',');
+
+    // 1. Delete associated dispatches and status history for these items
+    await query(`DELETE FROM dispatches WHERE order_id = ? AND order_item_id IN (${placeholders})`, [orderId, ...itemIds]);
+    await query(`DELETE FROM order_item_status_history WHERE order_item_id IN (${placeholders})`, itemIds);
+
+    // 2. Delete the items from order_items
+    await query(`DELETE FROM order_items WHERE order_id = ? AND id IN (${placeholders})`, [orderId, ...itemIds]);
+
+    // 3. Renumber line_no for remaining items
+    const remainingItemsRes = await query(
+      'SELECT id FROM order_items WHERE order_id = ? ORDER BY line_no ASC, id ASC',
+      [orderId]
+    );
+    for (let i = 0; i < remainingItemsRes.rows.length; i++) {
+      await query('UPDATE order_items SET line_no = ? WHERE id = ?', [i + 1, remainingItemsRes.rows[i].id]);
+    }
+
+    // 4. Update order total_amount
+    const totalsRes = await query(
+      'SELECT SUM(line_total) as new_total FROM order_items WHERE order_id = ?',
+      [orderId]
+    );
+    const newTotal = parseFloat(totalsRes.rows?.[0]?.new_total) || 0;
+
+    // 5. Bump order version & updated_at
+    await query(
+      'UPDATE orders SET total_amount = ?, version = version + 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [newTotal, req.user.id, orderId]
+    );
+
+    // 6. Audit log
+    await query(
+      'INSERT INTO audit_logs (user_id, action, entity_name, entity_id, details) VALUES (?, ?, ?, ?, ?)',
+      [req.user.id, 'DELETE_ORDER_ITEMS', 'order_items', orderId, `${itemIds.length} adet sipariş kalemi silindi.`]
+    );
+
+    res.json({ success: true, deletedCount: itemIds.length, newTotal });
+  } catch (err) {
+    console.error('Sipariş kalemi silme hatası:', err);
+    res.status(500).json({ error: formatErrorMessage(err) });
+  }
+});
+
 // GENERATE OFFICIAL PRODUCTION WORK ORDER FORM PDF AND SEND ITEMS TO PRODUCTION
 app.post('/api/orders/:id/production-form', authenticateToken, async (req, res) => {
   try {
