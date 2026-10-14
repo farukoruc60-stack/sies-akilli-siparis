@@ -548,6 +548,48 @@ ${itemsSummary}
   const [subReturnNotes, setSubReturnNotes] = useState('');
   const [subReturning, setSubReturning] = useState(false);
 
+  // 1.4 Memoized Filtered and Sorted Items for the Excel-like Table (Top-level hook)
+  const filteredAndSortedItems = React.useMemo(() => {
+    let list = isEditing ? [...editingItems] : [...(items || [])];
+
+    if (itemSearchQuery.trim()) {
+      const q = itemSearchQuery.trim().toLowerCase();
+      list = list.filter(it => {
+        const code = (it.customerProductCode || it.customer_product_code || '').toLowerCase();
+        const name = (it.productName || it.product_name || it.productDescription || it.product_description || '').toLowerCase();
+        return code.includes(q) || name.includes(q);
+      });
+    }
+
+    list.sort((a, b) => {
+      let valA: any = 0;
+      let valB: any = 0;
+
+      if (itemSortField === 'code') {
+        valA = (a.customerProductCode || a.customer_product_code || '').toLowerCase();
+        valB = (b.customerProductCode || b.customer_product_code || '').toLowerCase();
+      } else if (itemSortField === 'name') {
+        valA = (a.productName || a.product_name || a.productDescription || '').toLowerCase();
+        valB = (b.productName || b.product_name || a.productDescription || '').toLowerCase();
+      } else if (itemSortField === 'quantity') {
+        valA = parseFloat(String(a.quantity || 0));
+        valB = parseFloat(String(b.quantity || 0));
+      } else if (itemSortField === 'remaining') {
+        valA = Math.max(0, (parseFloat(String(a.quantity || 0)) - parseFloat(String(a.shippedQuantity || 0))));
+        valB = Math.max(0, (parseFloat(String(b.quantity || 0)) - parseFloat(String(b.shippedQuantity || 0))));
+      } else {
+        valA = a.lineNo || a.line_no || 0;
+        valB = b.lineNo || b.line_no || 0;
+      }
+
+      if (valA < valB) return itemSortAsc ? -1 : 1;
+      if (valA > valB) return itemSortAsc ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }, [items, editingItems, isEditing, itemSearchQuery, itemSortField, itemSortAsc]);
+
   const handleOpenCreateSub = (defaultItemId?: number) => {
     if (defaultItemId) setSubItemId(defaultItemId);
     else if (items.length > 0) setSubItemId(items[0].id || '');
@@ -1570,47 +1612,6 @@ ${itemsSummary}
     }
   };
 
-  // 1.4 Memoized Filtered and Sorted Items for the Excel-like Table
-  const filteredAndSortedItems = React.useMemo(() => {
-    let list = isEditing ? [...editingItems] : [...items];
-
-    if (itemSearchQuery.trim()) {
-      const q = itemSearchQuery.trim().toLowerCase();
-      list = list.filter(it => {
-        const code = (it.customerProductCode || it.customer_product_code || '').toLowerCase();
-        const name = (it.productName || it.product_name || it.productDescription || it.product_description || '').toLowerCase();
-        return code.includes(q) || name.includes(q);
-      });
-    }
-
-    list.sort((a, b) => {
-      let valA: any = 0;
-      let valB: any = 0;
-
-      if (itemSortField === 'code') {
-        valA = (a.customerProductCode || a.customer_product_code || '').toLowerCase();
-        valB = (b.customerProductCode || b.customer_product_code || '').toLowerCase();
-      } else if (itemSortField === 'name') {
-        valA = (a.productName || a.product_name || a.productDescription || '').toLowerCase();
-        valB = (b.productName || b.product_name || b.productDescription || '').toLowerCase();
-      } else if (itemSortField === 'quantity') {
-        valA = parseFloat(String(a.quantity || 0));
-        valB = parseFloat(String(b.quantity || 0));
-      } else if (itemSortField === 'remaining') {
-        valA = Math.max(0, (parseFloat(String(a.quantity || 0)) - parseFloat(String(a.shippedQuantity || 0))));
-        valB = Math.max(0, (parseFloat(String(b.quantity || 0)) - parseFloat(String(b.shippedQuantity || 0))));
-      } else {
-        valA = a.lineNo || a.line_no || 0;
-        valB = b.lineNo || b.line_no || 0;
-      }
-
-      if (valA < valB) return itemSortAsc ? -1 : 1;
-      if (valA > valB) return itemSortAsc ? 1 : -1;
-      return 0;
-    });
-
-    return list;
-  }, [items, editingItems, isEditing, itemSearchQuery, itemSortField, itemSortAsc]);
 
 
 
