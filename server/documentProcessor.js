@@ -3224,4 +3224,358 @@ export async function generateDocumentViewerPdf(order, items, document, outputPa
   safeWriteFileSync(outputPath, pdfBytes);
 }
 
+// GENERATE OFFICIAL DISPATCH WAYBILL (SEVK İRSALİYESİ) PDF
+export async function generateWaybillPdf(order, customer, dispatchList, waybillInfo, outputPath) {
+  const pdfDoc = await PDFDocument.create();
+  const page = pdfDoc.addPage([595.28, 841.89]);
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const margin = 35;
+  const contentWidth = pageWidth - margin * 2;
+
+  const logoImg = await loadLogoImage(pdfDoc);
+
+  // 1. Header Card with Logo and Company Title
+  page.drawRectangle({
+    x: margin,
+    y: pageHeight - 85,
+    width: contentWidth,
+    height: 55,
+    color: rgb(0.98, 0.99, 1.0),
+    borderColor: rgb(0.08, 0.25, 0.5),
+    borderWidth: 1.5
+  });
+
+  if (logoImg) {
+    page.drawImage(logoImg, {
+      x: margin + 8,
+      y: pageHeight - 80,
+      width: 92,
+      height: 45
+    });
+  }
+
+  const titleX = logoImg ? margin + 110 : margin + 12;
+
+  page.drawText(sanitizeForPdf('SIES ELEKTRIK MUMESSILLIK SAN. VE TIC. LTD. STI.'), {
+    x: titleX,
+    y: pageHeight - 46,
+    size: 9.5,
+    font: boldFont,
+    color: rgb(0.08, 0.25, 0.5)
+  });
+
+  page.drawText(sanitizeForPdf('RESMI SEVK IRSALIYESI / DISPATCH WAYBILL'), {
+    x: titleX,
+    y: pageHeight - 64,
+    size: 13,
+    font: boldFont,
+    color: rgb(0.12, 0.35, 0.65)
+  });
+
+  // 2. Info Boxes: Customer Details (Left) & Dispatch Waybill Info (Right)
+  const boxY = pageHeight - 195;
+  const boxHeight = 100;
+  const colW = (contentWidth - 10) / 2;
+
+  // Customer Box
+  page.drawRectangle({
+    x: margin,
+    y: boxY,
+    width: colW,
+    height: boxHeight,
+    color: rgb(0.99, 0.99, 0.99),
+    borderColor: rgb(0.85, 0.88, 0.92),
+    borderWidth: 1
+  });
+
+  page.drawRectangle({
+    x: margin,
+    y: boxY + boxHeight - 20,
+    width: colW,
+    height: 20,
+    color: rgb(0.94, 0.96, 0.98)
+  });
+
+  page.drawText(sanitizeForPdf('ALICI / MUSTERI BILGILERI'), {
+    x: margin + 8,
+    y: boxY + boxHeight - 14,
+    size: 8,
+    font: boldFont,
+    color: rgb(0.15, 0.25, 0.45)
+  });
+
+  const custName = customer?.name || order?.customer_name || 'Bilinmeyen Musteri';
+  page.drawText(sanitizeForPdf(custName.slice(0, 40)), {
+    x: margin + 8,
+    y: boxY + boxHeight - 34,
+    size: 8.5,
+    font: boldFont,
+    color: rgb(0.1, 0.1, 0.1)
+  });
+
+  const taxStr = `Vergi Dairesi: ${customer?.tax_office || '-'} / VKN: ${customer?.tax_number || '-'}`;
+  page.drawText(sanitizeForPdf(taxStr), {
+    x: margin + 8,
+    y: boxY + boxHeight - 48,
+    size: 7.5,
+    font: font,
+    color: rgb(0.3, 0.3, 0.3)
+  });
+
+  const addrStr = `Adres: ${customer?.address || 'Merkez Adres'}`;
+  page.drawText(sanitizeForPdf(addrStr.slice(0, 52)), {
+    x: margin + 8,
+    y: boxY + boxHeight - 62,
+    size: 7.5,
+    font: font,
+    color: rgb(0.3, 0.3, 0.3)
+  });
+
+  const phoneStr = `Tel: ${customer?.phone || '-'} | E-posta: ${customer?.email || '-'}`;
+  page.drawText(sanitizeForPdf(phoneStr.slice(0, 52)), {
+    x: margin + 8,
+    y: boxY + boxHeight - 76,
+    size: 7,
+    font: font,
+    color: rgb(0.4, 0.4, 0.4)
+  });
+
+  // Waybill Box (Right)
+  const rightX = margin + colW + 10;
+  page.drawRectangle({
+    x: rightX,
+    y: boxY,
+    width: colW,
+    height: boxHeight,
+    color: rgb(0.99, 0.99, 0.99),
+    borderColor: rgb(0.85, 0.88, 0.92),
+    borderWidth: 1
+  });
+
+  page.drawRectangle({
+    x: rightX,
+    y: boxY + boxHeight - 20,
+    width: colW,
+    height: 20,
+    color: rgb(0.94, 0.96, 0.98)
+  });
+
+  page.drawText(sanitizeForPdf('SEVKIYAT & IRSALIYE DETAYLARI'), {
+    x: rightX + 8,
+    y: boxY + boxHeight - 14,
+    size: 8,
+    font: boldFont,
+    color: rgb(0.15, 0.25, 0.45)
+  });
+
+  const waybillNo = waybillInfo?.waybillNumber || '-';
+  page.drawText(sanitizeForPdf(`IRSALIYE NO: ${waybillNo}`), {
+    x: rightX + 8,
+    y: boxY + boxHeight - 34,
+    size: 9,
+    font: boldFont,
+    color: rgb(0.7, 0.15, 0.15)
+  });
+
+  const dispatchDate = waybillInfo?.dispatchDate ? new Date(waybillInfo.dispatchDate).toLocaleDateString('tr-TR') : new Date().toLocaleDateString('tr-TR');
+  page.drawText(sanitizeForPdf(`Sevk / Duzenleme Tarihi: ${dispatchDate}`), {
+    x: rightX + 8,
+    y: boxY + boxHeight - 48,
+    size: 7.5,
+    font: font,
+    color: rgb(0.25, 0.25, 0.25)
+  });
+
+  page.drawText(sanitizeForPdf(`Siparis No: ${order?.order_no || '-'} | Ref: ${order?.customer_order_no || '-'}`), {
+    x: rightX + 8,
+    y: boxY + boxHeight - 62,
+    size: 7.5,
+    font: font,
+    color: rgb(0.25, 0.25, 0.25)
+  });
+
+  const carrierInfo = `Sofor: ${waybillInfo?.driverName || '-'} | Plaka: ${waybillInfo?.vehiclePlate || '-'}`;
+  page.drawText(sanitizeForPdf(carrierInfo), {
+    x: rightX + 8,
+    y: boxY + boxHeight - 76,
+    size: 8,
+    font: boldFont,
+    color: rgb(0.1, 0.35, 0.2)
+  });
+
+  // 3. Waybill Items Table
+  let tableY = boxY - 20;
+  const colWidths = [28, 95, 230, 65, 45, 62]; // Total = 525 (matches contentWidth)
+  const headers = ['Sira', 'Urun Kodu', 'Malzeme / Urun Tanimi', 'Miktar', 'Birim', 'Durum'];
+
+  // Table Header Row
+  page.drawRectangle({
+    x: margin,
+    y: tableY - 18,
+    width: contentWidth,
+    height: 18,
+    color: rgb(0.15, 0.25, 0.45)
+  });
+
+  let hX = margin;
+  headers.forEach((h, idx) => {
+    page.drawText(sanitizeForPdf(h), {
+      x: hX + 4,
+      y: tableY - 13,
+      size: 7.5,
+      font: boldFont,
+      color: rgb(1, 1, 1)
+    });
+    hX += colWidths[idx];
+  });
+
+  tableY -= 18;
+  const rowHeight = 20;
+  let totalQty = 0;
+
+  for (let idx = 0; idx < dispatchList.length; idx++) {
+    const disp = dispatchList[idx];
+    const qty = parseFloat(disp.quantity_shipped || disp.quantity || 0);
+    totalQty += qty;
+
+    const rowBg = idx % 2 === 0 ? rgb(1, 1, 1) : rgb(0.97, 0.98, 0.99);
+    page.drawRectangle({
+      x: margin,
+      y: tableY - rowHeight,
+      width: contentWidth,
+      height: rowHeight,
+      color: rowBg,
+      borderColor: rgb(0.88, 0.9, 0.92),
+      borderWidth: 0.5
+    });
+
+    const pCode = sanitizeForPdf(disp.customer_product_code || disp.customerProductCode || `K-${idx+1}`);
+    const pName = sanitizeForPdf(disp.product_name || disp.productName || 'Urun Kalemi');
+    const pUnit = sanitizeForPdf(disp.unit || 'Adet');
+
+    const rowCells = [
+      String(idx + 1),
+      pCode.slice(0, 16),
+      pName.slice(0, 48),
+      qty.toLocaleString('tr-TR'),
+      pUnit,
+      'Sevk Edildi'
+    ];
+
+    let rX = margin;
+    rowCells.forEach((cText, cIdx) => {
+      const isBold = cIdx === 3;
+      page.drawText(cText, {
+        x: rX + 4,
+        y: tableY - rowHeight + 6,
+        size: 7.5,
+        font: isBold ? boldFont : font,
+        color: rgb(0.15, 0.15, 0.15)
+      });
+      rX += colWidths[cIdx];
+    });
+
+    tableY -= rowHeight;
+  }
+
+  // Total Summary Row
+  page.drawRectangle({
+    x: margin,
+    y: tableY - 20,
+    width: contentWidth,
+    height: 20,
+    color: rgb(0.94, 0.96, 0.99),
+    borderColor: rgb(0.8, 0.85, 0.9),
+    borderWidth: 1
+  });
+
+  page.drawText(sanitizeForPdf(`TOPLAM SEVK KALEMI: ${dispatchList.length} Kalem`), {
+    x: margin + 8,
+    y: tableY - 14,
+    size: 8,
+    font: boldFont,
+    color: rgb(0.15, 0.25, 0.45)
+  });
+
+  page.drawText(sanitizeForPdf(`TOPLAM ADET: ${totalQty.toLocaleString('tr-TR')}`), {
+    x: margin + 340,
+    y: tableY - 14,
+    size: 8.5,
+    font: boldFont,
+    color: rgb(0.1, 0.4, 0.2)
+  });
+
+  tableY -= 35;
+
+  // 4. Official Sign & Stamp Boxes
+  const sigBoxW = (contentWidth - 20) / 2;
+  const sigBoxH = 75;
+
+  // Delivery Person (Teslim Eden)
+  page.drawRectangle({
+    x: margin,
+    y: tableY - sigBoxH,
+    width: sigBoxW,
+    height: sigBoxH,
+    color: rgb(1, 1, 1),
+    borderColor: rgb(0.8, 0.85, 0.9),
+    borderWidth: 1
+  });
+  page.drawText(sanitizeForPdf('MALI TESLIM EDEN'), {
+    x: margin + 8,
+    y: tableY - 14,
+    size: 8,
+    font: boldFont,
+    color: rgb(0.15, 0.25, 0.45)
+  });
+  page.drawText(sanitizeForPdf('SIES ELEKTRIK LTD. STI. (Kase / Imza)'), {
+    x: margin + 8,
+    y: tableY - 28,
+    size: 7.5,
+    font: font,
+    color: rgb(0.4, 0.4, 0.4)
+  });
+
+  // Receiving Person (Teslim Alan)
+  const sigRightX = margin + sigBoxW + 20;
+  page.drawRectangle({
+    x: sigRightX,
+    y: tableY - sigBoxH,
+    width: sigBoxW,
+    height: sigBoxH,
+    color: rgb(1, 1, 1),
+    borderColor: rgb(0.8, 0.85, 0.9),
+    borderWidth: 1
+  });
+  page.drawText(sanitizeForPdf('MALI TESLIM ALAN (SOFOR / ALICI)'), {
+    x: sigRightX + 8,
+    y: tableY - 14,
+    size: 8,
+    font: boldFont,
+    color: rgb(0.15, 0.25, 0.45)
+  });
+  page.drawText(sanitizeForPdf(`Ad Soyad / Kase / Imza: ${waybillInfo?.driverName || '....................'}`), {
+    x: sigRightX + 8,
+    y: tableY - 28,
+    size: 7.5,
+    font: font,
+    color: rgb(0.4, 0.4, 0.4)
+  });
+
+  // Legal footnote
+  page.drawText(sanitizeForPdf('Bu sevk irsaliyesi 213 sayili Vergi Usul Kanunu hukumlerine uygun resmi sevk belgesi niteligindedir.'), {
+    x: margin + 8,
+    y: 20,
+    size: 6.5,
+    font: font,
+    color: rgb(0.5, 0.5, 0.5)
+  });
+
+  const pdfBytes = await pdfDoc.save();
+  safeWriteFileSync(outputPath, pdfBytes);
+  return outputPath;
+}

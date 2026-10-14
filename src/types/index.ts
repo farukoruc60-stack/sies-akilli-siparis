@@ -57,10 +57,24 @@ export interface OrderItem {
   quantity: number;
   productionQuantity?: number;
   production_quantity?: number;
+  producedQuantity?: number;
+  produced_quantity?: number;
+  inProductionQuantity?: number;
+  in_production_quantity?: number;
   coatingQuantity?: number;
   coating_quantity?: number;
+  sentToCoatingQuantity?: number;
+  sent_to_coating_quantity?: number;
+  returnedFromCoatingQuantity?: number;
+  returned_from_coating_quantity?: number;
+  approvedQuantity?: number;
+  approved_quantity?: number;
+  defectQuantity?: number;
+  defect_quantity?: number;
   shippedQuantity?: number;
   shipped_quantity?: number;
+  remainingQuantity?: number;
+  remaining_quantity?: number;
   unit: string;
   unitPrice: number;
   unit_price?: number;
@@ -70,6 +84,51 @@ export interface OrderItem {
   status?: string;
   sourcePage?: number;
   confidenceScore?: number;
+}
+
+export interface ProductionOrder {
+  id: number;
+  order_id: number;
+  order_item_id: number;
+  work_order_no: string;
+  department?: string;
+  planned_quantity: number;
+  produced_quantity: number;
+  defect_quantity: number;
+  start_date?: string;
+  planned_end_date?: string;
+  actual_end_date?: string;
+  status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  notes?: string;
+  creator_name?: string;
+  customer_product_code?: string;
+  product_name?: string;
+  unit?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface SubcontractOrder {
+  id: number;
+  order_id: number;
+  order_item_id: number;
+  subcontractor_name: string;
+  operation_type: string;
+  waybill_no?: string;
+  sent_quantity: number;
+  returned_quantity: number;
+  defect_quantity: number;
+  sent_date?: string;
+  expected_return_date?: string;
+  actual_return_date?: string;
+  status: 'SENT' | 'PARTIALLY_RETURNED' | 'COMPLETED' | 'CANCELLED';
+  notes?: string;
+  creator_name?: string;
+  customer_product_code?: string;
+  product_name?: string;
+  unit?: string;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface DispatchRecord {
@@ -82,10 +141,24 @@ export interface DispatchRecord {
   waybill_number: string;
   notes?: string;
   dispatch_date?: string;
+  status?: 'ACTIVE' | 'CANCELLED';
+  cancelled_at?: string;
+  cancelled_by?: number;
+  cancellation_reason?: string;
   creator_name?: string;
   created_at: string;
   customer_product_code?: string;
   product_name?: string;
+  unit?: string;
+}
+
+export interface ReportSummary {
+  openOrdersCount: number;
+  overdueOrdersCount: number;
+  inProductionCount: number;
+  activeWorkOrdersCount: number;
+  activeSubcontractCount: number;
+  readyToShipItemsCount: number;
 }
 
 export interface OrderDocument {

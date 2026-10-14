@@ -16,7 +16,7 @@ import { ProductionView } from './pages/ProductionView';
 import { CoatingView } from './pages/CoatingView';
 import { ShippingView } from './pages/ShippingView';
 import { SettingsView } from './pages/SettingsView';
-import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, ExtractedCustomerInfo, CustomerInsights } from './types';
+import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, ExtractedCustomerInfo, CustomerInsights, ProductionOrder, SubcontractOrder } from './types';
 import { toTurkishErrorMessage } from './utils/errorMessage';
 import { 
   Layers, 
@@ -48,6 +48,8 @@ export default function App() {
   const [orderDocuments, setOrderDocuments] = useState<OrderDocument[]>([]);
   const [orderHistory, setOrderHistory] = useState<OrderStatusHistory[]>([]);
   const [orderDispatches, setOrderDispatches] = useState<DispatchRecord[]>([]);
+  const [orderProductionOrders, setOrderProductionOrders] = useState<ProductionOrder[]>([]);
+  const [orderSubcontractOrders, setOrderSubcontractOrders] = useState<SubcontractOrder[]>([]);
   const [customerInsights, setCustomerInsights] = useState<CustomerInsights | null>(null);
   const [isOrderDetailLoading, setIsOrderDetailLoading] = useState<boolean>(false);
 
@@ -58,6 +60,8 @@ export default function App() {
     documents: OrderDocument[];
     history: OrderStatusHistory[];
     dispatches: DispatchRecord[];
+    productionOrders: ProductionOrder[];
+    subcontractOrders: SubcontractOrder[];
     customerInsights: CustomerInsights | null;
   }>>(new Map());
 
@@ -174,6 +178,8 @@ export default function App() {
         documents: data.documents || [],
         history: data.history || [],
         dispatches: data.dispatches || [],
+        productionOrders: data.productionOrders || [],
+        subcontractOrders: data.subcontractOrders || [],
         customerInsights: data.customerInsights || null
       };
 
@@ -184,6 +190,8 @@ export default function App() {
       setOrderDocuments(detailData.documents);
       setOrderHistory(detailData.history);
       setOrderDispatches(detailData.dispatches);
+      setOrderProductionOrders(detailData.productionOrders);
+      setOrderSubcontractOrders(detailData.subcontractOrders);
       setCustomerInsights(detailData.customerInsights);
       setIsOrderDetailLoading(false);
     } catch (err) {
@@ -205,6 +213,8 @@ export default function App() {
       setOrderDocuments(cached.documents);
       setOrderHistory(cached.history);
       setOrderDispatches(cached.dispatches);
+      setOrderProductionOrders(cached.productionOrders || []);
+      setOrderSubcontractOrders(cached.subcontractOrders || []);
       setCustomerInsights(cached.customerInsights);
       setIsOrderDetailLoading(false);
       // Background silent revalidation
@@ -215,6 +225,8 @@ export default function App() {
       setOrderDocuments([]);
       setOrderHistory([]);
       setOrderDispatches([]);
+      setOrderProductionOrders([]);
+      setOrderSubcontractOrders([]);
       setCustomerInsights(null);
       fetchOrderDetail(order.id, false);
     }
@@ -519,6 +531,8 @@ export default function App() {
                 documents={orderDocuments}
                 history={orderHistory}
                 dispatches={orderDispatches}
+                productionOrders={orderProductionOrders}
+                subcontractOrders={orderSubcontractOrders}
                 customerInsights={customerInsights}
                 isLoading={isOrderDetailLoading}
                 onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}
@@ -555,6 +569,8 @@ export default function App() {
                 documents={orderDocuments}
                 history={orderHistory}
                 dispatches={orderDispatches}
+                productionOrders={orderProductionOrders}
+                subcontractOrders={orderSubcontractOrders}
                 customerInsights={customerInsights}
                 isLoading={isOrderDetailLoading}
                 onRefresh={() => selectedOrder && fetchOrderDetail(selectedOrder.id)}

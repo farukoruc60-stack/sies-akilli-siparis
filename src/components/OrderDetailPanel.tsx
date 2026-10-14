@@ -48,7 +48,7 @@ import {
   Check
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, CustomerInsights } from '../types';
+import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, CustomerInsights, ProductionOrder, SubcontractOrder } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { toTurkishErrorMessage } from '../utils/errorMessage';
 
@@ -58,6 +58,8 @@ interface OrderDetailPanelProps {
   documents: OrderDocument[];
   history: OrderStatusHistory[];
   dispatches?: DispatchRecord[];
+  productionOrders?: ProductionOrder[];
+  subcontractOrders?: SubcontractOrder[];
   customerInsights?: CustomerInsights | null;
   isLoading?: boolean;
   onRefresh: () => void;
@@ -83,6 +85,8 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   documents,
   history,
   dispatches = [],
+  productionOrders = [],
+  subcontractOrders = [],
   customerInsights,
   isLoading = false,
   onRefresh,
@@ -91,7 +95,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   onStatusChange,
   onBackToList
 }) => {
-  const [activeTab, setActiveTab] = useState<'summary' | 'items' | 'documents' | 'production' | 'shipping' | 'history'>('summary');
+  const [activeTab, setActiveTab] = useState<'summary' | 'items' | 'documents' | 'production' | 'subcontract' | 'shipping' | 'history'>('summary');
   const [editingItems, setEditingItems] = useState<OrderItem[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editCustomerName, setEditCustomerName] = useState('');
@@ -327,11 +331,16 @@ ${itemsSummary}
       notes?: string;
       created_at: string;
       creator_name?: string;
+      status?: string;
+      cancellation_reason?: string;
       items: {
+        dispatch_id: number;
         item_id: number;
         code: string;
         name: string;
         quantity_shipped: number;
+        status?: string;
+        cancellation_reason?: string;
       }[];
     }>();
 
@@ -346,20 +355,296 @@ ${itemsSummary}
           notes: d.notes,
           created_at: d.created_at,
           creator_name: d.creator_name,
+          status: d.status || 'ACTIVE',
+          cancellation_reason: d.cancellation_reason,
           items: []
         });
       }
 
       map.get(key)!.items.push({
+        dispatch_id: d.id,
         item_id: d.order_item_id,
         code: d.customer_product_code || '-',
         name: d.product_name || 'Ürün Kalemi',
-        quantity_shipped: d.quantity_shipped
+        quantity_shipped: d.quantity_shipped,
+        status: d.status || 'ACTIVE',
+        cancellation_reason: d.cancellation_reason
       });
     });
 
     return Array.from(map.values());
   }, [dispatches]);
+
+  // Dispatch Waybill PDF Print & Cancel Handlers
+  const [printingWaybill, setPrintingWaybill] = useState<string | null>(null);
+
+  const handlePrintWaybillPdf = async (waybillNumber: string) => {
+    if (!order?.id || !token) return;
+    setPrintingWaybill(waybillNumber);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/dispatch/waybill-pdf`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ waybillNumber })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'İrsaliye PDF oluşturulamadı!');
+      window.open(`/api/documents/${data.documentId}/pdf?token=${token}`, '_blank');
+    } catch (err: any) {
+      alert('İrsaliye Yazdırma Hatası: ' + err.message);
+    } finally {
+      setPrintingWaybill(null);
+    }
+  };
+
+  const handleCancelDispatchItem = async (dispatchId: number, waybillNo: string) => {
+    if (!order?.id || !token) return;
+    const reason = window.prompt(`İrsaliye #${waybillNo} sevkiyat kaydını iptal etmek ve sevk edilen miktarı geri almak istediğinize emin misiniz?\n\nLütfen iptal gerekçesini belirtiniz:`);
+    if (reason === null) return;
+    try {
+      const res = await fetch(`/api/orders/${order.id}/dispatch/${dispatchId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ reason: reason.trim() || 'Kullanıcı tarafından iptal edildi.' })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sevkiyat iptal edilemedi!');
+      alert('✓ Sevkiyat kaydı başarıyla iptal edildi ve stok miktarı geri yüklendi.');
+      onRefresh();
+    } catch (err: any) {
+      alert('Sevkiyat İptal Hatası: ' + err.message);
+    }
+  };
+
+  // Work Order (Üretim Emri) State & Handlers
+  const [createWOModalOpen, setCreateWOModalOpen] = useState(false);
+  const [woItemId, setWoItemId] = useState<number | ''>('');
+  const [woDepartment, setWoDepartment] = useState('Talaşlı İmalat');
+  const [woPlannedQty, setWoPlannedQty] = useState<number | ''>('');
+  const [woStartDate, setWoStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [woPlannedEndDate, setWoPlannedEndDate] = useState('');
+  const [woNotes, setWoNotes] = useState('');
+  const [woSubmitting, setWoSubmitting] = useState(false);
+
+  // Update Work Order Progress Modal State
+  const [updateWOModalOpen, setUpdateWOModalOpen] = useState(false);
+  const [selectedWO, setSelectedWO] = useState<ProductionOrder | null>(null);
+  const [woProducedQty, setWoProducedQty] = useState<number | ''>('');
+  const [woDefectQty, setWoDefectQty] = useState<number | ''>('');
+  const [woActualEndDate, setWoActualEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [woStatus, setWoStatus] = useState<string>('IN_PROGRESS');
+  const [woUpdateNotes, setWoUpdateNotes] = useState('');
+  const [woUpdating, setWoUpdating] = useState(false);
+
+  const handleOpenCreateWO = (defaultItemId?: number) => {
+    if (defaultItemId) setWoItemId(defaultItemId);
+    else if (items.length > 0) setWoItemId(items[0].id || '');
+    setWoDepartment('Talaşlı İmalat');
+    setWoPlannedQty('');
+    setWoStartDate(new Date().toISOString().split('T')[0]);
+    setWoPlannedEndDate('');
+    setWoNotes('');
+    setCreateWOModalOpen(true);
+  };
+
+  const handleCreateWorkOrder = async () => {
+    if (!order?.id || !token || !woItemId) return;
+    const qty = parseFloat(String(woPlannedQty));
+    if (isNaN(qty) || qty <= 0) {
+      alert('Lütfen geçerli bir planlanan üretim miktarı giriniz!');
+      return;
+    }
+    setWoSubmitting(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/work-orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          orderItemId: woItemId,
+          department: woDepartment,
+          plannedQuantity: qty,
+          startDate: woStartDate,
+          plannedEndDate: woPlannedEndDate,
+          notes: woNotes
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'İş emri oluşturulamadı!');
+      setCreateWOModalOpen(false);
+      onRefresh();
+    } catch (err: any) {
+      alert('İş Emri Oluşturma Hatası: ' + err.message);
+    } finally {
+      setWoSubmitting(false);
+    }
+  };
+
+  const handleOpenUpdateWO = (wo: ProductionOrder) => {
+    setSelectedWO(wo);
+    setWoProducedQty(wo.produced_quantity || '');
+    setWoDefectQty(wo.defect_quantity || '');
+    setWoActualEndDate(wo.actual_end_date || new Date().toISOString().split('T')[0]);
+    setWoStatus(wo.status || 'IN_PROGRESS');
+    setWoUpdateNotes(wo.notes || '');
+    setUpdateWOModalOpen(true);
+  };
+
+  const handleUpdateWorkOrderProgress = async () => {
+    if (!order?.id || !token || !selectedWO) return;
+    setWoUpdating(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/work-orders/${selectedWO.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          producedQuantity: woProducedQty !== '' ? parseFloat(String(woProducedQty)) : 0,
+          defectQuantity: woDefectQty !== '' ? parseFloat(String(woDefectQty)) : 0,
+          actualEndDate: woActualEndDate,
+          status: woStatus,
+          notes: woUpdateNotes
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'İş emri güncellenemedi!');
+      setUpdateWOModalOpen(false);
+      onRefresh();
+    } catch (err: any) {
+      alert('İş Emri Güncelleme Hatası: ' + err.message);
+    } finally {
+      setWoUpdating(false);
+    }
+  };
+
+  // Subcontract / Coating State & Handlers
+  const [createSubModalOpen, setCreateSubModalOpen] = useState(false);
+  const [subItemId, setSubItemId] = useState<number | ''>('');
+  const [subContractorName, setSubContractorName] = useState('');
+  const [subOperationType, setSubOperationType] = useState('KAPLAMA');
+  const [subWaybillNo, setSubWaybillNo] = useState('');
+  const [subSentQty, setSubSentQty] = useState<number | ''>('');
+  const [subSentDate, setSubSentDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [subExpectedReturnDate, setSubExpectedReturnDate] = useState('');
+  const [subNotes, setSubNotes] = useState('');
+  const [subSubmitting, setSubSubmitting] = useState(false);
+
+  // Subcontract Return Modal State
+  const [returnSubModalOpen, setReturnSubModalOpen] = useState(false);
+  const [selectedSub, setSelectedSub] = useState<SubcontractOrder | null>(null);
+  const [subReturnedQty, setSubReturnedQty] = useState<number | ''>('');
+  const [subDefectQty, setSubDefectQty] = useState<number | ''>('');
+  const [subActualReturnDate, setSubActualReturnDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [subReturnNotes, setSubReturnNotes] = useState('');
+  const [subReturning, setSubReturning] = useState(false);
+
+  const handleOpenCreateSub = (defaultItemId?: number) => {
+    if (defaultItemId) setSubItemId(defaultItemId);
+    else if (items.length > 0) setSubItemId(items[0].id || '');
+    setSubContractorName('');
+    setSubOperationType('KAPLAMA');
+    setSubWaybillNo('');
+    setSubSentQty('');
+    setSubSentDate(new Date().toISOString().split('T')[0]);
+    setSubExpectedReturnDate('');
+    setSubNotes('');
+    setCreateSubModalOpen(true);
+  };
+
+  const handleCreateSubcontract = async () => {
+    if (!order?.id || !token || !subItemId) return;
+    if (!subContractorName.trim()) {
+      alert('Lütfen fason / kaplama firma adını belirtiniz!');
+      return;
+    }
+    const qty = parseFloat(String(subSentQty));
+    if (isNaN(qty) || qty <= 0) {
+      alert('Lütfen geçerli bir gönderilen miktar giriniz!');
+      return;
+    }
+    setSubSubmitting(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/subcontract`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          orderItemId: subItemId,
+          subcontractorName: subContractorName.trim(),
+          operationType: subOperationType,
+          waybillNo: subWaybillNo.trim(),
+          sentQuantity: qty,
+          sentDate: subSentDate,
+          expectedReturnDate: subExpectedReturnDate,
+          notes: subNotes
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Fason kaydı oluşturulamadı!');
+      setCreateSubModalOpen(false);
+      onRefresh();
+    } catch (err: any) {
+      alert('Fason Gönderim Hatası: ' + err.message);
+    } finally {
+      setSubSubmitting(false);
+    }
+  };
+
+  const handleOpenReturnSub = (sub: SubcontractOrder) => {
+    setSelectedSub(sub);
+    const pending = Math.max(0, sub.sent_quantity - sub.returned_quantity - sub.defect_quantity);
+    setSubReturnedQty(pending);
+    setSubDefectQty(0);
+    setSubActualReturnDate(new Date().toISOString().split('T')[0]);
+    setSubReturnNotes('');
+    setReturnSubModalOpen(true);
+  };
+
+  const handleReceiveSubcontractReturn = async () => {
+    if (!order?.id || !token || !selectedSub) return;
+    const retQty = parseFloat(String(subReturnedQty)) || 0;
+    const defQty = parseFloat(String(subDefectQty)) || 0;
+    if (retQty < 0 || defQty < 0) {
+      alert('Miktar negatif olamaz!');
+      return;
+    }
+    setSubReturning(true);
+    try {
+      const res = await fetch(`/api/orders/${order.id}/subcontract/${selectedSub.id}/return`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          returnedQuantity: (selectedSub.returned_quantity || 0) + retQty,
+          defectQuantity: (selectedSub.defect_quantity || 0) + defQty,
+          actualReturnDate: subActualReturnDate,
+          notes: subReturnNotes
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Mal kabul kaydı tamamlanamadı!');
+      setReturnSubModalOpen(false);
+      onRefresh();
+    } catch (err: any) {
+      alert('Mal Kabul Hatası: ' + err.message);
+    } finally {
+      setSubReturning(false);
+    }
+  };
 
   if (!order) {
     return (
@@ -1822,9 +2107,10 @@ ${itemsSummary}
           { id: 'summary', label: isMobile ? '1. Özet' : '1. Sipariş Özeti', icon: FileText },
           { id: 'items', label: isMobile ? `2. Kalemler (${isLoading && items.length === 0 ? (order.total_items || 0) : (items || []).length})` : `2. Sipariş Kalemleri (${isLoading && items.length === 0 ? (order.total_items || 0) : (items || []).length})`, icon: Layers },
           { id: 'documents', label: isMobile ? `3. Belgeler (${isLoading && documents.length === 0 ? (order.total_docs || 0) : (documents || []).length})` : `3. Sipariş Belgeleri (${isLoading && documents.length === 0 ? (order.total_docs || 0) : (documents || []).length})`, icon: ExternalLink },
-          { id: 'production', label: isMobile ? '4. Üretim' : '4. Üretim & Kaplama', icon: Factory },
-          { id: 'shipping', label: isMobile ? `5. Sevk (${waybillGroups.length})` : `5. Sevkiyat (${waybillGroups.length} İrsaliye)`, icon: Truck },
-          { id: 'history', label: isMobile ? '6. Geçmiş' : '6. İşlem Geçmişi', icon: History }
+          { id: 'production', label: isMobile ? `4. İş Emirleri (${(productionOrders || []).length})` : `4. Üretim Emirleri (${(productionOrders || []).length} İş Emri)`, icon: Factory },
+          { id: 'subcontract', label: isMobile ? `5. Kaplama (${(subcontractOrders || []).length})` : `5. Kaplama & Fason (${(subcontractOrders || []).length} Parti)`, icon: Paintbrush },
+          { id: 'shipping', label: isMobile ? `6. Sevk (${waybillGroups.length})` : `6. Sevkiyat & İrsaliye (${waybillGroups.length} İrsaliye)`, icon: Truck },
+          { id: 'history', label: isMobile ? '7. Geçmiş' : '7. İşlem Geçmişi & Audit', icon: History }
         ].map((t) => {
           const Icon = t.icon;
           const isActive = activeTab === t.id;
@@ -3146,7 +3432,133 @@ ${itemsSummary}
                     <Tag size={15} color="#9333EA" />
                     <span>Palet Etiketi Bas</span>
                   </button>
+
+                  <button
+                    onClick={() => handleOpenCreateWO()}
+                    className="btn btn-primary"
+                    style={{
+                      flex: isMobile ? 2 : 'initial',
+                      fontSize: '0.82rem',
+                      padding: '0.5rem 1rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      background: '#059669',
+                      borderColor: '#047857'
+                    }}
+                  >
+                    <Plus size={15} />
+                    <span>+ Yeni İş Emri Aç</span>
+                  </button>
                 </div>
+              </div>
+
+              {/* İş Emirleri Listesi (Üretim Takibi) */}
+              <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#0F172A', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Factory size={16} color="var(--primary)" /> Üretim İş Emirleri Takibi ({(productionOrders || []).length} İş Emri)
+                    </h4>
+                    <span style={{ fontSize: '0.75rem', color: '#64748B' }}>
+                      Her iş emri için bölüm, başlangıç, planlanan miktar ve gerçekleşen üretim takibi.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleOpenCreateWO()}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.78rem', padding: '0.35rem 0.75rem', display: 'flex', alignItems: 'center', gap: '4px', background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0', fontWeight: 600 }}
+                  >
+                    <Plus size={14} /> Yeni İş Emri Aç
+                  </button>
+                </div>
+
+                {(productionOrders || []).length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '1.5rem', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1', color: '#64748B', fontSize: '0.85rem' }}>
+                    <p style={{ margin: 0 }}>Bu sipariş için henüz bağımsız üretim iş emri açılmamıştır.</p>
+                    <button
+                      onClick={() => handleOpenCreateWO()}
+                      className="btn btn-secondary"
+                      style={{ marginTop: '0.75rem', fontSize: '0.78rem' }}
+                    >
+                      + İlk İş Emrini Oluştur
+                    </button>
+                  </div>
+                ) : (
+                  <div className="table-container" style={{ border: '1px solid #E2E8F0', borderRadius: '8px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                      <thead>
+                        <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', fontSize: '0.72rem', textTransform: 'uppercase' }}>
+                          <th style={{ padding: '0.6rem 0.75rem' }}>İş Emri No</th>
+                          <th style={{ padding: '0.6rem 0.75rem' }}>Ürün</th>
+                          <th style={{ padding: '0.6rem 0.75rem' }}>Bölüm / Atölye</th>
+                          <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Planlanan</th>
+                          <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Üretilen</th>
+                          <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Fire / Hatalı</th>
+                          <th style={{ padding: '0.6rem 0.75rem' }}>Tarihler</th>
+                          <th style={{ padding: '0.6rem 0.75rem' }}>Durum</th>
+                          <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>İşlem</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(productionOrders || []).map((wo) => {
+                          const planned = wo.planned_quantity || 0;
+                          const produced = wo.produced_quantity || 0;
+                          const pct = planned > 0 ? Math.min(100, Math.round((produced / planned) * 100)) : 0;
+                          return (
+                            <tr key={wo.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: '#0284C7' }}>
+                                {wo.work_order_no}
+                              </td>
+                              <td style={{ padding: '0.6rem 0.75rem' }}>
+                                <div style={{ fontWeight: 600, color: '#0F172A' }}>{wo.customer_product_code || '-'}</div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748B' }}>{wo.product_name}</div>
+                              </td>
+                              <td style={{ padding: '0.6rem 0.75rem', fontWeight: 600, color: '#334155' }}>
+                                {wo.department}
+                              </td>
+                              <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>
+                                {planned.toLocaleString('tr-TR')}
+                              </td>
+                              <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#059669' }}>
+                                {produced.toLocaleString('tr-TR')} ({pct}%)
+                              </td>
+                              <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: (wo.defect_quantity || 0) > 0 ? '#DC2626' : '#64748B' }}>
+                                {wo.defect_quantity || 0}
+                              </td>
+                              <td style={{ padding: '0.6rem 0.75rem', fontSize: '0.75rem', color: '#64748B' }}>
+                                <div>Başlangıç: {formatDate(wo.start_date)}</div>
+                                {wo.planned_end_date && <div>Plan Bitiş: {formatDate(wo.planned_end_date)}</div>}
+                              </td>
+                              <td style={{ padding: '0.6rem 0.75rem' }}>
+                                <span style={{
+                                  padding: '2px 8px',
+                                  borderRadius: '4px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  background: wo.status === 'COMPLETED' ? '#ECFDF5' : wo.status === 'CANCELLED' ? '#FEE2E2' : '#EFF6FF',
+                                  color: wo.status === 'COMPLETED' ? '#059669' : wo.status === 'CANCELLED' ? '#DC2626' : '#1D4ED8',
+                                  border: `1px solid ${wo.status === 'COMPLETED' ? '#A7F3D0' : wo.status === 'CANCELLED' ? '#FECACA' : '#BFDBFE'}`
+                                }}>
+                                  {wo.status === 'COMPLETED' ? 'TAMAMLANDI' : wo.status === 'CANCELLED' ? 'İPTAL' : 'ÜRETİMDE'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>
+                                <button
+                                  onClick={() => handleOpenUpdateWO(wo)}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', fontWeight: 600 }}
+                                >
+                                  ✏️ İlerleme Gir
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               {/* 2. Dörtlü KPI Metrikleri */}
@@ -3561,7 +3973,158 @@ ${itemsSummary}
           );
         })()}
 
-        {/* TAB 5: SHIPPING LOG & DISPATCH HISTORY (GROUPED BY WAYBILL) */}
+        {/* TAB 5: SUBCONTRACT & COATING (KAPLAMA VE FASON TAKİBİ) */}
+        {activeTab === 'subcontract' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div style={{
+              background: '#FFFFFF',
+              border: '1px solid #E2E8F0',
+              borderRadius: '12px',
+              padding: isMobile ? '0.85rem' : '1.25rem',
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              justifyContent: 'space-between',
+              alignItems: isMobile ? 'stretch' : 'center',
+              gap: '1rem',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                <div style={{
+                  width: '46px',
+                  height: '46px',
+                  borderRadius: '10px',
+                  background: '#FAF5FF',
+                  border: '1px solid #E9D5FF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Paintbrush size={24} color="#7E22CE" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: isMobile ? '1rem' : '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                    Kaplama & Dış Fason Takip Paneli
+                  </h3>
+                  <p style={{ fontSize: '0.8rem', color: '#64748B', margin: '3px 0 0 0' }}>
+                    Galvaniz, Elektrostatik Toz Boya ve Fason Tesislerine Gönderilen / Dönen Parti Yönetimi
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => handleOpenCreateSub()}
+                className="btn btn-primary"
+                style={{ fontSize: '0.82rem', padding: '0.5rem 1rem', background: '#7E22CE', borderColor: '#6B21A8', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Plus size={16} /> + Fasona Gönder (Yeni Parti)
+              </button>
+            </div>
+
+            {/* Subcontract Orders Table */}
+            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '12px', padding: isMobile ? '0.75rem' : '1.25rem', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+              {(subcontractOrders || []).length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1', color: '#64748B' }}>
+                  <Paintbrush size={36} style={{ marginBottom: '0.5rem', opacity: 0.3 }} />
+                  <p style={{ margin: 0, fontWeight: 600 }}>Bu sipariş için henüz fason veya kaplama sevkiyat kaydı açılmamıştır.</p>
+                  <p style={{ fontSize: '0.8rem', marginTop: '0.35rem' }}>Kaplamaya veya fason atölyeye ürün göndermek için yukarıdaki "+ Fasona Gönder" butonuna tıklayınız.</p>
+                </div>
+              ) : (
+                <div className="table-container" style={{ border: '1px solid #E2E8F0', borderRadius: '8px' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                    <thead>
+                      <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', fontSize: '0.72rem', textTransform: 'uppercase' }}>
+                        <th style={{ padding: '0.6rem 0.75rem' }}>Parti No</th>
+                        <th style={{ padding: '0.6rem 0.75rem' }}>Ürün</th>
+                        <th style={{ padding: '0.6rem 0.75rem' }}>Firma & İşlem</th>
+                        <th style={{ padding: '0.6rem 0.75rem' }}>İrsaliye</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Giden</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Dönen</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Fire</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Bekleyen</th>
+                        <th style={{ padding: '0.6rem 0.75rem' }}>Tarihler</th>
+                        <th style={{ padding: '0.6rem 0.75rem' }}>Durum</th>
+                        <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>İşlem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(subcontractOrders || []).map((sub) => {
+                        const sent = sub.sent_quantity || 0;
+                        const ret = sub.returned_quantity || 0;
+                        const def = sub.defect_quantity || 0;
+                        const pending = Math.max(0, sent - ret - def);
+                        return (
+                          <tr key={sub.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                            <td style={{ padding: '0.6rem 0.75rem', fontWeight: 700, color: '#7E22CE' }}>
+                              {sub.batch_no}
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem' }}>
+                              <div style={{ fontWeight: 600, color: '#0F172A' }}>{sub.customer_product_code || '-'}</div>
+                              <div style={{ fontSize: '0.72rem', color: '#64748B' }}>{sub.product_name}</div>
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem' }}>
+                              <div style={{ fontWeight: 700, color: '#1E293B' }}>{sub.subcontractor_name}</div>
+                              <span style={{ fontSize: '0.7rem', background: '#F3E8FF', color: '#6B21A8', padding: '1px 5px', borderRadius: '4px', fontWeight: 600 }}>
+                                {sub.operation_type}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem', color: '#475569', fontWeight: 600 }}>
+                              {sub.waybill_no || '-'}
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>
+                              {sent.toLocaleString('tr-TR')}
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#059669' }}>
+                              {ret.toLocaleString('tr-TR')}
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', color: def > 0 ? '#DC2626' : '#64748B' }}>
+                              {def.toLocaleString('tr-TR')}
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right', fontWeight: 700, color: pending > 0 ? '#D97706' : '#64748B' }}>
+                              {pending.toLocaleString('tr-TR')}
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem', fontSize: '0.75rem', color: '#64748B' }}>
+                              <div>Gidiş: {formatDate(sub.sent_date)}</div>
+                              {sub.expected_return_date && <div>Beklenen: {formatDate(sub.expected_return_date)}</div>}
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem' }}>
+                              <span style={{
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                background: sub.status === 'COMPLETED' ? '#ECFDF5' : sub.status === 'PARTIAL_RETURN' ? '#FFFBEB' : '#FAF5FF',
+                                color: sub.status === 'COMPLETED' ? '#059669' : sub.status === 'PARTIAL_RETURN' ? '#D97706' : '#7E22CE',
+                                border: `1px solid ${sub.status === 'COMPLETED' ? '#A7F3D0' : sub.status === 'PARTIAL_RETURN' ? '#FDE68A' : '#E9D5FF'}`
+                              }}>
+                                {sub.status === 'COMPLETED' ? 'TAMAMLANDI' : sub.status === 'PARTIAL_RETURN' ? 'KISMİ DÖNÜŞ' : 'KAPLAMADA'}
+                              </span>
+                            </td>
+                            <td style={{ padding: '0.6rem 0.75rem', textAlign: 'center' }}>
+                              {sub.status !== 'COMPLETED' ? (
+                                <button
+                                  onClick={() => handleOpenReturnSub(sub)}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '3px 8px', fontSize: '0.72rem', background: '#F0FDF4', border: '1px solid #BBF7D0', color: '#166534', fontWeight: 600 }}
+                                >
+                                  📦 Mal Kabul
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: '0.72rem', color: '#059669', fontWeight: 600 }}>✓ Bitti</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: SHIPPING LOG & DISPATCH HISTORY (GROUPED BY WAYBILL) */}
         {activeTab === 'shipping' && (
           <div>
             <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', marginBottom: '1rem', gap: '0.5rem' }}>
@@ -3608,9 +4171,31 @@ ${itemsSummary}
                           {group.items.length} Kalem
                         </span>
                       </div>
-                      <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
-                        {new Date(group.created_at).toLocaleString('tr-TR')}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          onClick={() => handlePrintWaybillPdf(group.waybill_number)}
+                          disabled={printingWaybill === group.waybill_number}
+                          className="btn btn-secondary"
+                          style={{
+                            padding: '0.3rem 0.65rem',
+                            fontSize: '0.75rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: '#EFF6FF',
+                            color: '#1D4ED8',
+                            border: '1px solid #93C5FD',
+                            fontWeight: 600
+                          }}
+                          title="Bu irsaliye için resmi PDF çıktısı al"
+                        >
+                          <Printer size={14} color="#2563EB" />
+                          <span>{printingWaybill === group.waybill_number ? 'Yazdırılıyor...' : 'İrsaliye Yazdır (PDF)'}</span>
+                        </button>
+                        <span style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 500 }}>
+                          {new Date(group.created_at).toLocaleString('tr-TR')}
+                        </span>
+                      </div>
                     </div>
 
                     {/* Table of items in this waybill */}
@@ -3622,6 +4207,7 @@ ${itemsSummary}
                             <th style={{ padding: '0.6rem 0.75rem', width: '160px' }}>Ürün Kodu</th>
                             <th style={{ padding: '0.6rem 0.75rem' }}>Ürün Açıklaması</th>
                             <th style={{ padding: '0.6rem 0.75rem', textAlign: 'right', width: '150px' }}>Sevk Miktarı</th>
+                            <th style={{ padding: '0.6rem 0.75rem', textAlign: 'center', width: '130px' }}>Durum / İşlem</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -3632,6 +4218,22 @@ ${itemsSummary}
                               <td style={{ padding: '0.65rem 0.75rem', color: '#1E293B', fontWeight: 500 }}>{item.name}</td>
                               <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#059669' }}>
                                 {item.quantity_shipped} Sevk Edildi
+                              </td>
+                              <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
+                                {item.status === 'CANCELLED' ? (
+                                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', background: '#FEE2E2', color: '#DC2626', border: '1px solid #FECACA', borderRadius: '4px', fontWeight: 700 }} title={item.cancellation_reason || 'İptal Edildi'}>
+                                    İPTAL EDİLDİ
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => handleCancelDispatchItem(item.dispatch_id, group.waybill_number)}
+                                    className="btn btn-secondary"
+                                    style={{ padding: '2px 7px', fontSize: '0.7rem', color: '#DC2626', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '4px', fontWeight: 600 }}
+                                    title="Bu kalemin sevkiyatını iptal et ve sevk miktarını geri al"
+                                  >
+                                    ↩️ İptal Et
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -4500,6 +5102,539 @@ ${itemsSummary}
                 style={{ background: '#D97706', borderColor: '#B45309', fontWeight: 700 }}
               >
                 <Check size={16} /> Kontrol Ettim, Onaylayıp Siparişe Aktar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 1. YENİ ÜRETİM EMRİ (WORK ORDER) OLUŞTURMA MODALI */}
+      {/* ============================================================== */}
+      {createWOModalOpen && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '560px', width: isMobile ? '96%' : '90%', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: isMobile ? '1rem' : '1.5rem', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Factory size={22} color="#059669" />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  Yeni Üretim Emri Oluştur
+                </h3>
+              </div>
+              <button onClick={() => setCreateWOModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  Sipariş Kalemi:
+                </label>
+                <select
+                  value={woItemId}
+                  onChange={(e) => setWoItemId(e.target.value ? Number(e.target.value) : '')}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                >
+                  <option value="">-- Kalem Seçiniz --</option>
+                  {(items || []).map((it, idx) => {
+                    const id = it.id || idx + 1;
+                    const code = it.customerProductCode || it.customer_product_code || `Kalem #${idx + 1}`;
+                    const name = it.productName || it.product_name;
+                    const qty = it.quantity || 0;
+                    const unit = it.unit || 'Adet';
+                    return (
+                      <option key={id} value={id}>
+                        {code} - {name} ({qty} {unit})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  Sorumlu Bölüm / Atölye:
+                </label>
+                <select
+                  value={woDepartment}
+                  onChange={(e) => setWoDepartment(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                >
+                  <option value="Talaşlı İmalat">Talaşlı İmalat</option>
+                  <option value="Sac Büküm & Delme (Punch/Laser)">Sac Büküm & Delme (Punch/Laser)</option>
+                  <option value="Kaynak & Montaj">Kaynak & Montaj</option>
+                  <option value="Kablo Taşıma İmalatı">Kablo Taşıma İmalatı</option>
+                  <option value="Boya / Kaplama Ön Hazırlık">Boya / Kaplama Ön Hazırlık</option>
+                  <option value="Kalite & Paketleme">Kalite & Paketleme</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    Planlanan Miktar:
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Miktar"
+                    value={woPlannedQty}
+                    onChange={(e) => setWoPlannedQty(e.target.value ? parseFloat(e.target.value) : '')}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 700 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    Başlangıç Tarihi:
+                  </label>
+                  <input
+                    type="date"
+                    value={woStartDate}
+                    onChange={(e) => setWoStartDate(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  Planlanan Bitiş Tarihi:
+                </label>
+                <input
+                  type="date"
+                  value={woPlannedEndDate}
+                  onChange={(e) => setWoPlannedEndDate(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  İş Emri Notları:
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Üretim talimatı, özel tolerans, takım vb..."
+                  value={woNotes}
+                  onChange={(e) => setWoNotes(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={() => setCreateWOModalOpen(false)}
+                className="btn btn-secondary"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateWorkOrder}
+                disabled={woSubmitting}
+                className="btn btn-primary"
+                style={{ background: '#059669', borderColor: '#047857', fontWeight: 700 }}
+              >
+                {woSubmitting ? 'Kaydediliyor...' : '✓ İş Emrini Başlat'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 2. İŞ EMRİ İLERLEME & MİKTAR GİRİŞ MODALI */}
+      {/* ============================================================== */}
+      {updateWOModalOpen && selectedWO && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '520px', width: isMobile ? '96%' : '90%', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: isMobile ? '1rem' : '1.5rem', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle2 size={22} color="#0284C7" />
+                <div>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                    İş Emri İlerleme Girişi
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: '#0284C7', fontWeight: 700 }}>
+                    {selectedWO.work_order_no}
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setUpdateWOModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ background: '#F8FAFC', padding: '0.75rem', borderRadius: '8px', border: '1px solid #E2E8F0', marginBottom: '1rem', fontSize: '0.82rem' }}>
+              <div style={{ fontWeight: 700, color: '#0F172A' }}>{selectedWO.customer_product_code} - {selectedWO.product_name}</div>
+              <div style={{ color: '#64748B', marginTop: '2px' }}>
+                Bölüm: <strong>{selectedWO.department}</strong> | Planlanan: <strong>{selectedWO.planned_quantity} Adet</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#059669', display: 'block', marginBottom: '0.25rem' }}>
+                    Gerçekleşen Üretilen Miktar:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Miktar"
+                    value={woProducedQty}
+                    onChange={(e) => setWoProducedQty(e.target.value ? parseFloat(e.target.value) : '')}
+                    style={{ width: '100%', padding: '0.5rem', border: '1.5px solid #10B981', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 700, color: '#065F46' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#DC2626', display: 'block', marginBottom: '0.25rem' }}>
+                    Fire / Hatalı Ürün:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Fire"
+                    value={woDefectQty}
+                    onChange={(e) => setWoDefectQty(e.target.value ? parseFloat(e.target.value) : '')}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #FCA5A5', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 700, color: '#B91C1C' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    İş Emri Durumu:
+                  </label>
+                  <select
+                    value={woStatus}
+                    onChange={(e) => setWoStatus(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 600 }}
+                  >
+                    <option value="IN_PROGRESS">Üretimde (Sürüyor)</option>
+                    <option value="COMPLETED">Tamamlandı</option>
+                    <option value="CANCELLED">İptal Edildi</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    Bitiş Tarihi:
+                  </label>
+                  <input
+                    type="date"
+                    value={woActualEndDate}
+                    onChange={(e) => setWoActualEndDate(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  Açıklama / Not:
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="İlerleme açıklaması..."
+                  value={woUpdateNotes}
+                  onChange={(e) => setWoUpdateNotes(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={() => setUpdateWOModalOpen(false)}
+                className="btn btn-secondary"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={handleUpdateWorkOrderProgress}
+                disabled={woUpdating}
+                className="btn btn-primary"
+                style={{ background: '#0284C7', borderColor: '#0369A1', fontWeight: 700 }}
+              >
+                {woUpdating ? 'Güncelleniyor...' : '✓ Miktarı Kaydet'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 3. FASON / KAPLAMAYA GÖNDERME MODALI */}
+      {/* ============================================================== */}
+      {createSubModalOpen && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '560px', width: isMobile ? '96%' : '90%', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: isMobile ? '1rem' : '1.5rem', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Paintbrush size={22} color="#7E22CE" />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  Fason / Kaplamaya Ürün Gönder
+                </h3>
+              </div>
+              <button onClick={() => setCreateSubModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  Gönderilecek Sipariş Kalemi:
+                </label>
+                <select
+                  value={subItemId}
+                  onChange={(e) => setSubItemId(e.target.value ? Number(e.target.value) : '')}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                >
+                  <option value="">-- Kalem Seçiniz --</option>
+                  {(items || []).map((it, idx) => {
+                    const id = it.id || idx + 1;
+                    const code = it.customerProductCode || it.customer_product_code || `Kalem #${idx + 1}`;
+                    const name = it.productName || it.product_name;
+                    const qty = it.quantity || 0;
+                    return (
+                      <option key={id} value={id}>
+                        {code} - {name} ({qty} {it.unit || 'Adet'})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    Fason / Kaplama Firması:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Örn: Marmara Galvaniz Ltd."
+                    value={subContractorName}
+                    onChange={(e) => setSubContractorName(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    İşlem Türü:
+                  </label>
+                  <select
+                    value={subOperationType}
+                    onChange={(e) => setSubOperationType(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                  >
+                    <option value="SICAK DALDIRMA GALVANİZ">Sıcak Daldırma Galvaniz (TS EN ISO 1461)</option>
+                    <option value="ELEKTROSTATİK TOZ BOYA">Elektrostatik Toz Boya</option>
+                    <option value="ELOKSAL">Eloksal Kaplama</option>
+                    <option value="ELEKTRO GALVANİZ">Elektro Galvaniz</option>
+                    <option value="FASON TALAŞLI İMALAT">Fason Talaşlı İmalat</option>
+                    <option value="KAPLAMA">Diğer Kaplama</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    Sevk İrsaliye Numarası:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Örn: GİRS-2026-081"
+                    value={subWaybillNo}
+                    onChange={(e) => setSubWaybillNo(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#7E22CE', display: 'block', marginBottom: '0.25rem' }}>
+                    Gönderilen Miktar:
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Gönderilen Adet"
+                    value={subSentQty}
+                    onChange={(e) => setSubSentQty(e.target.value ? parseFloat(e.target.value) : '')}
+                    style={{ width: '100%', padding: '0.5rem', border: '1.5px solid #A855F7', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 700, color: '#6B21A8' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    Gönderim Tarihi:
+                  </label>
+                  <input
+                    type="date"
+                    value={subSentDate}
+                    onChange={(e) => setSubSentDate(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                    Beklenen Dönüş Tarihi:
+                  </label>
+                  <input
+                    type="date"
+                    value={subExpectedReturnDate}
+                    onChange={(e) => setSubExpectedReturnDate(e.target.value)}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  Fason Açıklama / Şartname Notu:
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Mikron kalınlığı, renk kodu, özel paketleme vb..."
+                  value={subNotes}
+                  onChange={(e) => setSubNotes(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={() => setCreateSubModalOpen(false)}
+                className="btn btn-secondary"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateSubcontract}
+                disabled={subSubmitting}
+                className="btn btn-primary"
+                style={{ background: '#7E22CE', borderColor: '#6B21A8', fontWeight: 700 }}
+              >
+                {subSubmitting ? 'Kaydediliyor...' : '✓ Sevk Kaydını Aç'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 4. FASONDAN MAL KABUL MODALI */}
+      {/* ============================================================== */}
+      {returnSubModalOpen && selectedSub && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '520px', width: isMobile ? '96%' : '90%', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: isMobile ? '1rem' : '1.5rem', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle2 size={22} color="#059669" />
+                <div>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                    Fasondan / Kaplamadan Mal Kabul
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: '#7E22CE', fontWeight: 700 }}>
+                    Parti: {selectedSub.batch_no} ({selectedSub.subcontractor_name})
+                  </span>
+                </div>
+              </div>
+              <button onClick={() => setReturnSubModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ background: '#FAF5FF', padding: '0.75rem', borderRadius: '8px', border: '1px solid #E9D5FF', marginBottom: '1rem', fontSize: '0.82rem' }}>
+              <div style={{ fontWeight: 700, color: '#1E293B' }}>{selectedSub.customer_product_code} - {selectedSub.product_name}</div>
+              <div style={{ color: '#64748B', marginTop: '3px' }}>
+                Toplam Giden: <strong>{selectedSub.sent_quantity}</strong> | Önceden Dönen: <strong>{selectedSub.returned_quantity}</strong> | Bekleyen: <strong style={{ color: '#D97706' }}>{Math.max(0, selectedSub.sent_quantity - selectedSub.returned_quantity - selectedSub.defect_quantity)}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#059669', display: 'block', marginBottom: '0.25rem' }}>
+                    Kabul Edilen (Sağlam) Miktar:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Miktar"
+                    value={subReturnedQty}
+                    onChange={(e) => setSubReturnedQty(e.target.value ? parseFloat(e.target.value) : '')}
+                    style={{ width: '100%', padding: '0.5rem', border: '1.5px solid #10B981', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 700, color: '#065F46' }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#DC2626', display: 'block', marginBottom: '0.25rem' }}>
+                    Kaplama Hatası / Fire Miktar:
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="Hatalı"
+                    value={subDefectQty}
+                    onChange={(e) => setSubDefectQty(e.target.value ? parseFloat(e.target.value) : '')}
+                    style={{ width: '100%', padding: '0.5rem', border: '1px solid #FCA5A5', borderRadius: '6px', fontSize: '0.9rem', fontWeight: 700, color: '#B91C1C' }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  Fiili Mal Kabul Tarihi:
+                </label>
+                <input
+                  type="date"
+                  value={subActualReturnDate}
+                  onChange={(e) => setSubActualReturnDate(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569', display: 'block', marginBottom: '0.25rem' }}>
+                  Mal Kabul Notu & Kontrol Açıklaması:
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Gözle kontrol, kaplama kalınlığı ölçüm sonucu vb..."
+                  value={subReturnNotes}
+                  onChange={(e) => setSubReturnNotes(e.target.value)}
+                  style={{ width: '100%', padding: '0.5rem', border: '1px solid #CBD5E1', borderRadius: '6px', fontSize: '0.85rem' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                onClick={() => setReturnSubModalOpen(false)}
+                className="btn btn-secondary"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={handleReceiveSubcontractReturn}
+                disabled={subReturning}
+                className="btn btn-primary"
+                style={{ background: '#059669', borderColor: '#047857', fontWeight: 700 }}
+              >
+                {subReturning ? 'Kaydediliyor...' : '✓ Mal Kabulü Tamamla'}
               </button>
             </div>
           </div>

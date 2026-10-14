@@ -9,7 +9,10 @@
     "server": "node server/server.js",
     "client": "vite",
     "build": "vite build",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "db:backup": "node server/scripts/backup.js",
+    "db:restore": "node server/scripts/restore.js",
+    "test:mes": "node server/scripts/test-mes-scenario.js"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",

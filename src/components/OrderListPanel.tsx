@@ -14,10 +14,12 @@ import {
   ChevronUp,
   LayoutList,
   FolderTree,
-  PackageCheck
+  PackageCheck,
+  FileSpreadsheet
 } from 'lucide-react';
 import { Order, OrderItem, OrderStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
+import { ReportsModal } from './ReportsModal';
 
 interface OrderListPanelProps {
   orders: Order[];
@@ -56,6 +58,7 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
 
   // Grouping Mode State: Default to Customer Grouping (true)
   const [groupByCustomer, setGroupByCustomer] = useState<boolean>(true);
+  const [isReportsOpen, setIsReportsOpen] = useState<boolean>(false);
 
   // Single active order accordion state: ONLY the selected order can have its accordion open
   const [isSelectedExpanded, setIsSelectedExpanded] = useState<boolean>(true);
@@ -504,26 +507,49 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
             <h2 style={{ fontSize: '14px', fontWeight: 700, color: '#1A202C' }}>Sipariş Havuzu</h2>
             <span style={{ fontSize: '11px', color: '#718096' }}>Toplam {totalCount} sipariş ({customerGroups.length} Müşteri)</span>
           </div>
-          <button 
-            onClick={onUploadClick} 
-            style={{
-              background: '#4361EE',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '14px',
-              padding: '4px 10px',
-              fontSize: '11px',
-              fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              cursor: 'pointer',
-              boxShadow: '0 1px 3px rgba(67, 97, 238, 0.3)'
-            }}
-          >
-            <Plus size={13} />
-            <span>Yeni Sipariş</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button 
+              onClick={() => setIsReportsOpen(true)}
+              style={{
+                background: '#10B981',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '14px',
+                padding: '4px 9px',
+                fontSize: '11px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(16, 185, 129, 0.3)'
+              }}
+              title="Üretim, sevkiyat ve gecikme raporları ve Excel çıktısı"
+            >
+              <FileSpreadsheet size={13} />
+              <span>Raporlar & Excel</span>
+            </button>
+            <button 
+              onClick={onUploadClick} 
+              style={{
+                background: '#4361EE',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: '14px',
+                padding: '4px 10px',
+                fontSize: '11px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(67, 97, 238, 0.3)'
+              }}
+            >
+              <Plus size={13} />
+              <span>Yeni Sipariş</span>
+            </button>
+          </div>
         </div>
 
         {/* 6 Core KPI Status Filter Boxes (1.3) */}
@@ -772,6 +798,9 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* MES Production & Dispatch Reports Modal */}
+      <ReportsModal isOpen={isReportsOpen} onClose={() => setIsReportsOpen(false)} />
     </div>
   );
 };
