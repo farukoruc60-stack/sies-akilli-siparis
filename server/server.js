@@ -1063,21 +1063,48 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
       }
     }
 
-    // Replace items if provided
+    // Update, Insert, or Remove order items safely
     if (items && Array.isArray(items)) {
-      await query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
+      const keepIds = items.map(it => it.id).filter(Boolean);
+      if (keepIds.length > 0) {
+        const placeholders = keepIds.map(() => '?').join(',');
+        await query(`DELETE FROM order_items WHERE order_id = ? AND id NOT IN (${placeholders})`, [orderId, ...keepIds]);
+      } else {
+        await query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
+      }
+
       for (let idx = 0; idx < items.length; idx++) {
         const item = items[idx];
-        const lineNo = item.line_no || item.lineNo || (idx + 1);
-        const pCode = item.customer_product_code || item.customerProductCode || '';
-        const pIntCode = item.internal_product_code || item.internalProductCode || '';
-        const pName = item.product_name || item.productName || 'Ürün';
-        const pDesc = item.product_description || item.productDescription || pName;
+        const lineNo = item.lineNo || item.line_no || (idx + 1);
+        const pCode = (item.customerProductCode !== undefined ? item.customerProductCode : item.customer_product_code) || '';
+        const pIntCode = (item.internalProductCode !== undefined ? item.internalProductCode : item.internal_product_code) || '';
+        const pName = (item.productName !== undefined ? item.productName : item.product_name) || 'Ürün';
+        const pDesc = (item.productDescription !== undefined ? item.productDescription : item.product_description) || pName;
         const qty = parseFloat(item.quantity) || 1;
-        const unitPrice = parseFloat(item.unit_price ?? item.unitPrice) || 0;
-        const lineTotal = parseFloat(item.line_total ?? item.lineTotal) || (qty * unitPrice);
+        const unitPrice = parseFloat(item.unitPrice !== undefined ? item.unitPrice : item.unit_price) || 0;
+        const lineTotal = parseFloat(item.lineTotal !== undefined ? item.lineTotal : item.line_total) || (qty * unitPrice);
         const itemCurrency = item.currency || currency || 'TRY';
+        const itemUnit = item.unit || 'Adet';
 
+        if (item.id) {
+          const existRes = await query('SELECT id FROM order_items WHERE id = ? AND order_id = ?', [item.id, orderId]);
+          if (existRes.rows.length > 0) {
+            await query(
+              `UPDATE order_items 
+               SET line_no = ?, customer_product_code = ?, internal_product_code = ?, product_name = ?, product_description = ?,
+                   quantity = ?, unit = ?, unit_price = ?, currency = ?, line_total = ?, updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND order_id = ?`,
+              [
+                lineNo, pCode, pIntCode, pName, pDesc,
+                qty, itemUnit, unitPrice, itemCurrency, lineTotal,
+                item.id, orderId
+              ]
+            );
+            continue;
+          }
+        }
+
+        // Insert new item
         await query(
           `INSERT INTO order_items (
             order_id, line_no, customer_product_code, internal_product_code, product_name, product_description,
@@ -1099,7 +1126,7 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
             item.surface_coating || item.surfaceCoating || '',
             item.color || '',
             qty,
-            item.unit || 'Adet',
+            itemUnit,
             unitPrice,
             itemCurrency,
             lineTotal,

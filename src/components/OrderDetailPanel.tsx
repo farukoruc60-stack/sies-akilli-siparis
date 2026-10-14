@@ -19,6 +19,7 @@ import {
   Factory,
   RefreshCw,
   Plus,
+  Copy,
   PackageCheck,
   ArrowRight,
   X,
@@ -371,16 +372,32 @@ ${itemsSummary}
         const p = typeof (it.unitPrice ?? it.unit_price) === 'number'
           ? (it.unitPrice ?? it.unit_price)
           : parseFloat(String(it.unitPrice ?? it.unit_price ?? '0').replace(',', '.')) || 0;
+        const code = (it.customerProductCode ?? it.customer_product_code ?? '').trim();
+        const name = (it.productName ?? it.product_name ?? 'Ürün').trim();
+        const desc = (it.productDescription ?? it.product_description ?? name).trim() || name;
+        const unit = (it.unit || 'Adet').trim();
+        const total = Math.round(q * p * 100) / 100;
+        const curr = it.currency || (order as any)?.currency || 'TRY';
+
         return {
-          ...it,
-          lineNo: it.lineNo || it.line_no || idx + 1,
-          customerProductCode: it.customerProductCode || it.customer_product_code || '',
-          productName: it.productName || it.product_name || 'Ürün',
-          productDescription: it.productDescription || it.product_description || it.productName || it.product_name || '',
+          id: it.id,
+          lineNo: idx + 1,
+          line_no: idx + 1,
+          customerProductCode: code,
+          customer_product_code: code,
+          internalProductCode: it.internalProductCode || it.internal_product_code || '',
+          productName: name,
+          product_name: name,
+          productDescription: desc,
+          product_description: desc,
           quantity: q,
+          unit: unit,
           unitPrice: p,
-          lineTotal: Math.round(q * p * 100) / 100,
-          currency: it.currency || (order as any)?.currency || 'TRY'
+          unit_price: p,
+          lineTotal: total,
+          line_total: total,
+          currency: curr,
+          status: it.status || 'APPROVED'
         };
       });
 
@@ -414,36 +431,93 @@ ${itemsSummary}
     }
   };
 
-  const handleItemCellChange = (index: number, field: keyof OrderItem, val: any) => {
+  const handleItemCellChange = (index: number, field: string, val: any) => {
     const updated = [...editingItems];
-    updated[index] = { ...updated[index], [field]: val };
+    const item = { ...updated[index] };
 
-    if (field === 'quantity' || field === 'unitPrice' || (field as string) === 'unit_price') {
-      const q = typeof updated[index].quantity === 'number'
-        ? updated[index].quantity
-        : parseFloat(String(updated[index].quantity || '').replace(',', '.')) || 0;
-      const p = typeof (updated[index].unitPrice ?? updated[index].unit_price) === 'number'
-        ? (updated[index].unitPrice ?? updated[index].unit_price)
-        : parseFloat(String(updated[index].unitPrice ?? updated[index].unit_price ?? '').replace(',', '.')) || 0;
-      updated[index].lineTotal = Math.round(q * p * 100) / 100;
+    if (field === 'productName' || field === 'product_name') {
+      item.productName = val;
+      item.product_name = val;
+      item.productDescription = val;
+      item.product_description = val;
+    } else if (field === 'customerProductCode' || field === 'customer_product_code') {
+      item.customerProductCode = val;
+      item.customer_product_code = val;
+    } else if (field === 'unit') {
+      item.unit = val;
+    } else if (field === 'quantity') {
+      item.quantity = val;
+      const q = typeof val === 'number' ? val : parseFloat(String(val || '').replace(',', '.')) || 0;
+      const p = typeof (item.unitPrice ?? item.unit_price) === 'number'
+        ? (item.unitPrice ?? item.unit_price)
+        : parseFloat(String(item.unitPrice ?? item.unit_price ?? '').replace(',', '.')) || 0;
+      item.lineTotal = Math.round(q * p * 100) / 100;
+      item.line_total = item.lineTotal;
+    } else if (field === 'unitPrice' || field === 'unit_price') {
+      item.unitPrice = val;
+      item.unit_price = val;
+      const p = typeof val === 'number' ? val : parseFloat(String(val || '').replace(',', '.')) || 0;
+      const q = typeof item.quantity === 'number'
+        ? item.quantity
+        : parseFloat(String(item.quantity || '').replace(',', '.')) || 0;
+      item.lineTotal = Math.round(q * p * 100) / 100;
+      item.line_total = item.lineTotal;
+    } else {
+      (item as any)[field] = val;
     }
+
+    updated[index] = item;
     setEditingItems(updated);
   };
 
+  const handleDeleteItemRow = (index: number) => {
+    if (editingItems.length <= 1) {
+      if (!window.confirm('Siparişte sadece 1 kalem kaldı. Bu kalemi de silmek istediğinize emin misiniz?')) {
+        return;
+      }
+    }
+    const updated = editingItems.filter((_, idx) => idx !== index);
+    const renumbered = updated.map((it, idx) => ({
+      ...it,
+      lineNo: idx + 1,
+      line_no: idx + 1
+    }));
+    setEditingItems(renumbered);
+  };
+
+  const handleCopyItemRow = (index: number) => {
+    const target = editingItems[index];
+    const nextLineNo = editingItems.length + 1;
+    const copy = {
+      ...target,
+      id: undefined,
+      lineNo: nextLineNo,
+      line_no: nextLineNo
+    };
+    setEditingItems([...editingItems, copy]);
+  };
+
   const handleAddItemRow = () => {
+    const nextLineNo = editingItems.length + 1;
     setEditingItems([
       ...editingItems,
       {
-        lineNo: editingItems.length + 1,
-        productName: 'Yeni Taşıyıcı Eleman Kalemi',
-        customerProductCode: `KOD-${editingItems.length + 1}`,
-        material: 'Galvaniz',
-        quantity: 10,
+        lineNo: nextLineNo,
+        line_no: nextLineNo,
+        customerProductCode: `KALEM-${nextLineNo}`,
+        customer_product_code: `KALEM-${nextLineNo}`,
+        productName: 'Yeni Sipariş Kalemi',
+        product_name: 'Yeni Sipariş Kalemi',
+        productDescription: 'Yeni Sipariş Kalemi',
+        product_description: 'Yeni Sipariş Kalemi',
+        quantity: 1,
         shippedQuantity: 0,
-        unit: 'Boy',
-        unitPrice: 150,
-        currency: 'TRY',
-        lineTotal: 1500,
+        unit: 'Adet',
+        unitPrice: 0,
+        unit_price: 0,
+        currency: (order as any)?.currency || 'TRY',
+        lineTotal: 0,
+        line_total: 0,
         status: 'PENDING'
       }
     ]);
@@ -1709,8 +1783,13 @@ ${itemsSummary}
                   </button>
 
                   {isEditing && (
-                    <button onClick={handleAddItemRow} className="btn btn-secondary" style={{ fontSize: '0.75rem', padding: '0.4rem 0.6rem' }}>
-                      <Plus size={13} /> Ekle
+                    <button
+                      type="button"
+                      onClick={handleAddItemRow}
+                      className="btn btn-primary"
+                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem', display: 'flex', alignItems: 'center', gap: '5px', background: '#16A34A', borderColor: '#15803D', fontWeight: 700 }}
+                    >
+                      <Plus size={14} /> Yeni Kalem Ekle
                     </button>
                   )}
                 </div>
@@ -1725,21 +1804,23 @@ ${itemsSummary}
                     <th style={{ width: '36px' }}>
                       <input
                         type="checkbox"
-                        checked={selectedItemIds.length === items.length && items.length > 0}
+                        checked={selectedItemIds.length === (isEditing ? editingItems : items).length && (isEditing ? editingItems : items).length > 0}
                         onChange={handleToggleSelectAll}
                         title="Tümünü Seç / Seçimi Kaldır"
                       />
                     </th>
-                    <th>#</th>
-                    <th>Ürün Kodu</th>
-                    <th>Ürün Açıklaması</th>
-                    <th>Sipariş Miktarı</th>
-                    <th>Giden Miktar</th>
-                    <th>Kalan Miktar</th>
-                    <th>Birim</th>
-                    <th>Birim Fiyat</th>
-                    <th>Toplam Tutar</th>
-                    <th>Kalem Durumu</th>
+                    <th style={{ width: '35px' }}>#</th>
+                    <th style={{ minWidth: isEditing ? '110px' : '90px' }}>Ürün Kodu</th>
+                    <th style={{ minWidth: isEditing ? '320px' : '220px' }}>Ürün Açıklaması</th>
+                    <th style={{ width: isEditing ? '90px' : '80px' }}>Sipariş Miktarı</th>
+                    {!isEditing && <th>Giden Miktar</th>}
+                    {!isEditing && <th>Kalan Miktar</th>}
+                    <th style={{ width: isEditing ? '100px' : '65px' }}>Birim</th>
+                    <th style={{ width: isEditing ? '100px' : '90px' }}>Birim Fiyat</th>
+                    <th style={{ width: '110px' }}>Toplam Tutar</th>
+                    <th style={{ width: isEditing ? '85px' : '100px', textAlign: 'center' }}>
+                      {isEditing ? 'İşlemler' : 'Kalem Durumu'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1767,100 +1848,203 @@ ${itemsSummary}
                     (isEditing ? editingItems : items).map((item, idx) => {
                       const itemId = item.id || idx + 1;
                       const isSelected = selectedItemIds.includes(itemId);
-                    const qty = parseFloat(String(item.quantity)) || 0;
-                    const shipped = parseFloat(String(item.shippedQuantity || 0));
-                    const remaining = Math.max(0, qty - shipped);
-                    const isExcess = shipped > qty;
-                    const uPrice = parseFloat(String(item.unitPrice ?? item.unit_price)) || 0;
-                    const lTotal = parseFloat(String(item.lineTotal ?? item.line_total)) || (qty * uPrice);
+                      const qty = parseFloat(String(item.quantity)) || 0;
+                      const shipped = parseFloat(String(item.shippedQuantity || 0));
+                      const remaining = Math.max(0, qty - shipped);
+                      const isExcess = shipped > qty;
+                      const uPrice = parseFloat(String(item.unitPrice ?? item.unit_price)) || 0;
+                      const lTotal = parseFloat(String(item.lineTotal ?? item.line_total)) || (qty * uPrice);
 
-                    return (
-                      <tr key={idx} style={{ background: isSelected ? 'rgba(0, 229, 255, 0.08)' : undefined }}>
-                        <td>
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => handleToggleSelectItem(itemId)}
-                          />
-                        </td>
-                        <td>{item.lineNo || item.line_no || idx + 1}</td>
-                        <td>
-                          {isEditing ? (
+                      return (
+                        <tr key={idx} style={{ background: isSelected ? 'rgba(0, 229, 255, 0.08)' : (isEditing ? '#FAFAFA' : undefined) }}>
+                          <td>
                             <input
-                              type="text"
-                              value={item.customerProductCode || item.customer_product_code || ''}
-                              onChange={(e) => handleItemCellChange(idx, 'customerProductCode', e.target.value)}
-                              style={{ width: '90px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectItem(itemId)}
                             />
-                          ) : (
-                            <strong style={{ color: 'var(--primary)' }}>{item.customerProductCode || item.customer_product_code || '-'}</strong>
+                          </td>
+                          <td>{item.lineNo || item.line_no || idx + 1}</td>
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={item.customerProductCode || item.customer_product_code || ''}
+                                onChange={(e) => handleItemCellChange(idx, 'customerProductCode', e.target.value)}
+                                placeholder="Ürün Kodu"
+                                style={{ width: '100%', minWidth: '95px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0284C7', padding: '0.35rem 0.5rem', borderRadius: '4px', fontWeight: 700, fontSize: '0.82rem' }}
+                              />
+                            ) : (
+                              <strong style={{ color: 'var(--primary)' }}>{item.customerProductCode || item.customer_product_code || '-'}</strong>
+                            )}
+                          </td>
+                          <td>
+                            {isEditing ? (
+                              <textarea
+                                rows={2}
+                                value={item.productName || item.product_name || item.productDescription || item.product_description || ''}
+                                onChange={(e) => handleItemCellChange(idx, 'productName', e.target.value)}
+                                placeholder="Ürün adı veya açıklamasını giriniz..."
+                                style={{ width: '100%', minWidth: '280px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.35rem 0.5rem', borderRadius: '4px', fontSize: '0.82rem', fontWeight: 600, fontFamily: 'inherit', resize: 'vertical' }}
+                              />
+                            ) : (
+                              <strong>{item.productName || item.product_name}</strong>
+                            )}
+                          </td>
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={item.quantity === undefined || item.quantity === null ? '' : item.quantity}
+                                placeholder="0"
+                                onChange={(e) => handleItemCellChange(idx, 'quantity', e.target.value)}
+                                style={{ width: '100%', minWidth: '65px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.35rem 0.5rem', borderRadius: '4px', textAlign: 'right', fontWeight: 700, fontSize: '0.85rem' }}
+                              />
+                            ) : (
+                              <strong>{qty}</strong>
+                            )}
+                          </td>
+                          {!isEditing && (
+                            <td>
+                              <strong style={{ color: shipped > 0 ? '#10B981' : 'var(--text-muted)' }}>{shipped}</strong>
+                            </td>
                           )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              value={item.productName || item.product_name || ''}
-                              onChange={(e) => handleItemCellChange(idx, 'productName', e.target.value)}
-                              style={{ width: '220px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px' }}
-                            />
-                          ) : (
-                            <strong>{item.productName || item.product_name}</strong>
+                          {!isEditing && (
+                            <td>
+                              {isExcess ? (
+                                <span style={{ color: '#F59E0B', fontWeight: 700, fontSize: '0.78rem' }}>
+                                  0 <span style={{ fontSize: '0.7rem', color: '#F87171' }}>(+{(shipped - qty).toFixed(1)} Fazla)</span>
+                                </span>
+                              ) : (
+                                <strong style={{ color: remaining > 0 ? '#00E5FF' : '#9CA3AF' }}>{remaining}</strong>
+                              )}
+                            </td>
                           )}
-                        </td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={item.quantity === undefined || item.quantity === null ? '' : item.quantity}
-                              placeholder="0"
-                              onChange={(e) => handleItemCellChange(idx, 'quantity', e.target.value)}
-                              style={{ width: '70px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px', textAlign: 'right', fontWeight: 600 }}
-                            />
-                          ) : (
-                            <strong>{qty}</strong>
-                          )}
-                        </td>
-                        <td>
-                          <strong style={{ color: shipped > 0 ? '#10B981' : 'var(--text-muted)' }}>{shipped}</strong>
-                        </td>
-                        <td>
-                          {isExcess ? (
-                            <span style={{ color: '#F59E0B', fontWeight: 700, fontSize: '0.78rem' }}>
-                              0 <span style={{ fontSize: '0.7rem', color: '#F87171' }}>(+{(shipped - qty).toFixed(1)} Fazla)</span>
-                            </span>
-                          ) : (
-                            <strong style={{ color: remaining > 0 ? '#00E5FF' : '#9CA3AF' }}>{remaining}</strong>
-                          )}
-                        </td>
-                        <td>{item.unit || 'Adet'}</td>
-                        <td>
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={(item.unitPrice ?? item.unit_price) === undefined || (item.unitPrice ?? item.unit_price) === null ? '' : (item.unitPrice ?? item.unit_price)}
-                              placeholder="0.00"
-                              onChange={(e) => handleItemCellChange(idx, 'unitPrice', e.target.value)}
-                              style={{ width: '80px', background: 'rgba(0,0,0,0.5)', border: '1px solid var(--border-color)', color: '#fff', padding: '0.2rem', borderRadius: '4px', textAlign: 'right' }}
-                            />
-                          ) : (
-                            `${uPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${item.currency || (order as any)?.currency || 'TRY'}`
-                          )}
-                        </td>
-                        <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.currency || (order as any)?.currency || 'TRY'}
-                        </td>
-                        <td>
-                          {getItemStatusBadge(item.status)}
-                        </td>
-                      </tr>
-                    );
-                  }))}
+                          <td>
+                            {isEditing ? (
+                              <select
+                                value={item.unit || 'Adet'}
+                                onChange={(e) => handleItemCellChange(idx, 'unit', e.target.value)}
+                                style={{ width: '100%', minWidth: '80px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.35rem 0.4rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.82rem' }}
+                              >
+                                <option value="Adet">Adet</option>
+                                <option value="Metre">Metre</option>
+                                <option value="Boy">Boy</option>
+                                <option value="Kg">Kg</option>
+                                <option value="Set">Set</option>
+                                <option value="Paket">Paket</option>
+                                <option value="Plaka">Plaka</option>
+                              </select>
+                            ) : (
+                              item.unit || 'Adet'
+                            )}
+                          </td>
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={(item.unitPrice ?? item.unit_price) === undefined || (item.unitPrice ?? item.unit_price) === null ? '' : (item.unitPrice ?? item.unit_price)}
+                                placeholder="0.00"
+                                onChange={(e) => handleItemCellChange(idx, 'unitPrice', e.target.value)}
+                                style={{ width: '100%', minWidth: '75px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.35rem 0.5rem', borderRadius: '4px', textAlign: 'right', fontWeight: 700, fontSize: '0.85rem' }}
+                              />
+                            ) : (
+                              `${uPrice.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${item.currency || (order as any)?.currency || 'TRY'}`
+                            )}
+                          </td>
+                          <td style={{ color: 'var(--primary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            {lTotal.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {item.currency || (order as any)?.currency || 'TRY'}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            {isEditing ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'center' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyItemRow(idx)}
+                                  title="Bu kalemi çoğalt / kopyala"
+                                  style={{
+                                    background: '#EFF6FF',
+                                    border: '1px solid #BFDBFE',
+                                    color: '#2563EB',
+                                    padding: '4px 6px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <Copy size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteItemRow(idx)}
+                                  title="Bu kalemi siparişten sil"
+                                  style={{
+                                    background: '#FEF2F2',
+                                    border: '1px solid #FECACA',
+                                    color: '#DC2626',
+                                    padding: '4px 6px',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center'
+                                  }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            ) : (
+                              getItemStatusBadge(item.status)
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
             </div>
+
+            {isEditing && (
+              <div style={{
+                marginTop: '0.85rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '0.85rem 1.15rem',
+                background: '#F0FDF4',
+                borderRadius: '8px',
+                border: '1.5px dashed #22C55E',
+                flexWrap: 'wrap',
+                gap: '0.5rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#166534', fontSize: '0.82rem', fontWeight: 600 }}>
+                  <ShieldCheck size={18} color="#16A34A" />
+                  <span>İhtiyaç halinde yeni sipariş kalemi ekleyebilir veya satırdaki 🗑️ butonundan silebilirsiniz.</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddItemRow}
+                  className="btn btn-primary"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '0.5rem 1.15rem',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    background: '#16A34A',
+                    borderColor: '#15803D'
+                  }}
+                >
+                  <Plus size={16} /> Yeni Kalem Ekle
+                </button>
+              </div>
+            )}
           </div>
         )}
 
