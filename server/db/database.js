@@ -31,6 +31,8 @@ export async function initDatabase() {
       // Ensure shipped_quantity column, coating_type, project_no and dispatches table exist in PostgreSQL
       await client.query(`
         ALTER TABLE order_items ADD COLUMN IF NOT EXISTS shipped_quantity NUMERIC(12, 2) DEFAULT 0;
+        ALTER TABLE order_items ADD COLUMN IF NOT EXISTS production_quantity NUMERIC(12, 2) DEFAULT 0;
+        ALTER TABLE order_items ADD COLUMN IF NOT EXISTS coating_quantity NUMERIC(12, 2) DEFAULT 0;
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS coating_type VARCHAR(100);
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS project_no VARCHAR(100);
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes TEXT;
@@ -43,9 +45,11 @@ export async function initDatabase() {
             vehicle_plate VARCHAR(50),
             waybill_number VARCHAR(100),
             notes TEXT,
+            dispatch_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE dispatches ADD COLUMN IF NOT EXISTS dispatch_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
         CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
         CREATE INDEX IF NOT EXISTS idx_documents_order_id ON documents(order_id);
         CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id ON order_status_history(order_id);
@@ -249,9 +253,18 @@ async function runSqliteMigrations() {
     });
   }
 
-  // Ensure shipped_quantity column exists on order_items table in SQLite
+  // Ensure shipped_quantity, production_quantity, coating_quantity columns exist on order_items table in SQLite
   try {
     await new Promise((res) => sqliteDb.run("ALTER TABLE order_items ADD COLUMN shipped_quantity REAL DEFAULT 0", () => res(true)));
+  } catch (e) {}
+  try {
+    await new Promise((res) => sqliteDb.run("ALTER TABLE order_items ADD COLUMN production_quantity REAL DEFAULT 0", () => res(true)));
+  } catch (e) {}
+  try {
+    await new Promise((res) => sqliteDb.run("ALTER TABLE order_items ADD COLUMN coating_quantity REAL DEFAULT 0", () => res(true)));
+  } catch (e) {}
+  try {
+    await new Promise((res) => sqliteDb.run("ALTER TABLE dispatches ADD COLUMN dispatch_date DATETIME DEFAULT CURRENT_TIMESTAMP", () => res(true)));
   } catch (e) {}
 
   // Ensure coating_type & project_no columns exist on orders table in SQLite

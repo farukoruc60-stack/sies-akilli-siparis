@@ -65,6 +65,32 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
     setIsSelectedExpanded(true);
   }, [selectedOrderId]);
 
+  const [summaryMetrics, setSummaryMetrics] = useState({
+    openOrders: 0,
+    inProduction: 0,
+    inCoating: 0,
+    readyShipping: 0,
+    overdue: 0,
+    shippingToday: 0
+  });
+
+  const fetchMetrics = async () => {
+    if (!token) return;
+    try {
+      const res = await fetch('/api/orders/summary-metrics', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSummaryMetrics(data);
+      }
+    } catch (e) {}
+  };
+
+  React.useEffect(() => {
+    fetchMetrics();
+  }, [orders, token]);
+
   const fixTurkishEncoding = (text?: string): string => {
     if (!text) return '';
     return String(text)
@@ -83,30 +109,110 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
       .replace(/Ã§/g, 'ç');
   };
 
-  const getStatusBadge = (status: OrderStatus) => {
+  const getStatusBadge = (status: OrderStatus | string) => {
     switch (status) {
       case 'NEW':
       case 'REVIEW_PENDING':
         return <span className="badge badge-new" style={{ background: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}><Clock size={11} /> Yeni</span>;
+      case 'PRODUCTION_PENDING':
+        return <span className="badge" style={{ background: '#FEF3C7', color: '#92400E', border: '1px solid #FCD34D' }}>Üretim Bekliyor</span>;
       case 'IN_PRODUCTION':
       case 'APPROVED':
         return <span className="badge" style={{ background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}>Üretimde</span>;
-      case 'COATING':
       case 'COATING_PENDING':
+        return <span className="badge" style={{ background: '#F3E8FF', color: '#6B21A8', border: '1px solid #D8B4FE' }}>Kaplama Bekliyor</span>;
+      case 'COATING':
         return <span className="badge" style={{ background: '#F3E8FF', color: '#7E22CE', border: '1px solid #E9D5FF' }}>Kaplamada</span>;
       case 'PAINTING':
         return <span className="badge" style={{ background: '#FCE7F3', color: '#BE185D', border: '1px solid #FBCFE8' }}>Boyada</span>;
       case 'PACKAGING':
         return <span className="badge" style={{ background: '#E0F2FE', color: '#0369A1', border: '1px solid #BAE6FD' }}>Paketlemede</span>;
+      case 'READY_FOR_SHIPPING':
+        return <span className="badge" style={{ background: '#DCFCE7', color: '#15803D', border: '1px solid #86EFAC' }}>Sevkiyata Hazır</span>;
       case 'PARTIAL_SHIPPING':
       case 'SHIPPING_PENDING':
         return <span className="badge" style={{ background: '#FFEDD5', color: '#C2410C', border: '1px solid #FED7AA' }}>Kısmi Sevk</span>;
       case 'COMPLETED':
         return <span className="badge" style={{ background: '#ECFDF5', color: '#047857', border: '1px solid #A7F3D0' }}><CheckCircle2 size={11} /> Tamamlandı</span>;
+      case 'OVERDUE':
+        return <span className="badge" style={{ background: '#FEF2F2', color: '#DC2626', border: '1px solid #FCA5A5', fontWeight: 700 }}><AlertCircle size={11} /> Gecikmiş</span>;
       case 'CANCELLED':
         return <span className="badge" style={{ background: '#FEF2F2', color: '#B91C1C', border: '1px solid #FECACA' }}>İptal</span>;
       default:
         return <span className="badge badge-new">{status}</span>;
+    }
+  };
+
+  const getDeliveryUrgencyInfo = (dateStr?: string, status?: string) => {
+    if (status === 'COMPLETED') {
+      return {
+        color: '#64748B',
+        bg: '#F1F5F9',
+        border: '#CBD5E1',
+        label: 'Tamamlandı',
+        urgency: 'completed'
+      };
+    }
+    if (!dateStr) {
+      return {
+        color: '#64748B',
+        bg: '#F8FAFC',
+        border: '#E2E8F0',
+        label: '-',
+        urgency: 'none'
+      };
+    }
+
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const target = new Date(dateStr);
+      target.setHours(0, 0, 0, 0);
+      const diffTime = target.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays < 0) {
+        return {
+          color: '#DC2626',
+          bg: '#FEF2F2',
+          border: '#FCA5A5',
+          label: `${Math.abs(diffDays)}G Gecikti!`,
+          urgency: 'overdue'
+        };
+      }
+      if (diffDays === 0) {
+        return {
+          color: '#D97706',
+          bg: '#FFFBEB',
+          border: '#FDE68A',
+          label: 'Bugün Teslim!',
+          urgency: 'urgent'
+        };
+      }
+      if (diffDays <= 3) {
+        return {
+          color: '#D97706',
+          bg: '#FFFBEB',
+          border: '#FDE68A',
+          label: `${diffDays}G Kaldı`,
+          urgency: 'urgent'
+        };
+      }
+      return {
+        color: '#16A34A',
+        bg: '#F0FDF4',
+        border: '#BBF7D0',
+        label: `${diffDays}G Var`,
+        urgency: 'normal'
+      };
+    } catch {
+      return {
+        color: '#64748B',
+        bg: '#F8FAFC',
+        border: '#E2E8F0',
+        label: dateStr,
+        urgency: 'none'
+      };
     }
   };
 
@@ -242,11 +348,31 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
             </div>
           )}
 
-          {/* Satır 3: Teslim Tarihi + Kalem Sayısı Açılır Tırnak Butonu */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10.5px', color: '#64748B' }}>
-            <span>
-              Teslim: <strong style={{ color: '#1E293B' }}>{formatCardDate(order.requested_delivery_date || order.order_date)}</strong>
-            </span>
+          {/* Satır 3: Teslim Tarihi (Renkli Durum Rozeti) + Kalem Sayısı Açılır Tırnak Butonu */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '10px', color: '#64748B' }}>
+            {(() => {
+              const urgency = getDeliveryUrgencyInfo(order.requested_delivery_date || order.order_date, order.status);
+              return (
+                <span
+                  title={urgency.label}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '3px',
+                    background: urgency.bg,
+                    color: urgency.color,
+                    border: `1px solid ${urgency.border}`,
+                    padding: '1px 5px',
+                    borderRadius: '4px',
+                    fontWeight: 600,
+                    fontSize: '9.5px'
+                  }}
+                >
+                  <span>Teslim: {formatCardDate(order.requested_delivery_date || order.order_date)}</span>
+                  <strong style={{ fontSize: '9px', fontWeight: 700 }}>({urgency.label})</strong>
+                </span>
+              );
+            })()}
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               {(order.total_docs || 0) > 0 && (
@@ -400,6 +526,49 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
           </button>
         </div>
 
+        {/* 6 Core KPI Status Filter Boxes (1.3) */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: '4px',
+          marginBottom: '8px'
+        }}>
+          {[
+            { id: 'OPEN', label: 'Açık Sipariş', count: summaryMetrics.openOrders, color: '#2563EB', bg: '#EFF6FF', border: '#BFDBFE' },
+            { id: 'IN_PRODUCTION', label: 'Üretimde', count: summaryMetrics.inProduction, color: '#D97706', bg: '#FFFBEB', border: '#FDE68A' },
+            { id: 'COATING', label: 'Kaplamada', count: summaryMetrics.inCoating, color: '#7E22CE', bg: '#FAF5FF', border: '#E9D5FF' },
+            { id: 'READY_FOR_SHIPPING', label: 'Sevk Hazır', count: summaryMetrics.readyShipping, color: '#16A34A', bg: '#F0FDF4', border: '#BBF7D0' },
+            { id: 'OVERDUE', label: 'Geciken', count: summaryMetrics.overdue, color: '#DC2626', bg: '#FEF2F2', border: '#FECACA' },
+            { id: 'TODAY_SHIPPING', label: 'Bugün Sevk', count: summaryMetrics.shippingToday, color: '#EA580C', bg: '#FFF7ED', border: '#FFEDD5' }
+          ].map(kpi => {
+            const isActive = statusFilter === kpi.id;
+            return (
+              <button
+                key={kpi.id}
+                type="button"
+                onClick={() => setStatusFilter(isActive ? 'ALL' : kpi.id)}
+                title={`${kpi.label} siparişleri listele`}
+                style={{
+                  background: isActive ? kpi.color : kpi.bg,
+                  color: isActive ? '#FFFFFF' : kpi.color,
+                  border: `1.5px solid ${isActive ? kpi.color : kpi.border}`,
+                  borderRadius: '6px',
+                  padding: '4px 3px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <span style={{ fontSize: '13px', fontWeight: 800, lineHeight: 1 }}>{kpi.count}</span>
+                <span style={{ fontSize: '9px', fontWeight: 700, marginTop: '2px', whiteSpace: 'nowrap' }}>{kpi.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* View Mode Toggle: Customer Grouped vs Flat List */}
         <div style={{ display: 'flex', background: '#F1F5F9', padding: '2px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #E2E8F0' }}>
           <button
@@ -473,12 +642,12 @@ export const OrderListPanel: React.FC<OrderListPanelProps> = ({
         {/* Status Filter Pills */}
         <div style={{ display: 'flex', gap: '4px', overflowX: 'auto', paddingBottom: '4px' }}>
           {[
-            { id: 'ALL', label: 'Tümü (Aktifler)' },
+            { id: 'ALL', label: 'Tümü' },
             { id: 'NEW', label: 'Yeni' },
             { id: 'IN_PRODUCTION', label: 'Üretimde' },
             { id: 'COATING', label: 'Kaplamada' },
-            { id: 'PAINTING', label: 'Boyada' },
-            { id: 'PACKAGING', label: 'Paketlemede' },
+            { id: 'READY_FOR_SHIPPING', label: 'Sevk Hazır' },
+            { id: 'OVERDUE', label: 'Gecikenler' },
             { id: 'PARTIAL_SHIPPING', label: 'Kısmi Sevk' },
             { id: 'COMPLETED', label: 'Tamamlandı' }
           ].map((f) => (

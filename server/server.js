@@ -316,8 +316,83 @@ app.delete('/api/users/:id', authenticateToken, requireAdmin, async (req, res) =
 });
 
 // -------------------------------------------------------------
-// ORDER MANAGEMENT ROUTES
+// ORDER MANAGEMENT ROUTES & RECALCULATE ORDER STATUS
 // -------------------------------------------------------------
+async function recalculateOrderStatus(orderId) {
+  const itemsRes = await query(
+    'SELECT quantity, production_quantity, coating_quantity, shipped_quantity, status FROM order_items WHERE order_id = ?',
+    [orderId]
+  );
+  const items = itemsRes.rows;
+  if (!items || items.length === 0) return 'NEW';
+
+  const totalQty = items.reduce((s, it) => s + (parseFloat(it.quantity) || 0), 0);
+  const totalShipped = items.reduce((s, it) => s + (parseFloat(it.shipped_quantity) || 0), 0);
+  const totalCoated = items.reduce((s, it) => s + (parseFloat(it.coating_quantity) || 0), 0);
+  const totalProduced = items.reduce((s, it) => s + (parseFloat(it.production_quantity) || 0), 0);
+
+  // 1. All items fully shipped
+  const allFullyShipped = items.every(it => (parseFloat(it.shipped_quantity) || 0) >= (parseFloat(it.quantity) || 0) && (parseFloat(it.quantity) || 0) > 0);
+  if (allFullyShipped && totalQty > 0) {
+    return 'COMPLETED';
+  }
+
+  // 2. Any shipped quantity > 0
+  if (totalShipped > 0 || items.some(it => it.status === 'PARTIAL_SHIPPING' || it.status === 'SHIPPED')) {
+    return 'PARTIAL_SHIPPING';
+  }
+
+  // 3. Fully produced and ready for shipping
+  const allFullyProduced = items.every(it => (parseFloat(it.production_quantity) || 0) >= (parseFloat(it.quantity) || 0));
+  const allCoated = items.every(it => (parseFloat(it.coating_quantity) || 0) >= (parseFloat(it.quantity) || 0));
+  if (allFullyProduced && (allCoated || totalCoated >= totalQty) && totalQty > 0) {
+    return 'READY_FOR_SHIPPING';
+  }
+
+  // 4. In Coating / Coating pending
+  if (totalCoated > 0 || items.some(it => it.status === 'COATING')) {
+    return 'COATING';
+  }
+  if (items.some(it => it.status === 'COATING_PENDING')) {
+    return 'COATING_PENDING';
+  }
+
+  // 5. In Production / Production pending
+  if (totalProduced > 0 || items.some(it => it.status === 'IN_PRODUCTION')) {
+    return 'IN_PRODUCTION';
+  }
+  if (items.some(it => it.status === 'PRODUCTION_PENDING')) {
+    return 'PRODUCTION_PENDING';
+  }
+
+  return 'NEW';
+}
+
+// SUMMARY METRICS KPI ROUTE FOR DASHBOARD & INBOX FILTER CARDS
+app.get('/api/orders/summary-metrics', authenticateToken, async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+
+    const openRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE status != 'COMPLETED' AND status != 'CANCELLED'");
+    const prodRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE status IN ('IN_PRODUCTION', 'PRODUCTION_PENDING')");
+    const coatRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE status IN ('COATING', 'COATING_PENDING', 'PAINTING')");
+    const shipRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE status IN ('READY_FOR_SHIPPING', 'PARTIAL_SHIPPING', 'SHIPPING_PENDING')");
+    const overdueRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE requested_delivery_date IS NOT NULL AND requested_delivery_date != '' AND requested_delivery_date < ? AND status NOT IN ('COMPLETED', 'CANCELLED')", [today]);
+    const todayShipRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE requested_delivery_date LIKE ? AND status NOT IN ('COMPLETED', 'CANCELLED')", [`${today}%`]);
+
+    res.json({
+      openOrders: parseInt(openRes.rows[0]?.cnt || openRes.rows[0]?.['COUNT(*)'] || 0, 10),
+      inProduction: parseInt(prodRes.rows[0]?.cnt || prodRes.rows[0]?.['COUNT(*)'] || 0, 10),
+      inCoating: parseInt(coatRes.rows[0]?.cnt || coatRes.rows[0]?.['COUNT(*)'] || 0, 10),
+      readyShipping: parseInt(shipRes.rows[0]?.cnt || shipRes.rows[0]?.['COUNT(*)'] || 0, 10),
+      overdue: parseInt(overdueRes.rows[0]?.cnt || overdueRes.rows[0]?.['COUNT(*)'] || 0, 10),
+      shippingToday: parseInt(todayShipRes.rows[0]?.cnt || todayShipRes.rows[0]?.['COUNT(*)'] || 0, 10)
+    });
+  } catch (err) {
+    res.status(500).json({ error: formatErrorMessage(err) });
+  }
+});
+
 app.get('/api/orders', authenticateToken, async (req, res) => {
   try {
     const { search, status, page = 1, limit = 50 } = req.query;
@@ -332,12 +407,26 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
       WHERE 1=1
     `;
     const params = [];
+    const today = new Date().toISOString().split('T')[0];
 
-    if (status && status !== 'ALL') {
+    if (status === 'OVERDUE') {
+      sql += " AND o.requested_delivery_date IS NOT NULL AND o.requested_delivery_date != '' AND o.requested_delivery_date < ? AND o.status NOT IN ('COMPLETED', 'CANCELLED')";
+      params.push(today);
+    } else if (status === 'TODAY_SHIPPING') {
+      sql += " AND o.requested_delivery_date LIKE ? AND o.status NOT IN ('COMPLETED', 'CANCELLED')";
+      params.push(`${today}%`);
+    } else if (status === 'OPEN') {
+      sql += " AND o.status NOT IN ('COMPLETED', 'CANCELLED')";
+    } else if (status === 'READY_FOR_SHIPPING') {
+      sql += " AND o.status IN ('READY_FOR_SHIPPING', 'PARTIAL_SHIPPING', 'SHIPPING_PENDING')";
+    } else if (status === 'COATING') {
+      sql += " AND o.status IN ('COATING', 'COATING_PENDING', 'PAINTING')";
+    } else if (status === 'IN_PRODUCTION') {
+      sql += " AND o.status IN ('IN_PRODUCTION', 'PRODUCTION_PENDING')";
+    } else if (status && status !== 'ALL') {
       sql += ' AND o.status = ?';
       params.push(status);
     } else {
-      // Tamamlanan siparişler ana havuzda kalabalık etmesin; sadece 'COMPLETED' sekmesinde listelensin
       sql += " AND o.status != 'COMPLETED'";
     }
 
@@ -356,8 +445,13 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
     sql += ` LIMIT ${parseInt(limit)} OFFSET ${offset}`;
 
     const ordersRes = await query(sql, params);
+    const mappedOrders = ordersRes.rows.map(o => ({
+      ...o,
+      isOverdue: !!(o.requested_delivery_date && o.requested_delivery_date < today && o.status !== 'COMPLETED' && o.status !== 'CANCELLED')
+    }));
+
     res.json({
-      orders: ordersRes.rows,
+      orders: mappedOrders,
       totalCount,
       page: parseInt(page),
       totalPages: Math.ceil(totalCount / parseInt(limit))
@@ -385,19 +479,55 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       query('SELECT * FROM order_items WHERE order_id = ? ORDER BY line_no ASC, id ASC', [orderId]),
       query('SELECT * FROM documents WHERE order_id = ? ORDER BY id DESC', [orderId]),
       query(`
-        SELECT h.*, u.full_name as user_name
+        SELECT 
+          'STATUS_CHANGE' as record_type,
+          h.id,
+          h.order_id,
+          h.previous_status,
+          h.new_status,
+          h.notes,
+          h.created_at,
+          u.full_name as user_name,
+          'Durum Değişikliği' as action_title
         FROM order_status_history h
         LEFT JOIN users u ON h.changed_by = u.id
         WHERE h.order_id = ?
-        ORDER BY h.created_at DESC
-      `, [orderId]),
+
+        UNION ALL
+
+        SELECT 
+          'AUDIT' as record_type,
+          a.id,
+          CAST(a.entity_id AS INTEGER) as order_id,
+          '' as previous_status,
+          '' as new_status,
+          a.details as notes,
+          a.created_at,
+          u.full_name as user_name,
+          CASE 
+            WHEN a.action = 'CREATE_ORDER' THEN 'Sipariş Oluşturuldu'
+            WHEN a.action = 'UPDATE_ORDER' THEN 'Sipariş Güncellendi'
+            WHEN a.action = 'DELETE_ORDER_ITEMS' THEN 'Sipariş Kalemi Silindi'
+            WHEN a.action = 'PRODUCTION_FORM' THEN 'Üretim Formu Hazırlandı'
+            WHEN a.action = 'SHIPPING_LABEL' THEN 'Sevkiyat Etiketi Basıldı'
+            WHEN a.action = 'DISPATCH' THEN 'Sevkiyat Yapıldı'
+            WHEN a.action = 'STAGE_QUANTITY_CHANGE' THEN 'Aşama Miktarı Değişti'
+            ELSE a.action
+          END as action_title
+        FROM audit_logs a
+        LEFT JOIN users u ON a.user_id = u.id
+        WHERE (a.entity_name = 'orders' AND a.entity_id = ?) 
+           OR (a.entity_name = 'order_items' AND a.entity_id = ?)
+
+        ORDER BY created_at DESC
+      `, [orderId, orderId, orderId]),
       query(`
-        SELECT d.*, oi.customer_product_code, oi.product_name, u.full_name as creator_name
+        SELECT d.*, oi.customer_product_code, oi.product_name, oi.unit, u.full_name as creator_name
         FROM dispatches d
         LEFT JOIN order_items oi ON d.order_item_id = oi.id
         LEFT JOIN users u ON d.created_by = u.id
         WHERE d.order_id = ?
-        ORDER BY d.created_at DESC
+        ORDER BY COALESCE(d.dispatch_date, d.created_at) DESC, d.id DESC
       `, [orderId])
     ]);
 
@@ -416,6 +546,8 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
       widthMm: it.width_mm,
       heightMm: it.height_mm,
       thicknessMm: it.thickness_mm,
+      productionQuantity: parseFloat(it.production_quantity) || 0,
+      coatingQuantity: parseFloat(it.coating_quantity) || 0,
       shippedQuantity: parseFloat(it.shipped_quantity) || 0,
       unitPrice: parseFloat(it.unit_price) || 0,
       lineTotal: parseFloat(it.line_total) || 0,
@@ -960,7 +1092,7 @@ app.post('/api/orders/:id/shipping-labels', authenticateToken, async (req, res) 
 app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
   try {
     const orderId = req.params.id;
-    const { driverName, vehiclePlate, waybillNumber, notes, dispatches } = req.body;
+    const { driverName, vehiclePlate, waybillNumber, notes, dispatches, dispatchDate } = req.body;
 
     if (!dispatches || !Array.isArray(dispatches) || dispatches.length === 0) {
       return res.status(400).json({ error: 'Lütfen sevk edilecek en az bir kalem ve miktar belirtin!' });
@@ -969,6 +1101,8 @@ app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
     if (!driverName || !vehiclePlate || !waybillNumber) {
       return res.status(400).json({ error: 'Şoför Adı, Araç Plakası ve İrsaliye Numarası girilmesi zorunludur!' });
     }
+
+    const actualDispatchDate = dispatchDate ? normalizeDateToISO(dispatchDate) : new Date().toISOString();
 
     for (const itemDispatch of dispatches) {
       const { itemId, dispatchQuantity } = itemDispatch;
@@ -997,12 +1131,12 @@ app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
         [newShipped, newStatus, itemId, orderId]
       );
 
-      // 2. Record dispatch entry
+      // 2. Record dispatch entry with dispatch_date
       await query(
         `INSERT INTO dispatches (
-          order_id, order_item_id, quantity_shipped, driver_name, vehicle_plate, waybill_number, notes, created_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [orderId, itemId, dispatchQty, driverName.trim(), vehiclePlate.trim().toUpperCase(), waybillNumber.trim(), notes || '', req.user.id]
+          order_id, order_item_id, quantity_shipped, driver_name, vehicle_plate, waybill_number, notes, dispatch_date, created_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [orderId, itemId, dispatchQty, driverName.trim(), vehiclePlate.trim().toUpperCase(), waybillNumber.trim(), notes || '', actualDispatchDate, req.user.id]
       );
 
       // 3. Record item status history
@@ -1013,19 +1147,8 @@ app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
       );
     }
 
-    // 4. Auto-update overall order status
-    const allItemsRes = await query('SELECT quantity, shipped_quantity, status FROM order_items WHERE order_id = ?', [orderId]);
-    const itemsList = allItemsRes.rows;
-    let overallStatus = 'APPROVED';
-
-    const allCompleted = itemsList.every(i => (parseFloat(i.shipped_quantity) || 0) >= (parseFloat(i.quantity) || 0));
-    const anyShipped = itemsList.some(i => (parseFloat(i.shipped_quantity) || 0) > 0);
-
-    if (allCompleted) {
-      overallStatus = 'COMPLETED';
-    } else if (anyShipped) {
-      overallStatus = 'SHIPPING_PENDING';
-    }
+    // 4. Auto-update overall order status using recalculateOrderStatus
+    const overallStatus = await recalculateOrderStatus(orderId);
 
     await query(
       'UPDATE orders SET status = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -1035,10 +1158,61 @@ app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
     // 5. Audit & Order status history log
     await query(
       'INSERT INTO order_status_history (order_id, previous_status, new_status, changed_by, notes) VALUES (?, ?, ?, ?, ?)',
-      [orderId, overallStatus, overallStatus, req.user.id, `İrsaliye No #${waybillNumber} ile parçalı sevkiyat yapıldı. (Şoför: ${driverName}, Plaka: ${vehiclePlate})`]
+      [orderId, overallStatus, overallStatus, req.user.id, `İrsaliye No #${waybillNumber} ile ${dispatches.length} kaleme parçalı sevkiyat yapıldı. Şoför: ${driverName}, Plaka: ${vehiclePlate}`]
+    );
+    await query(
+      'INSERT INTO audit_logs (user_id, action, entity_name, entity_id, details) VALUES (?, ?, ?, ?, ?)',
+      [req.user.id, 'DISPATCH', 'orders', orderId, `İrsaliye #${waybillNumber} ile ${dispatches.length} kaleme parçalı sevkiyat yapıldı.`]
     );
 
     res.json({ success: true, updatedCount: dispatches.length, overallStatus });
+  } catch (err) {
+    res.status(500).json({ error: formatErrorMessage(err) });
+  }
+});
+
+// QUICK STAGE QUANTITIES UPDATE ROUTE
+app.post('/api/orders/:id/items/stages', authenticateToken, async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    const { items: itemUpdates } = req.body;
+    if (!itemUpdates || !Array.isArray(itemUpdates)) {
+      return res.status(400).json({ error: 'Geçersiz veri!' });
+    }
+
+    for (const update of itemUpdates) {
+      const { id, productionQuantity, coatingQuantity, shippedQuantity, status } = update;
+      const existRes = await query('SELECT * FROM order_items WHERE id = ? AND order_id = ?', [id, orderId]);
+      if (existRes.rows.length === 0) continue;
+      const prev = existRes.rows[0];
+
+      const newProd = productionQuantity !== undefined ? parseFloat(productionQuantity) : (parseFloat(prev.production_quantity) || 0);
+      const newCoat = coatingQuantity !== undefined ? parseFloat(coatingQuantity) : (parseFloat(prev.coating_quantity) || 0);
+      const newShip = shippedQuantity !== undefined ? parseFloat(shippedQuantity) : (parseFloat(prev.shipped_quantity) || 0);
+      const newStat = status || prev.status;
+
+      await query(
+        `UPDATE order_items 
+         SET production_quantity = ?, coating_quantity = ?, shipped_quantity = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND order_id = ?`,
+        [newProd, newCoat, newShip, newStat, id, orderId]
+      );
+
+      if (newProd !== parseFloat(prev.production_quantity || 0) || newCoat !== parseFloat(prev.coating_quantity || 0)) {
+        await query(
+          'INSERT INTO audit_logs (user_id, action, entity_name, entity_id, details) VALUES (?, ?, ?, ?, ?)',
+          [req.user.id, 'STAGE_QUANTITY_CHANGE', 'order_items', orderId, `Kalem #${prev.line_no} (${prev.customer_product_code || prev.product_name}) aşama miktarları güncellendi: Üretim=${newProd}, Kaplama=${newCoat}`]
+        );
+      }
+    }
+
+    const overallStatus = await recalculateOrderStatus(orderId);
+    await query(
+      'UPDATE orders SET status = ?, version = version + 1, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [overallStatus, req.user.id, orderId]
+    );
+
+    res.json({ success: true, overallStatus });
   } catch (err) {
     res.status(500).json({ error: formatErrorMessage(err) });
   }
@@ -1135,6 +1309,9 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
         const pName = (item.productName !== undefined ? item.productName : item.product_name) || 'Ürün';
         const pDesc = (item.productDescription !== undefined ? item.productDescription : item.product_description) || pName;
         const qty = parseFloat(item.quantity) || 1;
+        const prodQty = parseFloat(item.productionQuantity !== undefined ? item.productionQuantity : item.production_quantity) || 0;
+        const coatQty = parseFloat(item.coatingQuantity !== undefined ? item.coatingQuantity : item.coating_quantity) || 0;
+        const shipQty = parseFloat(item.shippedQuantity !== undefined ? item.shippedQuantity : item.shipped_quantity) || 0;
         const unitPrice = parseFloat(item.unitPrice !== undefined ? item.unitPrice : item.unit_price) || 0;
         const lineTotal = parseFloat(item.lineTotal !== undefined ? item.lineTotal : item.line_total) || (qty * unitPrice);
         const itemCurrency = item.currency || currency || 'TRY';
@@ -1146,11 +1323,13 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
             await query(
               `UPDATE order_items 
                SET line_no = ?, customer_product_code = ?, internal_product_code = ?, product_name = ?, product_description = ?,
-                   quantity = ?, unit = ?, unit_price = ?, currency = ?, line_total = ?, updated_at = CURRENT_TIMESTAMP
+                   quantity = ?, production_quantity = ?, coating_quantity = ?, shipped_quantity = ?,
+                   unit = ?, unit_price = ?, currency = ?, line_total = ?, updated_at = CURRENT_TIMESTAMP
                WHERE id = ? AND order_id = ?`,
               [
                 lineNo, pCode, pIntCode, pName, pDesc,
-                qty, itemUnit, unitPrice, itemCurrency, lineTotal,
+                qty, prodQty, coatQty, shipQty,
+                itemUnit, unitPrice, itemCurrency, lineTotal,
                 item.id, orderId
               ]
             );
@@ -1163,8 +1342,9 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
           `INSERT INTO order_items (
             order_id, line_no, customer_product_code, internal_product_code, product_name, product_description,
             width_mm, height_mm, length_mm, thickness_mm, material, surface_coating, color,
-            quantity, unit, unit_price, currency, line_total, status
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            quantity, production_quantity, coating_quantity, shipped_quantity,
+            unit, unit_price, currency, line_total, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             orderId,
             lineNo,
@@ -1180,6 +1360,9 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
             item.surface_coating || item.surfaceCoating || '',
             item.color || '',
             qty,
+            prodQty,
+            coatQty,
+            shipQty,
             itemUnit,
             unitPrice,
             itemCurrency,
@@ -1190,13 +1373,17 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
       }
     }
 
+    // Auto-recalculate status after updating items
+    const overallStatus = await recalculateOrderStatus(orderId);
+    await query('UPDATE orders SET status = ? WHERE id = ?', [overallStatus, orderId]);
+
     // Audit log
     await query(
       'INSERT INTO audit_logs (user_id, action, entity_name, entity_id, details) VALUES (?, ?, ?, ?, ?)',
       [req.user.id, 'UPDATE_ORDER', 'orders', orderId, `Sipariş v${version} -> v${version + 1} olarak güncellendi.`]
     );
 
-    res.json({ success: true, newVersion: version + 1 });
+    res.json({ success: true, newVersion: version + 1, overallStatus });
   } catch (err) {
     console.error('Sipariş güncelleme hatası:', err);
     res.status(500).json({ error: formatErrorMessage(err) });
@@ -1367,6 +1554,55 @@ app.post('/api/documents/upload-exemption', authenticateToken, upload.single('fi
   }
 });
 
+// UPLOAD NEW DOCUMENT TO EXISTING ORDER
+app.post('/api/orders/:id/documents', authenticateToken, upload.single('file'), async (req, res) => {
+  try {
+    const orderId = req.params.id;
+    if (!req.file) {
+      return res.status(400).json({ error: 'Lütfen yüklenecek bir dosya seçin!' });
+    }
+
+    const filePath = req.file.path;
+    const originalName = fixMulterFilename(req.file.originalname);
+    const mimeType = req.file.mimetype;
+    const fileSize = req.file.size;
+    const ext = path.extname(originalName).toLowerCase();
+
+    const processed = await processUploadedDocument(filePath, originalName, mimeType);
+
+    const docRes = await query(
+      `INSERT INTO documents (
+        order_id, original_name, file_type, mime_type, file_size, sha256_hash, original_path, pdf_path, uploaded_by, archive_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+      [orderId, originalName, ext, mimeType, fileSize, processed.sha256, filePath, processed.pdfPath || filePath, req.user.id]
+    );
+
+    const docId = docRes.lastID || docRes.rows?.[0]?.id;
+
+    uploadToYandexDisk(filePath, 'EkBelgeler', `${docId}_${originalName}`).then(async (yRes) => {
+      if (yRes.success) {
+        await query('UPDATE documents SET archive_status = ?, yandex_path = ? WHERE id = ?', ['ARCHIVED', yRes.yandexPath, docId]);
+      }
+    });
+
+    await query(
+      `INSERT INTO audit_logs (order_id, user_id, action, notes)
+       VALUES (?, ?, 'DOCUMENT_ADDED', ?)`,
+      [orderId, req.user.id, `Yeni sipariş belgesi eklendi: ${originalName} (${ext})`]
+    );
+
+    res.json({
+      success: true,
+      documentId: docId,
+      originalName,
+      fileType: ext
+    });
+  } catch (err) {
+    res.status(500).json({ error: formatErrorMessage(err) });
+  }
+});
+
+
 // DOCUMENT PDF VIEW ENDPOINT (ALWAYS RETURNS VALID PDF, AUTO-RECONSTRUCTS IF DISK WAS CLEARED)
 app.get(['/api/documents/:id/pdf', '/api/documents/:id/view'], authenticateToken, async (req, res) => {
   try {
@@ -1494,6 +1730,34 @@ app.get('/api/documents/:id/download', authenticateToken, async (req, res) => {
     res.status(404).send('Orijinal dosya sunucuda bulunamadı');
   } catch (err) {
     res.status(500).send(err.message);
+  }
+});
+
+// RE-READ & RE-ANALYZE DOCUMENT WITH OCR & PARSER
+app.post('/api/documents/:id/re-read', authenticateToken, async (req, res) => {
+  try {
+    const docId = req.params.id;
+    const docRes = await query('SELECT * FROM documents WHERE id = ?', [docId]);
+    if (docRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Belge kaydı bulunamadı!' });
+    }
+    const doc = docRes.rows[0];
+    const targetPath = doc.original_path || doc.pdf_path;
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      return res.status(404).json({ error: 'Fiziksel belge dosyası sunucuda bulunamadı!' });
+    }
+
+    const processed = await processUploadedDocument(targetPath, doc.original_name, doc.mime_type);
+    res.json({
+      success: true,
+      documentId: docId,
+      customerInfo: processed.customerInfo,
+      orderItems: processed.orderItems,
+      message: 'Belge yeniden okundu ve analiz edildi.'
+    });
+  } catch (err) {
+    console.error('Belge yeniden okuma hatası:', err);
+    res.status(500).json({ error: formatErrorMessage(err) });
   }
 });
 

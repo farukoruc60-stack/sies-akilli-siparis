@@ -19,18 +19,21 @@ export interface Customer {
 
 export type OrderStatus =
   | 'NEW'
+  | 'PRODUCTION_PENDING'
   | 'IN_PRODUCTION'
+  | 'COATING_PENDING'
   | 'COATING'
   | 'PAINTING'
   | 'PACKAGING'
+  | 'READY_FOR_SHIPPING'
   | 'PARTIAL_SHIPPING'
+  | 'SHIPPING_PENDING'
   | 'COMPLETED'
   | 'CANCELLED'
   | 'PROCESSING'
   | 'REVIEW_PENDING'
   | 'APPROVED'
-  | 'COATING_PENDING'
-  | 'SHIPPING_PENDING';
+  | 'OVERDUE';
 
 export interface OrderItem {
   id?: number;
@@ -52,6 +55,10 @@ export interface OrderItem {
   surfaceCoating?: string;
   color?: string;
   quantity: number;
+  productionQuantity?: number;
+  production_quantity?: number;
+  coatingQuantity?: number;
+  coating_quantity?: number;
   shippedQuantity?: number;
   shipped_quantity?: number;
   unit: string;
@@ -74,6 +81,7 @@ export interface DispatchRecord {
   vehicle_plate: string;
   waybill_number: string;
   notes?: string;
+  dispatch_date?: string;
   creator_name?: string;
   created_at: string;
   customer_product_code?: string;

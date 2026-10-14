@@ -38,8 +38,16 @@ import {
   Activity,
   CheckCircle2,
   Clock3,
-  CalendarDays
+  CalendarDays,
+  FileSpreadsheet,
+  ArrowUpDown,
+  Search,
+  Eye,
+  FileUp,
+  Upload,
+  Check
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Order, OrderItem, OrderDocument, OrderStatusHistory, DispatchRecord, CustomerInsights } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { toTurkishErrorMessage } from '../utils/errorMessage';
@@ -133,6 +141,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
 
   // Detailed Sevkiyat Modal State
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false);
+  const [dispatchDate, setDispatchDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [driverName, setDriverName] = useState('');
   const [vehiclePlate, setVehiclePlate] = useState('');
   const [waybillNumber, setWaybillNumber] = useState('');
@@ -140,6 +149,22 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [dispatchQuantities, setDispatchQuantities] = useState<{ [itemId: number]: number }>({});
   const [dispatchSubmitting, setDispatchSubmitting] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+
+  // Excel-like Item Table Filtering & Sorting State (1.4)
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
+  const [itemSortField, setItemSortField] = useState<'lineNo' | 'code' | 'name' | 'quantity' | 'remaining'>('lineNo');
+  const [itemSortAsc, setItemSortAsc] = useState<boolean>(true);
+  const excelFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Document Re-reading OCR State (1.5)
+  const [isReReading, setIsReReading] = useState(false);
+  const [reReadData, setReReadData] = useState<any>(null);
+  const [reReadModalOpen, setReReadModalOpen] = useState(false);
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [importPreviewItems, setImportPreviewItems] = useState<any[]>([]);
+  const [importFileName, setImportFileName] = useState('');
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const newDocInputRef = React.useRef<HTMLInputElement>(null);
 
   // Excess Shipment Warning Modal State
   const [excessWarningOpen, setExcessWarningOpen] = useState(false);
@@ -298,6 +323,7 @@ ${itemsSummary}
       waybill_number: string;
       driver_name: string;
       vehicle_plate: string;
+      dispatch_date?: string;
       notes?: string;
       created_at: string;
       creator_name?: string;
@@ -316,6 +342,7 @@ ${itemsSummary}
           waybill_number: d.waybill_number,
           driver_name: d.driver_name,
           vehicle_plate: d.vehicle_plate,
+          dispatch_date: (d as any).dispatch_date || d.created_at,
           notes: d.notes,
           created_at: d.created_at,
           creator_name: d.creator_name,
@@ -386,6 +413,13 @@ ${itemsSummary}
         const total = Math.round(q * p * 100) / 100;
         const curr = it.currency || (order as any)?.currency || 'TRY';
 
+        const prodQ = typeof (it.productionQuantity ?? it.production_quantity) === 'number'
+          ? (it.productionQuantity ?? it.production_quantity)
+          : parseFloat(String(it.productionQuantity ?? it.production_quantity ?? '0').replace(',', '.')) || 0;
+        const coatQ = typeof (it.coatingQuantity ?? it.coating_quantity) === 'number'
+          ? (it.coatingQuantity ?? it.coating_quantity)
+          : parseFloat(String(it.coatingQuantity ?? it.coating_quantity ?? '0').replace(',', '.')) || 0;
+
         return {
           id: it.id,
           lineNo: idx + 1,
@@ -398,6 +432,12 @@ ${itemsSummary}
           productDescription: desc,
           product_description: desc,
           quantity: q,
+          productionQuantity: prodQ,
+          production_quantity: prodQ,
+          coatingQuantity: coatQ,
+          coating_quantity: coatQ,
+          shippedQuantity: it.shippedQuantity || it.shipped_quantity || 0,
+          shipped_quantity: it.shippedQuantity || it.shipped_quantity || 0,
           unit: unit,
           unitPrice: p,
           unit_price: p,
@@ -469,6 +509,14 @@ ${itemsSummary}
         : parseFloat(String(item.quantity || '').replace(',', '.')) || 0;
       item.lineTotal = Math.round(q * p * 100) / 100;
       item.line_total = item.lineTotal;
+    } else if (field === 'productionQuantity' || field === 'production_quantity') {
+      const pq = typeof val === 'number' ? val : parseFloat(String(val || '').replace(',', '.')) || 0;
+      item.productionQuantity = pq;
+      item.production_quantity = pq;
+    } else if (field === 'coatingQuantity' || field === 'coating_quantity') {
+      const cq = typeof val === 'number' ? val : parseFloat(String(val || '').replace(',', '.')) || 0;
+      item.coatingQuantity = cq;
+      item.coating_quantity = cq;
     } else {
       (item as any)[field] = val;
     }
@@ -706,6 +754,7 @@ ${itemsSummary}
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
+          dispatchDate: dispatchDate || new Date().toISOString().split('T')[0],
           driverName: driverName.trim(),
           vehiclePlate: vehiclePlate.trim().toUpperCase(),
           waybillNumber: waybillNumber.trim(),
@@ -728,6 +777,243 @@ ${itemsSummary}
       setDispatchSubmitting(false);
     }
   };
+
+  // 1.4 Excel Export Function
+  const handleExportItemsToExcel = () => {
+    if (!order) return;
+    const targetList = isEditing ? editingItems : items;
+    if (!targetList || targetList.length === 0) {
+      alert('Dışa aktarılacak sipariş kalemi bulunamadı!');
+      return;
+    }
+
+    const exportRows = targetList.map((item, idx) => {
+      const qty = parseFloat(String(item.quantity)) || 0;
+      const prodQty = parseFloat(String(item.productionQuantity || 0));
+      const coatQty = parseFloat(String(item.coatingQuantity || 0));
+      const shipQty = parseFloat(String(item.shippedQuantity || 0));
+      const remQty = Math.max(0, qty - shipQty);
+      const uPrice = parseFloat(String(item.unitPrice ?? item.unit_price)) || 0;
+      const lTotal = parseFloat(String(item.lineTotal ?? item.line_total)) || (qty * uPrice);
+
+      return {
+        'Sıra No': item.lineNo || item.line_no || idx + 1,
+        'Müşteri Ürün Kodu': item.customerProductCode || item.customer_product_code || '',
+        'Ürün Açıklaması': item.productName || item.product_name || item.productDescription || item.product_description || '',
+        'Sipariş Miktarı': qty,
+        'Üretim Miktarı': prodQty,
+        'Kaplama Miktarı': coatQty,
+        'Sevk Edilen Miktar': shipQty,
+        'Kalan Miktar': remQty,
+        'Birim': item.unit || 'Adet',
+        'Birim Fiyat': uPrice,
+        'Toplam Tutar': lTotal,
+        'Para Birimi': item.currency || (order as any)?.currency || 'TRY',
+        'Kalem Durumu': item.status || 'APPROVED'
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Siparis_Kalemleri');
+    const filename = `Siparis_${order.order_no || 'Detay'}_Kalemler.xlsx`;
+    XLSX.writeFile(workbook, filename);
+  };
+
+  // 1.4 Excel Import File Change Handler
+  const handleExcelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws, { defval: '' }) as any[];
+
+        if (!data || data.length === 0) {
+          alert('Seçilen Excel dosyasında veri satırı bulunamadı!');
+          return;
+        }
+
+        const parsedItems = data.map((row, idx) => {
+          const code = String(row['Müşteri Ürün Kodu'] || row['Ürün Kodu'] || row['Stok Kodu'] || row['Kod'] || row['Product Code'] || row['Item Code'] || `KALEM-${idx + 1}`).trim();
+          const name = String(row['Ürün Açıklaması'] || row['Ürün Adı'] || row['Açıklama'] || row['Tanım'] || row['Description'] || row['Product Name'] || code).trim();
+          const rawQty = row['Sipariş Miktarı'] || row['Miktar'] || row['Adet'] || row['Quantity'] || row['Qty'] || 1;
+          const qty = parseFloat(String(rawQty).replace(',', '.')) || 1;
+          const unit = String(row['Birim'] || row['Unit'] || 'Adet').trim();
+          const rawPrice = row['Birim Fiyat'] || row['Fiyat'] || row['Unit Price'] || row['Price'] || 0;
+          const price = parseFloat(String(rawPrice).replace(',', '.')) || 0;
+          const lineTotal = Math.round(qty * price * 100) / 100;
+
+          return {
+            lineNo: idx + 1,
+            customerProductCode: code,
+            customer_product_code: code,
+            productName: name,
+            product_name: name,
+            quantity: qty,
+            shippedQuantity: 0,
+            productionQuantity: 0,
+            coatingQuantity: 0,
+            unit: unit,
+            unitPrice: price,
+            unit_price: price,
+            lineTotal: lineTotal,
+            line_total: lineTotal,
+            currency: (order as any)?.currency || 'TRY',
+            status: 'APPROVED'
+          };
+        });
+
+        setImportPreviewItems(parsedItems);
+        setImportModalOpen(true);
+      } catch (err: any) {
+        alert('Excel dosyası okunurken hata oluştu: ' + err.message);
+      } finally {
+        if (e.target) e.target.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // 1.4 Confirm Excel Import
+  const handleConfirmImport = async (mode: 'append' | 'replace') => {
+    if (!order || importPreviewItems.length === 0) return;
+
+    let finalItems: any[] = [];
+    if (mode === 'append') {
+      const current = isEditing ? editingItems : items;
+      const startLine = current.length;
+      const renumberedImport = importPreviewItems.map((it, idx) => ({
+        ...it,
+        lineNo: startLine + idx + 1,
+        line_no: startLine + idx + 1
+      }));
+      finalItems = [...current, ...renumberedImport];
+    } else {
+      finalItems = importPreviewItems;
+    }
+
+    if (isEditing) {
+      setEditingItems(finalItems);
+      setImportModalOpen(false);
+      alert(`Excel'den ${importPreviewItems.length} kalem düzenleme tablosuna aktarıldı. "Kaydet" butonuna tıklayarak onaylayabilirsiniz.`);
+    } else {
+      try {
+        await onUpdateOrder(finalItems);
+        setImportModalOpen(false);
+        alert(`✓ Excel'den ${importPreviewItems.length} kalem başarıyla siparişe aktarıldı!`);
+      } catch (err: any) {
+        alert('Kalemler kaydedilirken hata oluştu: ' + err.message);
+      }
+    }
+  };
+
+  // 1.5 Re-Read Document OCR Handler
+  const handleReReadDocument = async (docId?: number) => {
+    const targetDoc = docId 
+      ? documents.find(d => d.id === docId)
+      : (documents && documents[0]);
+
+    if (!targetDoc) {
+      alert('Yeniden taranacak bir sipariş belgesi bulunamadı!');
+      return;
+    }
+
+    setIsReReading(true);
+    try {
+      const res = await fetch(`/api/documents/${targetDoc.id}/re-read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Belge yeniden okunamadı');
+
+      setReReadData(data.extracted);
+      setReReadModalOpen(true);
+    } catch (err: any) {
+      alert('Belge yeniden taranırken hata oluştu: ' + err.message);
+    } finally {
+      setIsReReading(false);
+    }
+  };
+
+  // 1.5 Apply Re-Read Data with User Confirmation
+  const handleApplyReReadData = async () => {
+    if (!reReadData || !order) return;
+    try {
+      const extractedItems = (reReadData.orderItems || reReadData.items || []).map((it: any, idx: number) => ({
+        lineNo: idx + 1,
+        line_no: idx + 1,
+        customerProductCode: it.customerProductCode || it.customer_product_code || `KALEM-${idx + 1}`,
+        customer_product_code: it.customerProductCode || it.customer_product_code || `KALEM-${idx + 1}`,
+        productName: it.productName || it.product_name || 'Ürün',
+        product_name: it.productName || it.product_name || 'Ürün',
+        quantity: parseFloat(String(it.quantity || 1)) || 1,
+        unit: it.unit || 'Adet',
+        unitPrice: parseFloat(String(it.unitPrice || 0)) || 0,
+        unit_price: parseFloat(String(it.unitPrice || 0)) || 0,
+        lineTotal: parseFloat(String(it.lineTotal || 0)) || 0,
+        currency: reReadData.currency || (order as any)?.currency || 'TRY',
+        status: 'APPROVED'
+      }));
+
+      const cust = reReadData.customerInfo || {};
+      await onUpdateOrder(extractedItems.length > 0 ? extractedItems : items, {
+        customerName: cust.customerName || undefined,
+        customerOrderNo: cust.customerOrderNo || undefined,
+        projectNo: cust.projectNo || undefined,
+        coatingType: cust.coatingType || undefined,
+        requestedDeliveryDate: cust.requestedDeliveryDate || undefined,
+        notes: cust.notes || undefined
+      });
+
+      setReReadModalOpen(false);
+      alert('✓ Taranan belge verileri kullanıcı onayıyla siparişe başarıyla aktarıldı!');
+    } catch (err: any) {
+      alert('Veriler aktarılırken hata: ' + err.message);
+    }
+  };
+
+  // 1.5 Upload New Document Attached to Order
+  const handleUploadNewDoc = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !order) return;
+
+    setIsUploadingDoc(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch(`/api/orders/${order.id}/documents`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Belge yüklenemedi');
+
+      alert(`✓ Yeni belge "${data.originalName}" başarıyla siparişe eklendi!`);
+      onRefresh();
+    } catch (err: any) {
+      alert('Belge yüklenirken hata: ' + err.message);
+    } finally {
+      setIsUploadingDoc(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
 
   // Batch Simple Status Update (Üretime al, Kaplamaya al vb.)
   const handleBatchItemStatusUpdate = async () => {
@@ -890,15 +1176,19 @@ ${itemsSummary}
   };
 
   const getStatusTurkishLabel = (st?: string) => {
-    if (!st) return 'Yeni';
+    if (!st) return 'Yeni Sipariş';
     const upper = st.toUpperCase();
-    if (upper === 'NEW' || upper === 'YENI' || upper === 'YENİ') return 'Yeni';
+    if (upper === 'NEW' || upper === 'YENI' || upper === 'YENİ') return 'Yeni Sipariş';
+    if (upper === 'PRODUCTION_PENDING') return 'Üretim Bekliyor';
     if (upper === 'IN_PRODUCTION' || upper === 'PRODUCTION' || upper === 'ÜRETİMDE' || upper === 'URETIMDE') return 'Üretimde';
-    if (upper === 'COATING' || upper === 'COATING_PENDING' || upper === 'KAPLAMADA') return 'Kaplamada';
+    if (upper === 'COATING_PENDING') return 'Kaplama Bekliyor';
+    if (upper === 'COATING' || upper === 'KAPLAMADA') return 'Kaplamada';
+    if (upper === 'READY_FOR_SHIPPING') return 'Sevkiyata Hazır';
+    if (upper === 'PARTIAL_SHIPPED' || upper === 'PARTIAL_SHIPPING' || upper === 'SHIPPING_PENDING' || upper === 'KISMI SEVK' || upper === 'KISMİ SEVK') return 'Kısmi Sevk Edildi';
+    if (upper === 'COMPLETED' || upper === 'TAMAMLANDI') return 'Tamamlandı';
+    if (upper === 'OVERDUE' || upper === 'GECİKMİŞ' || upper === 'GECIKMIS') return 'Gecikmiş';
     if (upper === 'PAINTING' || upper === 'BOYADA') return 'Boyada';
     if (upper === 'PACKAGING' || upper === 'PAKETLEMEDE') return 'Paketlemede';
-    if (upper === 'PARTIAL_SHIPPING' || upper === 'SHIPPING_PENDING' || upper === 'KISMI SEVK' || upper === 'KISMİ SEVK') return 'Kısmi Sevk';
-    if (upper === 'COMPLETED' || upper === 'TAMAMLANDI') return 'Tamamlandı';
     if (upper === 'REVIEW_PENDING' || upper === 'BEKLEMEDE') return 'Beklemede';
     if (upper === 'CANCELLED' || upper === 'İPTAL') return 'İptal';
     return st;
@@ -908,14 +1198,135 @@ ${itemsSummary}
     if (!st) return '#059669';
     const upper = st.toUpperCase();
     if (upper === 'NEW' || upper === 'YENI' || upper === 'YENİ') return '#059669';
-    if (upper === 'IN_PRODUCTION' || upper === 'PRODUCTION' || upper === 'ÜRETİMDE' || upper === 'URETIMDE') return '#D97706';
-    if (upper === 'COATING' || upper === 'KAPLAMADA') return '#2563EB';
+    if (upper === 'PRODUCTION_PENDING') return '#0284C7';
+    if (upper === 'IN_PRODUCTION' || upper === 'PRODUCTION' || upper === 'ÜRETİMDE' || upper === 'URETIMDE') return '#0284C7';
+    if (upper === 'COATING_PENDING') return '#8B5CF6';
+    if (upper === 'COATING' || upper === 'KAPLAMADA') return '#8B5CF6';
+    if (upper === 'READY_FOR_SHIPPING') return '#D97706';
+    if (upper === 'PARTIAL_SHIPPED' || upper === 'PARTIAL_SHIPPING' || upper === 'KISMI SEVK' || upper === 'KISMİ SEVK') return '#EA580C';
+    if (upper === 'COMPLETED' || upper === 'TAMAMLANDI') return '#10B981';
+    if (upper === 'OVERDUE' || upper === 'GECİKMİŞ' || upper === 'GECIKMIS') return '#DC2626';
     if (upper === 'PAINTING' || upper === 'BOYADA') return '#7C3AED';
     if (upper === 'PACKAGING' || upper === 'PAKETLEMEDE') return '#0284C7';
-    if (upper === 'PARTIAL_SHIPPING' || upper === 'KISMI SEVK' || upper === 'KISMİ SEVK') return '#EA580C';
-    if (upper === 'COMPLETED' || upper === 'TAMAMLANDI') return '#10B981';
     return '#475569';
   };
+
+  // 1.3 Delivery Date Urgency Info (Yeşil / Turuncu / Kırmızı / Gri)
+  const getDeliveryUrgencyInfo = (dateStr?: string, status?: string) => {
+    if (status === 'COMPLETED') {
+      return {
+        color: '#64748B',
+        bg: '#F1F5F9',
+        border: '#CBD5E1',
+        label: 'Tamamlandı',
+        urgency: 'completed'
+      };
+    }
+    if (!dateStr) {
+      return {
+        color: '#64748B',
+        bg: '#F8FAFC',
+        border: '#E2E8F0',
+        label: 'Tarih Belirtilmedi',
+        urgency: 'none'
+      };
+    }
+
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const target = new Date(dateStr);
+      target.setHours(0, 0, 0, 0);
+      const diffTime = target.getTime() - today.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      if (diffDays < 0) {
+        return {
+          color: '#DC2626',
+          bg: '#FEF2F2',
+          border: '#FCA5A5',
+          label: `${Math.abs(diffDays)}G Gecikti!`,
+          urgency: 'overdue'
+        };
+      }
+      if (diffDays === 0) {
+        return {
+          color: '#D97706',
+          bg: '#FFFBEB',
+          border: '#FDE68A',
+          label: 'Bugün Teslim!',
+          urgency: 'urgent'
+        };
+      }
+      if (diffDays <= 3) {
+        return {
+          color: '#D97706',
+          bg: '#FFFBEB',
+          border: '#FDE68A',
+          label: `${diffDays} Gün Kaldı`,
+          urgency: 'soon'
+        };
+      }
+      return {
+        color: '#059669',
+        bg: '#ECFDF5',
+        border: '#A7F3D0',
+        label: `${diffDays} Gün Var`,
+        urgency: 'normal'
+      };
+    } catch {
+      return {
+        color: '#64748B',
+        bg: '#F8FAFC',
+        border: '#E2E8F0',
+        label: '-',
+        urgency: 'none'
+      };
+    }
+  };
+
+  // 1.4 Memoized Filtered and Sorted Items for the Excel-like Table
+  const filteredAndSortedItems = React.useMemo(() => {
+    let list = isEditing ? [...editingItems] : [...items];
+
+    if (itemSearchQuery.trim()) {
+      const q = itemSearchQuery.trim().toLowerCase();
+      list = list.filter(it => {
+        const code = (it.customerProductCode || it.customer_product_code || '').toLowerCase();
+        const name = (it.productName || it.product_name || it.productDescription || it.product_description || '').toLowerCase();
+        return code.includes(q) || name.includes(q);
+      });
+    }
+
+    list.sort((a, b) => {
+      let valA: any = 0;
+      let valB: any = 0;
+
+      if (itemSortField === 'code') {
+        valA = (a.customerProductCode || a.customer_product_code || '').toLowerCase();
+        valB = (b.customerProductCode || b.customer_product_code || '').toLowerCase();
+      } else if (itemSortField === 'name') {
+        valA = (a.productName || a.product_name || a.productDescription || '').toLowerCase();
+        valB = (b.productName || b.product_name || b.productDescription || '').toLowerCase();
+      } else if (itemSortField === 'quantity') {
+        valA = parseFloat(String(a.quantity || 0));
+        valB = parseFloat(String(b.quantity || 0));
+      } else if (itemSortField === 'remaining') {
+        valA = Math.max(0, (parseFloat(String(a.quantity || 0)) - parseFloat(String(a.shippedQuantity || 0))));
+        valB = Math.max(0, (parseFloat(String(b.quantity || 0)) - parseFloat(String(b.shippedQuantity || 0))));
+      } else {
+        valA = a.lineNo || a.line_no || 0;
+        valB = b.lineNo || b.line_no || 0;
+      }
+
+      if (valA < valB) return itemSortAsc ? -1 : 1;
+      if (valA > valB) return itemSortAsc ? 1 : -1;
+      return 0;
+    });
+
+    return list;
+  }, [items, editingItems, isEditing, itemSearchQuery, itemSortField, itemSortAsc]);
+
 
 
 
@@ -1234,10 +1645,37 @@ ${itemsSummary}
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>SİPARİŞ TARİHİ</span>
               <strong style={{ color: 'var(--text-primary)', fontSize: isMobile ? '0.78rem' : '0.82rem' }}>{formatDate(order.order_date)}</strong>
             </div>
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
-              <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>TESLİM TARİHİ</span>
-              <strong style={{ color: 'var(--text-primary)', fontSize: isMobile ? '0.78rem' : '0.82rem' }}>{formatDate(order.requested_delivery_date)}</strong>
-            </div>
+            {(() => {
+              const urgency = getDeliveryUrgencyInfo(order.requested_delivery_date, order.status);
+              return (
+                <div style={{
+                  background: urgency.bg,
+                  border: `1.5px solid ${urgency.border}`,
+                  padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem',
+                  borderRadius: '6px'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ color: urgency.color, display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem', fontWeight: 700 }}>
+                      TESLİM TARİHİ
+                    </span>
+                    <span style={{
+                      fontSize: '0.65rem',
+                      fontWeight: 800,
+                      color: urgency.color,
+                      background: 'rgba(255,255,255,0.85)',
+                      padding: '1px 4px',
+                      borderRadius: '4px',
+                      border: `1px solid ${urgency.border}`
+                    }}>
+                      {urgency.label}
+                    </span>
+                  </div>
+                  <strong style={{ color: urgency.color, fontSize: isMobile ? '0.78rem' : '0.85rem', display: 'block', marginTop: '2px' }}>
+                    {formatDate(order.requested_delivery_date)}
+                  </strong>
+                </div>
+              );
+            })()}
             <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', padding: isMobile ? '0.4rem 0.55rem' : '0.5rem 0.75rem', borderRadius: '6px' }}>
               <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: isMobile ? '0.65rem' : '0.7rem' }}>KAPLAMA CİNSİ</span>
               <strong style={{ color: order.coating_type ? '#0284C7' : 'var(--text-muted)', fontSize: isMobile ? '0.78rem' : '0.82rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block' }}>{fixTurkishEncoding(order.coating_type) || 'Belirtilmedi'}</strong>
@@ -1280,6 +1718,94 @@ ${itemsSummary}
           </div>
         </div>
       )}
+
+      {/* 1.5 Quick Document Action Strip */}
+      <div style={{
+        margin: isMobile ? '0.65rem 0.75rem 0' : '0.75rem 1.25rem 0',
+        padding: '0.6rem 0.85rem',
+        background: '#F8FAFC',
+        border: '1px solid #E2E8F0',
+        borderRadius: '8px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '0.5rem'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem', color: '#475569', fontWeight: 600 }}>
+          <ExternalLink size={16} color="var(--primary)" />
+          <span>Sipariş Belgeleri:</span>
+          <span style={{ color: '#0284C7', fontWeight: 700 }}>
+            {documents.length > 0 ? `${documents.length} Belge Kayıtlı` : 'Belge Yok'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+          {documents.length > 0 && (
+            <a
+              href={`/api/documents/${documents[0].id}/pdf?token=${token}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-secondary"
+              style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+              title="Orijinal Müşteri Sipariş Formunu Yeni Sekmede Aç"
+            >
+              <FileText size={14} color="#0284C7" /> Orijinal Belgeyi Aç
+            </a>
+          )}
+
+          {documents.length > 0 && (
+            <button
+              onClick={() => setActiveTab('documents')}
+              className="btn btn-secondary"
+              style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              title="PDF ve Belgeleri İncele"
+            >
+              <Eye size={14} color="#059669" /> PDF Olarak Görüntüle
+            </button>
+          )}
+
+          <input
+            type="file"
+            ref={newDocInputRef}
+            style={{ display: 'none' }}
+            onChange={handleUploadNewDoc}
+            accept=".pdf,.xlsx,.xls,.doc,.docx,.png,.jpg,.jpeg"
+          />
+
+          <button
+            onClick={() => newDocInputRef.current?.click()}
+            disabled={isUploadingDoc}
+            className="btn btn-secondary"
+            style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            title="Siparişe Yeni Belge / Revize Form Ekle"
+          >
+            <Upload size={14} color="#8B5CF6" /> {isUploadingDoc ? 'Yükleniyor...' : 'Yeni Belge Ekle'}
+          </button>
+
+          {documents.length > 0 && (
+            <button
+              onClick={() => handleReReadDocument()}
+              disabled={isReReading}
+              className="btn btn-secondary"
+              style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#FEF3C7', color: '#B45309', border: '1px solid #FDE68A' }}
+              title="Yapay zeka ile belgeden ürün kodları, miktarları ve firma bilgisini yeniden oku (onayınıza sunulur)"
+            >
+              <RefreshCw size={14} className={isReReading ? 'spin' : ''} color="#D97706" /> {isReReading ? 'Taranıyor...' : 'Yeniden Veri Oku'}
+            </button>
+          )}
+
+          <button
+            onClick={() => setActiveTab('documents')}
+            className="btn btn-secondary"
+            style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            title="Tüm Yüklenen Belge Versiyonları ve Tarihçesi"
+          >
+            <History size={14} color="#64748B" /> Belge Geçmişi
+          </button>
+        </div>
+      </div>
+
 
       {/* Tabs Bar */}
       <div style={{
@@ -1863,6 +2389,54 @@ ${itemsSummary}
                   <Trash2 size={16} /> <span>{isDeletingItems ? 'Siliniyor...' : (isMobile ? 'Sil' : `Seçili Kalemi Sil ${selectedItemIds.length > 0 ? `(${selectedItemIds.length})` : ''}`)}</span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={handleExportItemsToExcel}
+                  className="btn btn-secondary"
+                  style={{
+                    fontSize: isMobile ? '0.75rem' : '0.82rem',
+                    padding: isMobile ? '0.45rem 0.65rem' : '0.5rem 0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    background: '#F0FDF4',
+                    border: '1px solid #BBF7D0',
+                    color: '#15803D',
+                    fontWeight: 600
+                  }}
+                  title="Tüm sipariş kalemlerini ve aşama ilerlemelerini Excel dosyası (.xlsx) olarak indir"
+                >
+                  <FileSpreadsheet size={15} color="#16A34A" /> <span>Excel'e Aktar</span>
+                </button>
+
+                <input
+                  type="file"
+                  ref={excelFileInputRef}
+                  style={{ display: 'none' }}
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleExcelFileChange}
+                />
+
+                <button
+                  type="button"
+                  onClick={() => excelFileInputRef.current?.click()}
+                  className="btn btn-secondary"
+                  style={{
+                    fontSize: isMobile ? '0.75rem' : '0.82rem',
+                    padding: isMobile ? '0.45rem 0.65rem' : '0.5rem 0.85rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    background: '#EFF6FF',
+                    border: '1px solid #BFDBFE',
+                    color: '#1D4ED8',
+                    fontWeight: 600
+                  }}
+                  title="Excel (.xlsx, .xls) veya CSV dosyasından sipariş kalemlerini içe aktar"
+                >
+                  <FileUp size={15} color="#2563EB" /> <span>Excel'den İçe Aktar</span>
+                </button>
+
                 <div style={{ display: 'flex', gap: '0.35rem', flex: isMobile ? '1 1 100%' : 'initial', alignItems: 'center' }}>
                   <select
                     value={batchStatus}
@@ -1905,6 +2479,104 @@ ${itemsSummary}
               </div>
             </div>
 
+            {/* 1.4 Search & Quick Filter Strip */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '0.75rem',
+              gap: '0.75rem',
+              flexWrap: 'wrap'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: '240px' }}>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <Search size={15} color="#64748B" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input
+                    type="text"
+                    value={itemSearchQuery}
+                    onChange={(e) => setItemSearchQuery(e.target.value)}
+                    placeholder="Ürün kodu veya açıklamasında hızlı filtrele (Excel arama)..."
+                    style={{
+                      width: '100%',
+                      padding: '0.45rem 0.75rem 0.45rem 2rem',
+                      borderRadius: '6px',
+                      border: '1px solid #CBD5E1',
+                      background: '#FFFFFF',
+                      color: '#0F172A',
+                      fontSize: '0.82rem',
+                      fontWeight: 500
+                    }}
+                  />
+                  {itemSearchQuery && (
+                    <button
+                      onClick={() => setItemSearchQuery('')}
+                      style={{
+                        position: 'absolute',
+                        right: '8px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#94A3B8',
+                        cursor: 'pointer',
+                        fontSize: '0.8rem'
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.78rem', color: '#64748B', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600 }}>Sıralama:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (itemSortField === 'code') setItemSortAsc(!itemSortAsc);
+                    else { setItemSortField('code'); setItemSortAsc(true); }
+                  }}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', fontWeight: itemSortField === 'code' ? 700 : 500, color: itemSortField === 'code' ? '#0284C7' : undefined }}
+                >
+                  <ArrowUpDown size={12} /> Kod {itemSortField === 'code' ? (itemSortAsc ? '↑' : '↓') : ''}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (itemSortField === 'name') setItemSortAsc(!itemSortAsc);
+                    else { setItemSortField('name'); setItemSortAsc(true); }
+                  }}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', fontWeight: itemSortField === 'name' ? 700 : 500, color: itemSortField === 'name' ? '#0284C7' : undefined }}
+                >
+                  <ArrowUpDown size={12} /> Ürün Adı {itemSortField === 'name' ? (itemSortAsc ? '↑' : '↓') : ''}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (itemSortField === 'quantity') setItemSortAsc(!itemSortAsc);
+                    else { setItemSortField('quantity'); setItemSortAsc(true); }
+                  }}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', fontWeight: itemSortField === 'quantity' ? 700 : 500, color: itemSortField === 'quantity' ? '#0284C7' : undefined }}
+                >
+                  <ArrowUpDown size={12} /> Miktar {itemSortField === 'quantity' ? (itemSortAsc ? '↑' : '↓') : ''}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (itemSortField === 'remaining') setItemSortAsc(!itemSortAsc);
+                    else { setItemSortField('remaining'); setItemSortAsc(true); }
+                  }}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.3rem 0.55rem', fontSize: '0.75rem', fontWeight: itemSortField === 'remaining' ? 700 : 500, color: itemSortField === 'remaining' ? '#0284C7' : undefined }}
+                >
+                  <ArrowUpDown size={12} /> Kalan {itemSortField === 'remaining' ? (itemSortAsc ? '↑' : '↓') : ''}
+                </button>
+              </div>
+            </div>
+
             {/* Table */}
             <div className="table-container">
               <table className="custom-table">
@@ -1920,13 +2592,15 @@ ${itemsSummary}
                     </th>
                     <th style={{ width: '35px' }}>#</th>
                     <th style={{ minWidth: isEditing ? '110px' : '90px' }}>Ürün Kodu</th>
-                    <th style={{ minWidth: isEditing ? '320px' : '220px' }}>Ürün Açıklaması</th>
-                    <th style={{ width: isEditing ? '90px' : '80px' }}>Sipariş Miktarı</th>
-                    {!isEditing && <th>Giden Miktar</th>}
-                    {!isEditing && <th>Kalan Miktar</th>}
-                    <th style={{ width: isEditing ? '100px' : '65px' }}>Birim</th>
-                    <th style={{ width: isEditing ? '100px' : '90px' }}>Birim Fiyat</th>
-                    <th style={{ width: '110px' }}>Toplam Tutar</th>
+                    <th style={{ minWidth: isEditing ? '300px' : '220px' }}>Ürün Açıklaması</th>
+                    <th style={{ width: isEditing ? '85px' : '75px' }}>Sipariş</th>
+                    <th style={{ minWidth: '110px' }}>{isEditing ? 'Üretim (Adet)' : 'Üretim Aşaması'}</th>
+                    <th style={{ minWidth: '110px' }}>{isEditing ? 'Kaplama (Adet)' : 'Kaplama Aşaması'}</th>
+                    {!isEditing && <th style={{ minWidth: '110px' }}>Sevkiyat</th>}
+                    {!isEditing && <th style={{ width: '75px' }}>Kalan</th>}
+                    <th style={{ width: isEditing ? '90px' : '65px' }}>Birim</th>
+                    <th style={{ width: isEditing ? '90px' : '85px' }}>Birim Fiyat</th>
+                    <th style={{ width: '105px' }}>Toplam Tutar</th>
                     <th style={{ width: isEditing ? '85px' : '100px', textAlign: 'center' }}>
                       {isEditing ? 'İşlemler' : 'Kalem Durumu'}
                     </th>
@@ -1935,7 +2609,7 @@ ${itemsSummary}
                 <tbody>
                   {isLoading && items.length === 0 ? (
                     <tr>
-                      <td colSpan={11} style={{ textAlign: 'center', padding: '3.5rem 1rem', background: '#F8FAFC' }}>
+                      <td colSpan={13} style={{ textAlign: 'center', padding: '3.5rem 1rem', background: '#F8FAFC' }}>
                         <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
                           <Clock size={30} color="var(--primary)" style={{ animation: 'spin 1s linear infinite' }} />
                           <div style={{ fontSize: '0.95rem', fontWeight: 600, color: '#1E293B' }}>
@@ -1947,20 +2621,27 @@ ${itemsSummary}
                         </div>
                       </td>
                     </tr>
-                  ) : (isEditing ? editingItems : items).length === 0 ? (
+                  ) : filteredAndSortedItems.length === 0 ? (
                     <tr>
-                      <td colSpan={11} style={{ textAlign: 'center', padding: '2.5rem', color: '#94A3B8' }}>
-                        Bu siparişe ait kayıtlı ürün kalemi bulunamadı.
+                      <td colSpan={13} style={{ textAlign: 'center', padding: '2.5rem', color: '#94A3B8' }}>
+                        {itemSearchQuery ? 'Arama kriterine uygun sipariş kalemi bulunamadı.' : 'Bu siparişe ait kayıtlı ürün kalemi bulunamadı.'}
                       </td>
                     </tr>
                   ) : (
-                    (isEditing ? editingItems : items).map((item, idx) => {
+                    filteredAndSortedItems.map((item, idx) => {
                       const itemId = item.id || idx + 1;
                       const isSelected = selectedItemIds.includes(itemId);
                       const qty = parseFloat(String(item.quantity)) || 0;
-                      const shipped = parseFloat(String(item.shippedQuantity || 0));
+                      const prodQty = parseFloat(String(item.productionQuantity || item.production_quantity || 0));
+                      const coatQty = parseFloat(String(item.coatingQuantity || item.coating_quantity || 0));
+                      const shipped = parseFloat(String(item.shippedQuantity || item.shipped_quantity || 0));
                       const remaining = Math.max(0, qty - shipped);
                       const isExcess = shipped > qty;
+
+                      const prodPct = qty > 0 ? Math.min(100, Math.round((prodQty / qty) * 100)) : 0;
+                      const coatPct = qty > 0 ? Math.min(100, Math.round((coatQty / qty) * 100)) : 0;
+                      const shipPct = qty > 0 ? Math.min(100, Math.round((shipped / qty) * 100)) : 0;
+
                       const uPrice = parseFloat(String(item.unitPrice ?? item.unit_price)) || 0;
                       const lTotal = parseFloat(String(item.lineTotal ?? item.line_total)) || (qty * uPrice);
 
@@ -1994,7 +2675,7 @@ ${itemsSummary}
                                 value={item.productName || item.product_name || item.productDescription || item.product_description || ''}
                                 onChange={(e) => handleItemCellChange(idx, 'productName', e.target.value)}
                                 placeholder="Ürün adı veya açıklamasını giriniz..."
-                                style={{ width: '100%', minWidth: '280px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.35rem 0.5rem', borderRadius: '4px', fontSize: '0.82rem', fontWeight: 600, fontFamily: 'inherit', resize: 'vertical' }}
+                                style={{ width: '100%', minWidth: '260px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.35rem 0.5rem', borderRadius: '4px', fontSize: '0.82rem', fontWeight: 600, fontFamily: 'inherit', resize: 'vertical' }}
                               />
                             ) : (
                               <strong>{item.productName || item.product_name}</strong>
@@ -2014,11 +2695,71 @@ ${itemsSummary}
                               <strong>{qty}</strong>
                             )}
                           </td>
+
+                          {/* 1.2 Üretim Aşaması İlerleme Çubuğu */}
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={(item.productionQuantity ?? item.production_quantity) ?? ''}
+                                placeholder="0"
+                                onChange={(e) => handleItemCellChange(idx, 'productionQuantity', e.target.value)}
+                                style={{ width: '100%', minWidth: '65px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0284C7', padding: '0.35rem 0.5rem', borderRadius: '4px', textAlign: 'right', fontWeight: 700, fontSize: '0.85rem' }}
+                              />
+                            ) : (
+                              <div style={{ minWidth: '95px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, color: '#0284C7', marginBottom: '2px' }}>
+                                  <span>%{prodPct}</span>
+                                  <span>{prodQty} / {qty}</span>
+                                </div>
+                                <div style={{ width: '100%', height: '6px', background: '#E0F2FE', borderRadius: '3px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${prodPct}%`, height: '100%', background: '#0284C7', borderRadius: '3px', transition: 'width 0.3s ease' }} />
+                                </div>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* 1.2 Kaplama Aşaması İlerleme Çubuğu */}
+                          <td>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                value={(item.coatingQuantity ?? item.coating_quantity) ?? ''}
+                                placeholder="0"
+                                onChange={(e) => handleItemCellChange(idx, 'coatingQuantity', e.target.value)}
+                                style={{ width: '100%', minWidth: '65px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#8B5CF6', padding: '0.35rem 0.5rem', borderRadius: '4px', textAlign: 'right', fontWeight: 700, fontSize: '0.85rem' }}
+                              />
+                            ) : (
+                              <div style={{ minWidth: '95px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, color: '#8B5CF6', marginBottom: '2px' }}>
+                                  <span>%{coatPct}</span>
+                                  <span>{coatQty} / {qty}</span>
+                                </div>
+                                <div style={{ width: '100%', height: '6px', background: '#F5F3FF', borderRadius: '3px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${coatPct}%`, height: '100%', background: '#8B5CF6', borderRadius: '3px', transition: 'width 0.3s ease' }} />
+                                </div>
+                              </div>
+                            )}
+                          </td>
+
+                          {/* 1.2 Sevkiyat Aşaması İlerleme Çubuğu */}
                           {!isEditing && (
                             <td>
-                              <strong style={{ color: shipped > 0 ? '#10B981' : 'var(--text-muted)' }}>{shipped}</strong>
+                              <div style={{ minWidth: '95px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontWeight: 700, color: '#10B981', marginBottom: '2px' }}>
+                                  <span>%{shipPct}</span>
+                                  <span>{shipped} / {qty}</span>
+                                </div>
+                                <div style={{ width: '100%', height: '6px', background: '#ECFDF5', borderRadius: '3px', overflow: 'hidden' }}>
+                                  <div style={{ width: `${shipPct}%`, height: '100%', background: '#10B981', borderRadius: '3px', transition: 'width 0.3s ease' }} />
+                                </div>
+                              </div>
                             </td>
                           )}
+
+                          {/* Kalan Miktar */}
                           {!isEditing && (
                             <td>
                               {isExcess ? (
@@ -2026,16 +2767,19 @@ ${itemsSummary}
                                   0 <span style={{ fontSize: '0.7rem', color: '#F87171' }}>(+{(shipped - qty).toFixed(1)} Fazla)</span>
                                 </span>
                               ) : (
-                                <strong style={{ color: remaining > 0 ? '#00E5FF' : '#9CA3AF' }}>{remaining}</strong>
+                                <strong style={{ color: remaining > 0 ? (remaining === qty ? '#DC2626' : '#EA580C') : '#059669', fontSize: '0.85rem' }}>
+                                  {remaining}
+                                </strong>
                               )}
                             </td>
                           )}
+
                           <td>
                             {isEditing ? (
                               <select
                                 value={item.unit || 'Adet'}
                                 onChange={(e) => handleItemCellChange(idx, 'unit', e.target.value)}
-                                style={{ width: '100%', minWidth: '80px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.35rem 0.4rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.82rem' }}
+                                style={{ width: '100%', minWidth: '75px', background: '#FFFFFF', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.35rem 0.4rem', borderRadius: '4px', fontWeight: 600, fontSize: '0.82rem' }}
                               >
                                 <option value="Adet">Adet</option>
                                 <option value="Metre">Metre</option>
@@ -2906,27 +3650,95 @@ ${itemsSummary}
           </div>
         )}
 
-        {/* TAB 6: HISTORY */}
+        {/* TAB 6: HISTORY (1.6 Comprehensive Audit Trail Table) */}
         {activeTab === 'history' && (
           <div>
-            <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '1rem', color: 'var(--text-primary)' }}>Sipariş Değişiklik ve İşlem Geçmişi</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {history.map((h) => (
-                <div key={h.id} style={{ background: 'var(--bg-card)', padding: '0.85rem 1rem', borderRadius: '6px', borderLeft: '3px solid var(--primary)', fontSize: '0.85rem' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-muted)', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                    <span>İşlemi Yapan: <strong>{h.userName || 'Sistem'}</strong></span>
-                    <span>{new Date(h.createdAt).toLocaleString('tr-TR')}</span>
-                  </div>
-                  <div style={{ color: 'var(--text-primary)' }}>{h.notes}</div>
-                </div>
-              ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  Sipariş Değişiklik ve Denetim Geçmişi (Audit Trail)
+                </h3>
+                <span style={{ fontSize: '0.78rem', color: '#64748B' }}>
+                  Toplam {history.length} işlem kaydı (Miktar güncellemeleri, üretim, sevkiyat ve durum değişiklikleri)
+                </span>
+              </div>
+              <button onClick={onRefresh} className="btn btn-secondary" style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem' }}>
+                <RefreshCw size={13} /> Geçmişi Yenile
+              </button>
             </div>
+
+            {history.length === 0 ? (
+              <div style={{ padding: '2.5rem', textAlign: 'center', color: '#94A3B8', background: '#F8FAFC', borderRadius: '8px', border: '1px dashed #CBD5E1' }}>
+                Bu siparişe ait henüz bir işlem kaydı bulunmuyor.
+              </div>
+            ) : (
+              <div className="table-container" style={{ background: '#FFFFFF', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ background: '#F1F5F9', borderBottom: '1px solid #CBD5E1', textAlign: 'left', color: '#475569', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '140px' }}>Tarih & Saat</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '130px' }}>Kullanıcı</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '140px' }}>İşlem</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '120px' }}>Önceki Değer</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '120px' }}>Yeni Değer</th>
+                      <th style={{ padding: '0.65rem 0.85rem' }}>Açıklama / Detaylı Not</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((h, hIdx) => {
+                      const actionLabel = (h as any).action || 'DURUM_DEGISIKLIGI';
+                      const prevVal = (h as any).previousValue || h.fromStatus || '-';
+                      const newVal = (h as any).newValue || h.toStatus || '-';
+                      const formattedTime = new Date(h.createdAt).toLocaleString('tr-TR', {
+                        day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+                      });
+
+                      return (
+                        <tr key={h.id || hIdx} style={{ borderBottom: '1px solid #F1F5F9', background: hIdx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
+                          <td style={{ padding: '0.6rem 0.85rem', color: '#64748B', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            <Clock size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle' }} />
+                            {formattedTime}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', fontWeight: 600, color: '#0F172A' }}>
+                            <User size={12} style={{ display: 'inline', marginRight: '4px', verticalAlign: 'middle', color: '#0284C7' }} />
+                            {h.userName || 'Sistem'}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              background: '#EFF6FF',
+                              color: '#1D4ED8',
+                              border: '1px solid #BFDBFE'
+                            }}>
+                              {actionLabel}
+                            </span>
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', color: '#94A3B8', fontWeight: 600 }}>
+                            {getStatusTurkishLabel(prevVal)}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', fontWeight: 700, color: '#059669' }}>
+                            {getStatusTurkishLabel(newVal)}
+                          </td>
+                          <td style={{ padding: '0.6rem 0.85rem', color: '#334155', lineHeight: 1.4 }}>
+                            {fixTurkishEncoding(h.notes || '-')}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* ============================================================== */}
-      {/* DETAILED SEVKİYAT GİRİŞİ MODAL DIALOG */}
+      {/* DETAILED SEVKİYAT GİRİŞİ MODAL DIALOG (1.7) */}
       {/* ============================================================== */}
       {dispatchModalOpen && (
         <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1000 }}>
@@ -2947,31 +3759,18 @@ ${itemsSummary}
               </div>
             )}
 
-            {/* Vehicle & Driver Info Form */}
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '0.6rem' : '1rem', marginBottom: '1.25rem' }}>
+            {/* Vehicle & Driver Info Form with Sevk Tarihi (1.7) */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: isMobile ? '0.6rem' : '0.85rem', marginBottom: '1.25rem' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
-                  ŞOFÖR ADI SOYADI *
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#0284C7', fontWeight: 700, marginBottom: '0.25rem' }}>
+                  <Calendar size={13} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '3px' }} />
+                  SEVK TARİHİ *
                 </label>
                 <input
-                  type="text"
-                  placeholder="Örn: Ahmet Yılmaz"
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.88rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
-                  ARAÇ PLAKASI *
-                </label>
-                <input
-                  type="text"
-                  placeholder="Örn: 34 ABC 123"
-                  value={vehiclePlate}
-                  onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
-                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.88rem' }}
+                  type="date"
+                  value={dispatchDate}
+                  onChange={(e) => setDispatchDate(e.target.value)}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1.5px solid #0284C7', color: '#0F172A', padding: '0.45rem 0.65rem', borderRadius: '6px', fontSize: '0.88rem', fontWeight: 600 }}
                 />
               </div>
 
@@ -2984,20 +3783,46 @@ ${itemsSummary}
                   placeholder="Örn: IRS-2026-0045"
                   value={waybillNumber}
                   onChange={(e) => setWaybillNumber(e.target.value)}
-                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.88rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.45rem 0.65rem', borderRadius: '6px', fontSize: '0.88rem' }}
                 />
               </div>
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
+                  ŞOFÖR ADI SOYADI *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Örn: Ahmet Yılmaz"
+                  value={driverName}
+                  onChange={(e) => setDriverName(e.target.value)}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.45rem 0.65rem', borderRadius: '6px', fontSize: '0.88rem' }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
+                  ARAÇ PLAKASI *
+                </label>
+                <input
+                  type="text"
+                  placeholder="Örn: 34 ABC 123"
+                  value={vehiclePlate}
+                  onChange={(e) => setVehiclePlate(e.target.value.toUpperCase())}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.45rem 0.65rem', borderRadius: '6px', fontSize: '0.88rem' }}
+                />
+              </div>
+
+              <div style={{ gridColumn: isMobile ? '1' : '1 / -1' }}>
+                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748B', fontWeight: 600, marginBottom: '0.25rem' }}>
                   SEVKİYAT NOTU (OPSİYONEL)
                 </label>
                 <input
                   type="text"
-                  placeholder="Örn: 1. Parti Şantiye Teslimatı"
+                  placeholder="Örn: 1. Parti Şantiye Teslimatı..."
                   value={dispatchNotes}
                   onChange={(e) => setDispatchNotes(e.target.value)}
-                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.5rem 0.75rem', borderRadius: '6px', fontSize: '0.88rem' }}
+                  style={{ width: '100%', background: '#F8FAFC', border: '1px solid #CBD5E1', color: '#0F172A', padding: '0.45rem 0.65rem', borderRadius: '6px', fontSize: '0.88rem' }}
                 />
               </div>
             </div>
@@ -3510,6 +4335,177 @@ ${itemsSummary}
           </div>
         </div>
       )}
+
+      {/* ============================================================== */}
+      {/* EXCEL IMPORT PREVIEW & CONFIRMATION MODAL (1.4) */}
+
+      {/* ============================================================== */}
+      {importModalOpen && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '800px', width: isMobile ? '96%' : '90%', maxHeight: '90vh', overflowY: 'auto', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: isMobile ? '0.85rem' : '1.5rem', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <FileSpreadsheet size={22} color="#16A34A" />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  Excel'den Sipariş Kalemi İçe Aktarma Önizlemesi
+                </h3>
+              </div>
+              <button onClick={() => setImportModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '1rem', background: '#F0FDF4', border: '1px solid #BBF7D0', padding: '0.75rem 1rem', borderRadius: '8px', fontSize: '0.82rem', color: '#166534' }}>
+              <strong>Dosya:</strong> {importFileName} | <strong>Okunan Kalem:</strong> {importPreviewItems.length} Adet
+              <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#15803D' }}>
+                Veriler başarıyla çözümlendi. Kalemleri siparişe ekleyebilir veya mevcut kalemlerin yerine koyabilirsiniz.
+              </div>
+            </div>
+
+            <div className="table-container" style={{ maxHeight: '300px', overflowY: 'auto', marginBottom: '1.25rem', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', fontSize: '0.72rem', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '35px' }}>#</th>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '130px' }}>Ürün Kodu</th>
+                    <th style={{ padding: '0.5rem 0.75rem' }}>Ürün Açıklaması</th>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '80px', textAlign: 'right' }}>Miktar</th>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '70px' }}>Birim</th>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '90px', textAlign: 'right' }}>Birim Fiyat</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importPreviewItems.map((it, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #F1F5F9', background: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
+                      <td style={{ padding: '0.45rem 0.75rem', color: '#94A3B8' }}>{idx + 1}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', fontWeight: 700, color: '#0284C7' }}>{it.customerProductCode}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', color: '#0F172A', fontWeight: 500 }}>{it.productName}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 700 }}>{it.quantity}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', color: '#64748B' }}>{it.unit}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', color: '#059669', fontWeight: 600 }}>{it.unitPrice} TRY</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={() => setImportModalOpen(false)}
+                className="btn btn-secondary"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmImport('append')}
+                className="btn btn-secondary"
+                style={{ background: '#EFF6FF', border: '1px solid #93C5FD', color: '#1D4ED8', fontWeight: 600 }}
+              >
+                ➕ Mevcut Kalemlerin Sonuna Ekle
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmImport('replace')}
+                className="btn btn-primary"
+                style={{ background: '#16A34A', borderColor: '#15803D', fontWeight: 700 }}
+              >
+                🔄 Tüm Kalemleri Bu Listeyle Değiştir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* DOCUMENT OCR RE-READ VERIFICATION MODAL (1.5) */}
+      {/* ============================================================== */}
+      {reReadModalOpen && reReadData && (
+        <div className="modal-overlay" style={{ background: 'rgba(15,23,42,0.6)', zIndex: 1100 }}>
+          <div className="modal-content" style={{ maxWidth: '850px', width: isMobile ? '96%' : '90%', maxHeight: '90vh', overflowY: 'auto', background: '#FFFFFF', color: '#0F172A', border: '1px solid #CBD5E1', padding: isMobile ? '0.85rem' : '1.5rem', borderRadius: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid #E2E8F0', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <RefreshCw size={22} color="#D97706" />
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                  Yapay Zeka & OCR Belge Tarama Sonuçları (Kullanıcı Onayı)
+                </h3>
+              </div>
+              <button onClick={() => setReReadModalOpen(false)} style={{ background: 'transparent', border: 'none', color: '#64748B', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '1rem', background: '#FFFBEB', border: '1.5px solid #F59E0B', padding: '0.85rem 1rem', borderRadius: '8px', fontSize: '0.82rem', color: '#78350F' }}>
+              <strong style={{ color: '#B45309', display: 'block', marginBottom: '4px' }}>
+                ⚠️ ÖNEMLİ KONTROL VE ONAY UYARISI
+              </strong>
+              Yapay zeka ve OCR motoru belgeden müşteri ve ürün kalemlerini tespit etmiştir. Lütfen özellikle ürün kodlarını ve miktarlarını dikkatle kontrol ediniz. Onayladığınızda mevcut sipariş güncellenecektir.
+            </div>
+
+            {/* Extracted Header Meta Info */}
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '0.65rem', marginBottom: '1rem', background: '#F8FAFC', padding: '0.75rem', borderRadius: '8px', border: '1px solid #E2E8F0', fontSize: '0.8rem' }}>
+              <div>
+                <span style={{ color: '#64748B', display: 'block', fontSize: '0.72rem' }}>OKUNAN MÜŞTERİ ADI</span>
+                <strong style={{ color: '#0F172A' }}>{reReadData.customerInfo?.customerName || reReadData.customerName || '-'}</strong>
+              </div>
+              <div>
+                <span style={{ color: '#64748B', display: 'block', fontSize: '0.72rem' }}>MÜŞTERİ SİPARİŞ REF NO</span>
+                <strong style={{ color: '#0F172A' }}>{reReadData.customerInfo?.customerOrderNo || reReadData.customerOrderNo || '-'}</strong>
+              </div>
+              <div>
+                <span style={{ color: '#64748B', display: 'block', fontSize: '0.72rem' }}>İSTENEN TESLİM TARİHİ</span>
+                <strong style={{ color: '#0F172A' }}>{formatDate(reReadData.customerInfo?.requestedDeliveryDate || reReadData.requestedDeliveryDate)}</strong>
+              </div>
+            </div>
+
+            {/* Extracted Items Table */}
+            <div className="table-container" style={{ maxHeight: '280px', overflowY: 'auto', marginBottom: '1.25rem', border: '1px solid #E2E8F0', borderRadius: '8px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8rem' }}>
+                <thead>
+                  <tr style={{ background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left', color: '#475569', fontSize: '0.72rem', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '35px' }}>#</th>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '140px' }}>Ürün Kodu</th>
+                    <th style={{ padding: '0.5rem 0.75rem' }}>Ürün Açıklaması</th>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '80px', textAlign: 'right' }}>Miktar</th>
+                    <th style={{ padding: '0.5rem 0.75rem', width: '70px' }}>Birim</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(reReadData.orderItems || reReadData.items || []).map((it: any, idx: number) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #F1F5F9', background: idx % 2 === 0 ? '#FFFFFF' : '#F8FAFC' }}>
+                      <td style={{ padding: '0.45rem 0.75rem', color: '#94A3B8' }}>{idx + 1}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', fontWeight: 700, color: '#0284C7' }}>{it.customerProductCode || it.customer_product_code || '-'}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', color: '#0F172A', fontWeight: 500 }}>{it.productName || it.product_name}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#059669' }}>{it.quantity}</td>
+                      <td style={{ padding: '0.45rem 0.75rem', color: '#64748B' }}>{it.unit || 'Adet'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                onClick={() => setReReadModalOpen(false)}
+                className="btn btn-secondary"
+              >
+                Vazgeç / İptal
+              </button>
+              <button
+                type="button"
+                onClick={handleApplyReReadData}
+                className="btn btn-primary"
+                style={{ background: '#D97706', borderColor: '#B45309', fontWeight: 700 }}
+              >
+                <Check size={16} /> Kontrol Ettim, Onaylayıp Siparişe Aktar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
