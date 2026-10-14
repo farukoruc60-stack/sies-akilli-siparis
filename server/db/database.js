@@ -16,41 +16,49 @@ let sqliteDb = null;
 export async function initDatabase() {
   if (USE_POSTGRES && DATABASE_URL) {
     console.log('PostgreSQL veritabanı bağlantısı kuruluyor...');
-    pgPool = new pg.Pool({
-      connectionString: DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-    });
-    
-    const client = await pgPool.connect();
-    console.log('PostgreSQL veritabanı bağlantısı başarılı!');
+    try {
+      pgPool = new pg.Pool({
+        connectionString: DATABASE_URL,
+        ssl: { rejectUnauthorized: false },
+        connectionTimeoutMillis: 7000,
+        idleTimeoutMillis: 30000,
+        max: 10
+      });
+      
+      const client = await pgPool.connect();
+      console.log('PostgreSQL veritabanı bağlantısı başarılı!');
 
-    // Ensure shipped_quantity column, coating_type, project_no and dispatches table exist in PostgreSQL
-    await client.query(`
-      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS shipped_quantity NUMERIC(12, 2) DEFAULT 0;
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS coating_type VARCHAR(100);
-      ALTER TABLE orders ADD COLUMN IF NOT EXISTS project_no VARCHAR(100);
-      CREATE TABLE IF NOT EXISTS dispatches (
-          id SERIAL PRIMARY KEY,
-          order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
-          order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE,
-          quantity_shipped NUMERIC(12, 2) NOT NULL,
-          driver_name VARCHAR(255),
-          vehicle_plate VARCHAR(50),
-          waybill_number VARCHAR(100),
-          notes TEXT,
-          created_by INTEGER REFERENCES users(id),
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-      CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
-      CREATE INDEX IF NOT EXISTS idx_documents_order_id ON documents(order_id);
-      CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id ON order_status_history(order_id);
-      CREATE INDEX IF NOT EXISTS idx_dispatches_order_id ON dispatches(order_id);
-      CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
-    `);
-    console.log('✓ PostgreSQL sevkiyat, kaplama ve proje tabloları ve indeksleri güncellendi.');
+      // Ensure shipped_quantity column, coating_type, project_no and dispatches table exist in PostgreSQL
+      await client.query(`
+        ALTER TABLE order_items ADD COLUMN IF NOT EXISTS shipped_quantity NUMERIC(12, 2) DEFAULT 0;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS coating_type VARCHAR(100);
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS project_no VARCHAR(100);
+        CREATE TABLE IF NOT EXISTS dispatches (
+            id SERIAL PRIMARY KEY,
+            order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
+            order_item_id INTEGER REFERENCES order_items(id) ON DELETE CASCADE,
+            quantity_shipped NUMERIC(12, 2) NOT NULL,
+            driver_name VARCHAR(255),
+            vehicle_plate VARCHAR(50),
+            waybill_number VARCHAR(100),
+            notes TEXT,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+        CREATE INDEX IF NOT EXISTS idx_documents_order_id ON documents(order_id);
+        CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id ON order_status_history(order_id);
+        CREATE INDEX IF NOT EXISTS idx_dispatches_order_id ON dispatches(order_id);
+        CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+      `);
+      console.log('✓ PostgreSQL sevkiyat, kaplama ve proje tabloları ve indeksleri güncellendi.');
 
-    client.release();
-    return 'PG';
+      client.release();
+      return 'PG';
+    } catch (pgErr) {
+      console.error('PostgreSQL bağlantı hatası, SQLite yedek sürücüsüne geçiliyor:', pgErr.message);
+      pgPool = null;
+    }
   } else {
     console.log('Yerel SQLite veritabanı sürücüsü başlatılıyor...');
     const dbDir = path.join(__dirname, '../../data');

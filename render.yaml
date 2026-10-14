@@ -1,8 +1,9 @@
 services:
   - type: web
-    name: sies-akilli-siparis-api
+    name: sies-akilli-siparis
     env: node
-    buildCommand: npm install
+    plan: free
+    buildCommand: npm install && npm run build
     startCommand: node server/server.js
     envVars:
       - key: NODE_ENV
@@ -11,14 +12,11 @@ services:
         value: 10000
       - key: USE_POSTGRES
         value: "true"
-      - key: JWT_SECRET
-        generateValue: true
       - key: DATABASE_URL
-        fromDatabase:
-          name: sies-postgres-db
-          property: connectionString
-
-databases:
-  - name: sies-postgres-db
-    databaseName: sies_order_db
-    user: sies_user
+        value: postgresql://neondb_owner:npg_Fq6L2taoiWsh@ep-cold-grass-b5rktob8-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require
+      - key: JWT_SECRET
+        value: sies_akilli_siparis_super_secret_jwt_key_2026
+      - key: YANDEX_DISK_TOKEN
+        value: y0__wgBEL6E75aq94ACGM7XSyDardinGeBwDdGn_ZMhsB4twfv5dNQZafZa
+      - key: YANDEX_ROOT_DIR
+        value: /AkilliSiparisTakip

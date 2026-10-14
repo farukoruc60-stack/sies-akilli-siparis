@@ -77,6 +77,16 @@ function formatErrorMessage(err) {
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// Instant Healthcheck Route for Render and Monitoring (<2ms response)
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'SIES Akıllı Sipariş Takip',
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // File Upload Config
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -93,50 +103,57 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Initialize Database & Seed
-await initDatabase();
-await seedInitialUsers();
+// Initialize Database & Seed (Non-blocking, self-healing)
+async function startDatabase() {
+  try {
+    await initDatabase();
+    await seedInitialUsers();
 
-// Auto-repair existing Turkish character encoding in database
-try {
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ä°', 'İ') WHERE original_name LIKE '%Ä°%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ä±', 'ı') WHERE original_name LIKE '%Ä±%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Åž', 'Ş') WHERE original_name LIKE '%Åž%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'ÅŸ', 'ş') WHERE original_name LIKE '%ÅŸ%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Äž', 'Ğ') WHERE original_name LIKE '%Äž%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'ÄŸ', 'ğ') WHERE original_name LIKE '%ÄŸ%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ãœ', 'Ü') WHERE original_name LIKE '%Ãœ%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã¼', 'ü') WHERE original_name LIKE '%Ã¼%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã–', 'Ö') WHERE original_name LIKE '%Ã–%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã¶', 'ö') WHERE original_name LIKE '%Ã¶%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã‡', 'Ç') WHERE original_name LIKE '%Ã‡%'`);
-  await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã§', 'ç') WHERE original_name LIKE '%Ã§%'`);
-  
-  await query(`UPDATE customers SET name = REPLACE(name, 'Ä°', 'İ') WHERE name LIKE '%Ä°%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Ä±', 'ı') WHERE name LIKE '%Ä±%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Åž', 'Ş') WHERE name LIKE '%Åž%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'ÅŸ', 'ş') WHERE name LIKE '%ÅŸ%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Äž', 'Ğ') WHERE name LIKE '%Äž%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'ÄŸ', 'ğ') WHERE name LIKE '%ÄŸ%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Ãœ', 'Ü') WHERE name LIKE '%Ãœ%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Ã¼', 'ü') WHERE name LIKE '%Ã¼%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Ã–', 'Ö') WHERE name LIKE '%Ã–%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Ã¶', 'ö') WHERE name LIKE '%Ã¶%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Ã‡', 'Ç') WHERE name LIKE '%Ã‡%'`);
-  await query(`UPDATE customers SET name = REPLACE(name, 'Ã§', 'ç') WHERE name LIKE '%Ã§%'`);
+    // Auto-repair existing Turkish character encoding in database
+    try {
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ä°', 'İ') WHERE original_name LIKE '%Ä°%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ä±', 'ı') WHERE original_name LIKE '%Ä±%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Åž', 'Ş') WHERE original_name LIKE '%Åž%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'ÅŸ', 'ş') WHERE original_name LIKE '%ÅŸ%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Äž', 'Ğ') WHERE original_name LIKE '%Äž%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'ÄŸ', 'ğ') WHERE original_name LIKE '%ÄŸ%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ãœ', 'Ü') WHERE original_name LIKE '%Ãœ%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã¼', 'ü') WHERE original_name LIKE '%Ã¼%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã–', 'Ö') WHERE original_name LIKE '%Ã–%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã¶', 'ö') WHERE original_name LIKE '%Ã¶%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã‡', 'Ç') WHERE original_name LIKE '%Ã‡%'`);
+      await query(`UPDATE documents SET original_name = REPLACE(original_name, 'Ã§', 'ç') WHERE original_name LIKE '%Ã§%'`);
+      
+      await query(`UPDATE customers SET name = REPLACE(name, 'Ä°', 'İ') WHERE name LIKE '%Ä°%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Ä±', 'ı') WHERE name LIKE '%Ä±%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Åž', 'Ş') WHERE name LIKE '%Åž%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'ÅŸ', 'ş') WHERE name LIKE '%ÅŸ%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Äž', 'Ğ') WHERE name LIKE '%Äž%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'ÄŸ', 'ğ') WHERE name LIKE '%ÄŸ%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Ãœ', 'Ü') WHERE name LIKE '%Ãœ%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Ã¼', 'ü') WHERE name LIKE '%Ã¼%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Ã–', 'Ö') WHERE name LIKE '%Ã–%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Ã¶', 'ö') WHERE name LIKE '%Ã¶%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Ã‡', 'Ç') WHERE name LIKE '%Ã‡%'`);
+      await query(`UPDATE customers SET name = REPLACE(name, 'Ã§', 'ç') WHERE name LIKE '%Ã§%'`);
 
-  await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Ä°', 'İ') WHERE coating_type LIKE '%Ä°%'`);
-  await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Ä±', 'ı') WHERE coating_type LIKE '%Ä±%'`);
-  await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Åž', 'Ş') WHERE coating_type LIKE '%Åž%'`);
-  await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'ÅŸ', 'ş') WHERE coating_type LIKE '%ÅŸ%'`);
+      await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Ä°', 'İ') WHERE coating_type LIKE '%Ä°%'`);
+      await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Ä±', 'ı') WHERE coating_type LIKE '%Ä±%'`);
+      await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'Åž', 'Ş') WHERE coating_type LIKE '%Åž%'`);
+      await query(`UPDATE orders SET coating_type = REPLACE(coating_type, 'ÅŸ', 'ş') WHERE coating_type LIKE '%ÅŸ%'`);
 
-  await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Ä°', 'İ') WHERE product_name LIKE '%Ä°%'`);
-  await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Ä±', 'ı') WHERE product_name LIKE '%Ä±%'`);
-  await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Åž', 'Ş') WHERE product_name LIKE '%Åž%'`);
-  await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'ÅŸ', 'ş') WHERE product_name LIKE '%ÅŸ%'`);
-} catch (e) {
-  console.warn('Encoding repair notice:', e.message);
+      await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Ä°', 'İ') WHERE product_name LIKE '%Ä°%'`);
+      await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Ä±', 'ı') WHERE product_name LIKE '%Ä±%'`);
+      await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'Åž', 'Ş') WHERE product_name LIKE '%Åž%'`);
+      await query(`UPDATE order_items SET product_name = REPLACE(product_name, 'ÅŸ', 'ş') WHERE product_name LIKE '%ÅŸ%'`);
+    } catch (e) {
+      console.warn('Encoding repair notice:', e.message);
+    }
+  } catch (err) {
+    console.error('Veritabanı başlatılırken hata oluştu:', err.message);
+  }
 }
+startDatabase();
 
 function fixMulterFilename(name) {
   if (!name) return '';
@@ -1607,9 +1624,9 @@ if (distPath) {
 }
 
 // Start Server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`=======================================================`);
-  console.log(` SİES AKILLI SİPARİŞ TAKİP SUNUCUSU AKTİF: PORT ${PORT}`);
+  console.log(` SİES AKILLI SİPARİŞ TAKİP SUNUCUSU AKTİF: 0.0.0.0:${PORT}`);
   console.log(` API Endpoint: http://localhost:${PORT}/api/orders`);
   console.log(`=======================================================`);
 
