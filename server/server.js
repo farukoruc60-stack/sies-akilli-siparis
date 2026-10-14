@@ -379,8 +379,8 @@ app.get('/api/orders/summary-metrics', authenticateToken, async (req, res) => {
     const prodRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE status IN ('IN_PRODUCTION', 'PRODUCTION_PENDING')");
     const coatRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE status IN ('COATING', 'COATING_PENDING', 'PAINTING')");
     const shipRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE status IN ('READY_FOR_SHIPPING', 'PARTIAL_SHIPPING', 'SHIPPING_PENDING')");
-    const overdueRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE requested_delivery_date IS NOT NULL AND requested_delivery_date != '' AND requested_delivery_date < ? AND status NOT IN ('COMPLETED', 'CANCELLED')", [today]);
-    const todayShipRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE requested_delivery_date LIKE ? AND status NOT IN ('COMPLETED', 'CANCELLED')", [`${today}%`]);
+    const overdueRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE requested_delivery_date IS NOT NULL AND requested_delivery_date < ? AND status NOT IN ('COMPLETED', 'CANCELLED')", [today]);
+    const todayShipRes = await query("SELECT COUNT(*) as cnt FROM orders WHERE CAST(requested_delivery_date AS TEXT) LIKE ? AND status NOT IN ('COMPLETED', 'CANCELLED')", [`${today}%`]);
 
     res.json({
       openOrders: parseInt(openRes.rows[0]?.cnt || openRes.rows[0]?.['COUNT(*)'] || 0, 10),
@@ -412,10 +412,10 @@ app.get('/api/orders', authenticateToken, async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
 
     if (status === 'OVERDUE') {
-      sql += " AND o.requested_delivery_date IS NOT NULL AND o.requested_delivery_date != '' AND o.requested_delivery_date < ? AND o.status NOT IN ('COMPLETED', 'CANCELLED')";
+      sql += " AND o.requested_delivery_date IS NOT NULL AND o.requested_delivery_date < ? AND o.status NOT IN ('COMPLETED', 'CANCELLED')";
       params.push(today);
     } else if (status === 'TODAY_SHIPPING') {
-      sql += " AND o.requested_delivery_date LIKE ? AND o.status NOT IN ('COMPLETED', 'CANCELLED')";
+      sql += " AND CAST(o.requested_delivery_date AS TEXT) LIKE ? AND o.status NOT IN ('COMPLETED', 'CANCELLED')";
       params.push(`${today}%`);
     } else if (status === 'OPEN') {
       sql += " AND o.status NOT IN ('COMPLETED', 'CANCELLED')";
