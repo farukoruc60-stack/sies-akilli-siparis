@@ -549,7 +549,7 @@ app.get('/api/orders/:id', authenticateToken, async (req, res) => {
 // CREATE ORDER FROM VERIFICATION SCREEN
 app.post('/api/orders', authenticateToken, async (req, res) => {
   try {
-    const { customerInfo, orderItems, documentId, exemptionDocId } = req.body;
+    const { customerInfo, orderItems, documentId, exemptionDocId, notes } = req.body;
 
     // 1. Customer Check or Create
     const cName = (customerInfo.companyName || customerInfo.name || 'Bilinmeyen Müşteri').trim();
@@ -581,18 +581,20 @@ app.post('/api/orders', authenticateToken, async (req, res) => {
       : `SO-2026-${Math.floor(10000 + Math.random() * 90000)}`;
     const parsedOrderDate = normalizeDateToISO(customerInfo.orderDate) || new Date().toISOString().split('T')[0];
     const parsedDeliveryDate = normalizeDateToISO(customerInfo.deliveryDate || customerInfo.requestedDeliveryDate || customerInfo.requested_delivery_date);
+    const orderNotes = (notes || customerInfo.notes || '').trim() || null;
 
     const newOrderRes = await query(
       `INSERT INTO orders (
-        order_no, customer_id, customer_order_no, project_no, coating_type,
+        order_no, customer_id, customer_order_no, project_no, coating_type, notes,
         order_date, requested_delivery_date, status, created_by, updated_by, version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'NEW', ?, ?, 1)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, ?, 1)`,
       [
         orderNo,
         customerId,
         customerInfo.orderNo || orderNo,
         customerInfo.projectNo || null,
         customerInfo.coatingType || null,
+        orderNotes,
         parsedOrderDate,
         parsedDeliveryDate,
         req.user.id,
@@ -1002,7 +1004,8 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
       orderNo,
       customerName,
       currency,
-      items
+      items,
+      notes
     } = req.body;
 
     if (version === undefined || version === null) {
@@ -1018,6 +1021,7 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
        SET customer_order_no = COALESCE(?, customer_order_no),
            project_no = COALESCE(?, project_no),
            coating_type = COALESCE(?, coating_type),
+           notes = CASE WHEN ? = 1 THEN ? ELSE notes END,
            requested_delivery_date = ?,
            order_date = COALESCE(?, order_date),
            order_no = COALESCE(?, order_no),
@@ -1029,6 +1033,8 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
         customerOrderNo !== undefined ? customerOrderNo : null,
         projectNo !== undefined ? projectNo : null,
         coatingType !== undefined ? coatingType : null,
+        notes !== undefined ? 1 : 0,
+        notes !== undefined ? (notes?.trim() || null) : null,
         parsedDeliveryDate,
         parsedOrderDate,
         orderNo !== undefined ? orderNo : null,
@@ -1047,8 +1053,13 @@ app.put('/api/orders/:id', authenticateToken, async (req, res) => {
     // Update customer name if provided
     if (customerName && customerName.trim()) {
       const ordRow = await query('SELECT customer_id FROM orders WHERE id = ?', [orderId]);
-      if (ordRow.rows?.[0]?.customer_id) {
-        await query('UPDATE customers SET name = ? WHERE id = ?', [customerName.trim(), ordRow.rows[0].customer_id]);
+      const customerId = ordRow.rows?.[0]?.customer_id;
+      if (customerId) {
+        await query('UPDATE customers SET name = ? WHERE id = ?', [customerName.trim(), customerId]);
+      } else {
+        const newCust = await query('INSERT INTO customers (name) VALUES (?)', [customerName.trim()]);
+        const newCId = newCust.lastID || newCust.rows?.[0]?.id;
+        await query('UPDATE orders SET customer_id = ? WHERE id = ?', [newCId, orderId]);
       }
     }
 

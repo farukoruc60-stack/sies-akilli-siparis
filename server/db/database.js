@@ -33,6 +33,7 @@ export async function initDatabase() {
         ALTER TABLE order_items ADD COLUMN IF NOT EXISTS shipped_quantity NUMERIC(12, 2) DEFAULT 0;
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS coating_type VARCHAR(100);
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS project_no VARCHAR(100);
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes TEXT;
         CREATE TABLE IF NOT EXISTS dispatches (
             id SERIAL PRIMARY KEY,
             order_id INTEGER REFERENCES orders(id) ON DELETE CASCADE,
@@ -109,6 +110,7 @@ async function runSqliteMigrations() {
       customer_order_no TEXT,
       order_date TEXT,
       requested_delivery_date TEXT,
+      notes TEXT,
       status TEXT NOT NULL DEFAULT 'NEW',
       created_by INTEGER,
       updated_by INTEGER,
@@ -258,6 +260,9 @@ async function runSqliteMigrations() {
   } catch (e) {}
   try {
     await new Promise((res) => sqliteDb.run("ALTER TABLE orders ADD COLUMN project_no TEXT", () => res(true)));
+  } catch (e) {}
+  try {
+    await new Promise((res) => sqliteDb.run("ALTER TABLE orders ADD COLUMN notes TEXT", () => res(true)));
   } catch (e) {}
 
   // Create SQLite indexes on relational foreign keys

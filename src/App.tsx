@@ -351,7 +351,14 @@ export default function App() {
   // Update Order with Optimistic Locking
   const handleUpdateOrder = async (
     updatedItems: OrderItem[],
-    updatedFields?: { customerOrderNo?: string; projectNo?: string; coatingType?: string; requestedDeliveryDate?: string }
+    updatedFields?: {
+      customerName?: string;
+      customerOrderNo?: string;
+      projectNo?: string;
+      coatingType?: string;
+      requestedDeliveryDate?: string;
+      notes?: string;
+    }
   ) => {
     if (!selectedOrder) return;
 
@@ -367,10 +374,12 @@ export default function App() {
       },
       body: JSON.stringify({
         version: selectedOrder.version,
+        customerName: updatedFields?.customerName !== undefined ? updatedFields.customerName.trim() : undefined,
         customerOrderNo: updatedFields?.customerOrderNo !== undefined ? (updatedFields.customerOrderNo.trim() || null) : selectedOrder.customer_order_no,
         projectNo: updatedFields?.projectNo !== undefined ? (updatedFields.projectNo.trim() || null) : selectedOrder.project_no,
         coatingType: updatedFields?.coatingType !== undefined ? (updatedFields.coatingType.trim() || null) : selectedOrder.coating_type,
         requestedDeliveryDate: deliveryDateToSend,
+        notes: updatedFields?.notes !== undefined ? updatedFields.notes : undefined,
         items: updatedItems
       })
     });

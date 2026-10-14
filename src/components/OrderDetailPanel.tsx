@@ -54,7 +54,14 @@ interface OrderDetailPanelProps {
   onRefresh: () => void;
   onUpdateOrder: (
     updatedItems: OrderItem[],
-    updatedFields?: { customerOrderNo?: string; projectNo?: string; coatingType?: string; requestedDeliveryDate?: string }
+    updatedFields?: {
+      customerName?: string;
+      customerOrderNo?: string;
+      projectNo?: string;
+      coatingType?: string;
+      requestedDeliveryDate?: string;
+      notes?: string;
+    }
   ) => Promise<void>;
   onDeleteOrder: (orderId: number) => Promise<boolean | void>;
   onStatusChange: (newStatus: string, notes: string) => Promise<void>;
@@ -78,10 +85,12 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
   const [activeTab, setActiveTab] = useState<'summary' | 'items' | 'documents' | 'production' | 'shipping' | 'history'>('summary');
   const [editingItems, setEditingItems] = useState<OrderItem[]>([]);
   const [isEditing, setIsEditing] = useState(false);
+  const [editCustomerName, setEditCustomerName] = useState('');
   const [editCustomerOrderNo, setEditCustomerOrderNo] = useState('');
   const [editProjectNo, setEditProjectNo] = useState('');
   const [editCoatingType, setEditCoatingType] = useState('');
   const [editRequestedDeliveryDate, setEditRequestedDeliveryDate] = useState('');
+  const [editOrderNotes, setEditOrderNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [statusNote, setStatusNote] = useState('');
   const [conflictError, setConflictError] = useState<string | null>(null);
@@ -166,6 +175,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
     const coatingText = order.coating_type ? fixTurkishEncoding(order.coating_type) : 'Belirtilmedi';
     const senderName = user?.name || user?.email || 'Faruk ORUÇ (Kalite Müdürü)';
     const projectText = order.project_no ? `\n🏗️ *Proje / Gemi No:* ${fixTurkishEncoding(order.project_no)}` : '';
+    const notesText = order.notes && order.notes.trim() ? `\n📝 *Özel Sipariş Notu:* ${fixTurkishEncoding(order.notes)}` : '';
 
     const text = `📦 *SİES ELEKTRİK - SİPARİŞ İŞ EMRİ BİLGİSİ*
 
@@ -174,7 +184,7 @@ export const OrderDetailPanel: React.FC<OrderDetailPanelProps> = ({
 📋 *Müşteri Sip Ref:* ${order.customer_order_no || '-'}${projectText}
 🎨 *Kaplama Cinsi:* ${coatingText}
 📅 *Sipariş Tarihi:* ${formatDate(order.order_date)}
-📅 *Teslim Tarihi:* ${formatDate(order.requested_delivery_date)}
+📅 *Teslim Tarihi:* ${formatDate(order.requested_delivery_date)}${notesText}
 👤 *İş Emrini Gönderen:* ${senderName}
 
 📋 *Sipariş Kalemleri:*
@@ -330,9 +340,11 @@ ${itemsSummary}
 
   const handleStartEdit = () => {
     setEditingItems(JSON.parse(JSON.stringify(items)));
+    setEditCustomerName(order.customer_name || '');
     setEditCustomerOrderNo(order.customer_order_no || '');
     setEditProjectNo(order.project_no || '');
     setEditCoatingType(order.coating_type || '');
+    setEditOrderNotes(order.notes || '');
 
     // Format requested delivery date as YYYY-MM-DD for HTML input[type="date"]
     let initDate = '';
@@ -373,10 +385,12 @@ ${itemsSummary}
       });
 
       await onUpdateOrder(sanitizedItems, {
+        customerName: editCustomerName.trim() || undefined,
         customerOrderNo: editCustomerOrderNo.trim() || undefined,
         projectNo: editProjectNo.trim() || undefined,
         coatingType: editCoatingType.trim() || undefined,
-        requestedDeliveryDate: editRequestedDeliveryDate.trim() || undefined
+        requestedDeliveryDate: editRequestedDeliveryDate.trim() || undefined,
+        notes: editOrderNotes.trim()
       });
       setIsEditing(false);
     } catch (err: any) {
@@ -843,15 +857,41 @@ ${itemsSummary}
       <div className="order-detail-header" style={{ padding: isMobile ? '0.75rem 0.85rem' : '1rem 1.25rem', background: '#FFFFFF', borderBottom: '1px solid var(--border-color)' }}>
         <div className="order-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.65rem' }}>
           <div style={{ flex: 1, minWidth: isMobile ? '100%' : '260px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-              <h1 style={{ fontSize: isMobile ? '1.05rem' : '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{fixTurkishEncoding(order.customer_name)}</h1>
-              <span className="badge badge-approved" style={{ fontSize: '0.72rem' }}>
-                <ShieldCheck size={12} /> SİP NO: {order.order_no}
-              </span>
-              <span className="mobile-hide" style={{ fontSize: '0.7rem', background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.15rem 0.4rem', borderRadius: '4px', color: '#0369A1', fontWeight: 600 }}>
-                v{order.version}
-              </span>
-            </div>
+            {isEditing ? (
+              <div style={{ marginBottom: '0.4rem' }}>
+                <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#2563EB', display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '3px' }}>
+                  <Building2 size={14} color="#2563EB" /> Firma Adı / Müşteri Ticari Ünvanı (Düzenle):
+                </label>
+                <input
+                  type="text"
+                  value={editCustomerName}
+                  onChange={(e) => setEditCustomerName(e.target.value)}
+                  placeholder="Firma / Müşteri Adını Yazın..."
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    fontSize: isMobile ? '1rem' : '1.15rem',
+                    fontWeight: 700,
+                    color: '#0F172A',
+                    background: '#EFF6FF',
+                    border: '2px solid #3B82F6',
+                    borderRadius: '6px',
+                    outline: 'none',
+                    boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.15)'
+                  }}
+                />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                <h1 style={{ fontSize: isMobile ? '1.05rem' : '1.25rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>{fixTurkishEncoding(order.customer_name)}</h1>
+                <span className="badge badge-approved" style={{ fontSize: '0.72rem' }}>
+                  <ShieldCheck size={12} /> SİP NO: {order.order_no}
+                </span>
+                <span className="mobile-hide" style={{ fontSize: '0.7rem', background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '0.15rem 0.4rem', borderRadius: '4px', color: '#0369A1', fontWeight: 600 }}>
+                  v{order.version}
+                </span>
+              </div>
+            )}
             {order.customer_tax_number && (
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
                 <Building2 size={12} /> Vergi: {order.customer_tax_number} | Ref: <strong>{order.customer_order_no || '-'}</strong>
@@ -996,6 +1036,30 @@ ${itemsSummary}
                 {(isEditing ? editingItems : items).length} Kalem ({totalOrderAmount.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TRY)
               </div>
             </div>
+
+            <div style={{ gridColumn: isMobile ? '1' : '1 / -1', marginTop: '0.25rem' }}>
+              <label style={{ fontSize: '0.75rem', fontWeight: 700, color: '#B45309', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '0.25rem' }}>
+                <FileText size={14} color="#D97706" /> Sipariş Özel Açıklaması / Üretim Notu:
+              </label>
+              <textarea
+                rows={2}
+                value={editOrderNotes}
+                onChange={(e) => setEditOrderNotes(e.target.value)}
+                placeholder="Özel üretim şartı, müşteri notu, sevkiyat talimatı vb. (Varsa yazın)..."
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.65rem',
+                  border: '1.5px solid #F59E0B',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  color: '#78350F',
+                  background: '#FFFBEB',
+                  fontWeight: 600,
+                  fontFamily: 'inherit',
+                  resize: 'vertical'
+                }}
+              />
+            </div>
           </div>
         ) : (
           <div style={{
@@ -1034,6 +1098,27 @@ ${itemsSummary}
           </div>
         )}
       </div>
+
+      {/* Prominent Special Order Note Banner */}
+      {order.notes && order.notes.trim() && (
+        <div style={{
+          margin: isMobile ? '0.65rem 0.75rem 0' : '0.85rem 1.25rem 0',
+          background: 'linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%)',
+          border: '1.5px solid #F59E0B',
+          borderLeft: '6px solid #D97706',
+          borderRadius: '8px',
+          padding: '0.85rem 1.15rem',
+          boxShadow: '0 2px 6px rgba(217, 119, 6, 0.08)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#B45309', fontWeight: 800, fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '4px' }}>
+            <FileText size={16} color="#D97706" />
+            <span>📌 DİKKAT: SİPARİŞ ÖZEL AÇIKLAMASI & ÜRETİM NOTU</span>
+          </div>
+          <div style={{ color: '#78350F', fontSize: '0.92rem', fontWeight: 700, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+            {fixTurkishEncoding(order.notes)}
+          </div>
+        </div>
+      )}
 
       {/* Tabs Bar */}
       <div style={{

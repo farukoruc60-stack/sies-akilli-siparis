@@ -116,6 +116,7 @@ export interface Order {
   coating_type?: string;
   order_date: string;
   requested_delivery_date?: string;
+  notes?: string;
   status: OrderStatus;
   creator_name?: string;
   updater_name?: string;
@@ -136,6 +137,7 @@ export interface ExtractedCustomerInfo {
   orderNo?: string;
   projectNo?: string;
   coatingType?: string;
+  notes?: string;
   orderDate?: string;
   deliveryDate?: string;
   requestedDeliveryDate?: string;

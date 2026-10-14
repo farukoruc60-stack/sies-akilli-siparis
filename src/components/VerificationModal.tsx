@@ -359,6 +359,16 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
       alert('Lütfen müşteri unvanını giriniz!');
       return;
     }
+
+    let finalNotes = (customerInfo.notes || '').trim();
+    if (!finalNotes) {
+      const ask = window.prompt("Sipariş için özel bir açıklama veya üretim notunuz var mı?\n(Varsa buraya yazın, yoksa boş bırakıp 'Tamam' butonuna tıklayabilirsiniz):", "");
+      if (ask !== null && ask.trim().length > 0) {
+        finalNotes = ask.trim();
+        setCustomerInfo(prev => ({ ...prev, notes: finalNotes }));
+      }
+    }
+
     setSaving(true);
     try {
       const sanitizedItems = orderItems.map((it, idx) => {
@@ -378,7 +388,7 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
         };
       });
 
-      await onConfirm({ ...customerInfo, currency: orderCurrency } as any, sanitizedItems, documentId);
+      await onConfirm({ ...customerInfo, notes: finalNotes || undefined, currency: orderCurrency } as any, sanitizedItems, documentId);
       onClose();
     } catch (err: any) {
       alert(`Sipariş kaydedilirken hata oluştu: ${err.message}`);
@@ -697,6 +707,33 @@ export const VerificationModal: React.FC<VerificationModalProps> = ({
                     onChange={(e) => handleCustomerChange('orderDate', e.target.value)}
                     style={{ width: '100%', padding: '0.45rem', background: '#FFFFFF', border: '1px solid #CBD5E1', borderRadius: '4px', color: '#0F172A' }}
                   />
+                </div>
+
+                <div style={{ gridColumn: isMobile ? '1' : '1 / -1', marginTop: '0.25rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#D97706', marginBottom: '0.25rem', fontWeight: 700, fontSize: '0.82rem' }}>
+                    <FileText size={14} /> Sipariş İçin Özel Bir Açıklama / Notunuz Var mı?
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Varsa özel üretim notu, sevkiyat talimatı, şantiye şartı vb. yazınız (Yoksa boş bırakabilirsiniz)..."
+                    value={customerInfo.notes || ''}
+                    onChange={(e) => handleCustomerChange('notes', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      background: '#FFFBEB',
+                      border: '1.5px solid #FCD34D',
+                      borderRadius: '6px',
+                      color: '#78350F',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      fontFamily: 'inherit',
+                      resize: 'vertical'
+                    }}
+                  />
+                  <span style={{ fontSize: '0.72rem', color: '#B45309', display: 'block', marginTop: '2px' }}>
+                    ℹ️ Bu açıklama sipariş detayında ve iş emrinde belirgin sarı etiketle gösterilir.
+                  </span>
                 </div>
               </div>
 
