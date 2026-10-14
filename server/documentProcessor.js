@@ -3268,12 +3268,20 @@ export async function generateWaybillPdf(order, customer, dispatchList, waybillI
     color: rgb(0.08, 0.25, 0.5)
   });
 
-  page.drawText(sanitizeForPdf('RESMI SEVK IRSALIYESI / DISPATCH WAYBILL'), {
+  page.drawText(sanitizeForPdf('DAHILI SEVK IRSALIYESI / INTERNAL WAYBILL'), {
     x: titleX,
-    y: pageHeight - 64,
-    size: 13,
+    y: pageHeight - 62,
+    size: 12,
     font: boldFont,
     color: rgb(0.12, 0.35, 0.65)
+  });
+
+  page.drawText(sanitizeForPdf('SIES Sistem Ici Dahili Sevk Belgesi (GIB e-Irsaliye yerine gecmez)'), {
+    x: titleX,
+    y: pageHeight - 75,
+    size: 7.5,
+    font: font,
+    color: rgb(0.6, 0.2, 0.2)
   });
 
   // 2. Info Boxes: Customer Details (Left) & Dispatch Waybill Info (Right)
@@ -3566,13 +3574,20 @@ export async function generateWaybillPdf(order, customer, dispatchList, waybillI
     color: rgb(0.4, 0.4, 0.4)
   });
 
-  // Legal footnote
-  page.drawText(sanitizeForPdf('Bu sevk irsaliyesi 213 sayili Vergi Usul Kanunu hukumlerine uygun resmi sevk belgesi niteligindedir.'), {
+  // Legal footnote & e-Irsaliye Disclaimer
+  page.drawText(sanitizeForPdf('NOT: Bu belge SIES uretim ve ambar yonetim sistemi tarafindan duzenlenmis dahili sevk irsaliyesidir.'), {
     x: margin + 8,
-    y: 20,
+    y: 22,
     size: 6.5,
     font: font,
-    color: rgb(0.5, 0.5, 0.5)
+    color: rgb(0.4, 0.4, 0.4)
+  });
+  page.drawText(sanitizeForPdf('Gelir Idaresi Baskanligi (GIB) resmi e-Irsaliye portali entegrasyonu yerine gecmez; isletme ici sevkiyat ve ambar takibi amaclidir.'), {
+    x: margin + 8,
+    y: 12,
+    size: 6.5,
+    font: font,
+    color: rgb(0.5, 0.3, 0.3)
   });
 
   const pdfBytes = await pdfDoc.save();

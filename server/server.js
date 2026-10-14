@@ -1150,6 +1150,17 @@ app.post('/api/orders/:id/dispatch', authenticateToken, async (req, res) => {
 
     const actualDispatchDate = dispatchDate ? normalizeDateToISO(dispatchDate) : new Date().toISOString();
 
+    // Check if an active dispatch with the same waybill number already exists on this order (Prevent duplicate submission)
+    const existingWaybill = await query(
+      `SELECT id FROM dispatches WHERE order_id = ? AND waybill_number = ? AND (status IS NULL OR status != 'CANCELLED') LIMIT 1`,
+      [orderId, waybillNumber.trim()]
+    );
+    if (existingWaybill.rows && existingWaybill.rows.length > 0) {
+      return res.status(400).json({
+        error: `İrsaliye #${waybillNumber} numarasıyla bu siparişte kayıtlı aktif bir sevkiyat bulunmaktadır! Çift kaydı önlemek için lütfen farklı bir irsaliye numarası kullanınız.`
+      });
+    }
+
     // 1. Validation pass: check all quantities before modifying DB
     for (const itemDispatch of dispatches) {
       const { itemId, dispatchQuantity } = itemDispatch;
@@ -1606,11 +1617,13 @@ app.post('/api/orders/:id/subcontract', authenticateToken, async (req, res) => {
     const sDate = sentDate ? normalizeDateToISO(sentDate) : new Date().toISOString().split('T')[0];
     const expDate = expectedReturnDate ? normalizeDateToISO(expectedReturnDate) : null;
 
+    const batchNo = req.body.batchNo?.trim() || `PRT-${Date.now().toString().slice(-6)}`;
+
     const insRes = await query(
       `INSERT INTO subcontract_orders (
-        order_id, order_item_id, subcontractor_name, operation_type, waybill_no, sent_quantity, sent_date, expected_return_date, status, notes, created_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SENT', ?, ?)`,
-      [orderId, orderItemId, subcontractorName.trim(), operationType || 'KAPLAMA', waybillNo?.trim() || '', sentQty, sDate, expDate, notes || '', req.user.id]
+        order_id, order_item_id, batch_no, subcontractor_name, operation_type, waybill_no, sent_quantity, sent_date, expected_return_date, status, notes, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SENT', ?, ?)`,
+      [orderId, orderItemId, batchNo, subcontractorName.trim(), operationType || 'KAPLAMA', waybillNo?.trim() || '', sentQty, sDate, expDate, notes || '', req.user.id]
     );
 
     const subId = insRes.lastID || insRes.rows?.[0]?.id;
@@ -1628,7 +1641,7 @@ app.post('/api/orders/:id/subcontract', authenticateToken, async (req, res) => {
     await query(
       `INSERT INTO audit_logs (user_id, action, entity_name, entity_id, order_id, details, notes) 
        VALUES (?, 'SUBCONTRACT_SENT', 'subcontract_orders', ?, ?, ?, ?)`,
-      [req.user.id, subId, orderId, `${subcontractorName} firmasına ${sentQty} ${item.unit || 'Adet'} ${operationType || 'Kaplama'} için gönderildi.`, notes || '']
+      [req.user.id, subId, orderId, `${subcontractorName} firmasına ${sentQty} ${item.unit || 'Adet'} ${operationType || 'Kaplama'} için gönderildi. (Parti: ${batchNo})`, notes || '']
     );
 
     const overallStatus = await recalculateOrderStatus(orderId);
@@ -1637,7 +1650,7 @@ app.post('/api/orders/:id/subcontract', authenticateToken, async (req, res) => {
       [overallStatus, req.user.id, orderId]
     );
 
-    res.json({ success: true, subcontractId: subId, overallStatus });
+    res.json({ success: true, subcontractId: subId, subcontractOrderId: subId, batchNo, overallStatus });
   } catch (err) {
     res.status(500).json({ error: formatErrorMessage(err) });
   }
@@ -1683,15 +1696,17 @@ app.put('/api/orders/:id/subcontract/:subId/return', authenticateToken, async (r
       const item = itemRes.rows[0];
       const curItemRet = parseFloat(item.returned_from_coating_quantity) || 0;
       const curItemDef = parseFloat(item.defect_quantity) || 0;
+      const curItemApp = parseFloat(item.approved_quantity) || 0;
 
       const updatedRet = Math.max(0, curItemRet + deltaRet);
       const updatedDef = Math.max(0, curItemDef + deltaDef);
+      const updatedApp = Math.max(0, curItemApp + deltaRet);
 
       await query(
         `UPDATE order_items 
-         SET returned_from_coating_quantity = ?, defect_quantity = ?, updated_at = CURRENT_TIMESTAMP 
+         SET returned_from_coating_quantity = ?, approved_quantity = ?, defect_quantity = ?, updated_at = CURRENT_TIMESTAMP 
          WHERE id = ?`,
-        [updatedRet, updatedDef, item.id]
+        [updatedRet, updatedApp, updatedDef, item.id]
       );
     }
 

@@ -46,6 +46,8 @@ export async function initDatabase() {
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS coating_type VARCHAR(100);
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS project_no VARCHAR(100);
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes TEXT;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_amount NUMERIC(15, 2) DEFAULT 0;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'TRY';
         ALTER TABLE orders ADD COLUMN IF NOT EXISTS version INTEGER DEFAULT 1;
 
         CREATE TABLE IF NOT EXISTS dispatches (

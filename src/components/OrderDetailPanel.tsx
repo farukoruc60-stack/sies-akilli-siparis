@@ -1836,8 +1836,23 @@ ${itemsSummary}
         )}
 
         {conflictError && (
-          <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '0.65rem 0.85rem', borderRadius: '6px', fontSize: '0.82rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <AlertTriangle size={16} /> {conflictError}
+          <div style={{ background: '#FEE2E2', border: '1px solid #FCA5A5', color: '#DC2626', padding: '0.65rem 0.85rem', borderRadius: '8px', fontSize: '0.82rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <AlertTriangle size={16} />
+              <span>{conflictError}</span>
+            </div>
+            <button
+              onClick={async () => {
+                setConflictError(null);
+                setIsEditing(false);
+                await onRefresh();
+              }}
+              className="btn btn-secondary"
+              style={{ padding: '0.3rem 0.65rem', fontSize: '0.75rem', background: '#FFFFFF', color: '#DC2626', border: '1px solid #FCA5A5', fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            >
+              <RefreshCw size={12} color="#DC2626" />
+              <span>Sunucudaki Güncel Veriyi Yükle</span>
+            </button>
           </div>
         )}
 
@@ -4131,6 +4146,10 @@ ${itemsSummary}
               <div>
                 <h3 style={{ fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>Sevkiyat Geçmişi ve İrsaliye Kayıtları</h3>
                 <span style={{ fontSize: isMobile ? '0.72rem' : '0.8rem', color: 'var(--text-muted)' }}>Toplam {waybillGroups.length} Adet Sevkiyat İrsaliyesi Düzenlendi</span>
+                <div style={{ marginTop: '5px', fontSize: '0.73rem', color: '#92400E', background: '#FFFBEB', border: '1px solid #FDE68A', padding: '3px 8px', borderRadius: '5px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                  <AlertTriangle size={13} color="#D97706" />
+                  <span>Dahili Sevk İrsaliyesi: Bu ekrandan düzenlenen irsaliyeler fabrika sistem içi sevk belgesi niteliğinde olup resmi GİB e-İrsaliye yerine geçmez.</span>
+                </div>
               </div>
               <button
                 onClick={handleOpenDispatchModal}

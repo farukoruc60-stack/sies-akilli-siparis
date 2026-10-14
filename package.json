@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "db:backup": "node server/scripts/backup.js",
     "db:restore": "node server/scripts/restore.js",
-    "test:mes": "node server/scripts/test-mes-scenario.js"
+    "test:mes": "node server/scripts/test-mes-scenario.js",
+    "test:phase3": "node server/scripts/test-phase3-suite.js"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",
